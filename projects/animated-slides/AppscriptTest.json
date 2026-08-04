@@ -1,0 +1,90 @@
+{
+  "canvasSettings": {
+    "showShadow": true,
+    "snapToGrid": true,
+    "navAlignment": "center",
+    "bgColor": "#ffffff",
+    "appBgColor": "#f3f4f6",
+    "navGap": 12,
+    "showBorder": true,
+    "width": 1920,
+    "height": 1080,
+    "navPosition": "bottom"
+  },
+  "slides": [
+    {
+      "buttonRadiusTL": 6,
+      "buttonInactiveColor": "#cbd5e1",
+      "buttonInactiveBottomColor": "#94a3b8",
+      "buttonRadiusTR": 6,
+      "id": "slide-0",
+      "buttonPaddingY": 8,
+      "buttonBottomColor": "#2563eb",
+      "buttonTextColor": "#ffffff",
+      "buttonInactiveTextColor": "#475569",
+      "buttonFontSize": 14,
+      "buttonTextAlign": "center",
+      "buttonColor": "#3b82f6",
+      "label": "Slide 1",
+      "buttonWidth": 0,
+      "buttonRadiusBR": 6,
+      "elements": [
+        {
+          "fontWeight": "700",
+          "type": "text",
+          "width": 800,
+          "height": 200,
+          "content": "New Text Block",
+          "name": "New Text",
+          "x": 560,
+          "color": "#1f2937",
+          "fontSize": 52,
+          "id": "elem-1",
+          "align": "center",
+          "opacity": 1,
+          "padding": 10,
+          "y": 440
+        }
+      ],
+      "buttonRadiusBL": 6,
+      "buttonPaddingX": 20
+    },
+    {
+      "buttonRadiusTL": 6,
+      "buttonInactiveBottomColor": "#94a3b8",
+      "buttonInactiveColor": "#cbd5e1",
+      "buttonRadiusTR": 6,
+      "id": "slide-1785816624368",
+      "buttonPaddingY": 8,
+      "buttonBottomColor": "#2563eb",
+      "buttonTextColor": "#ffffff",
+      "buttonInactiveTextColor": "#475569",
+      "buttonFontSize": 14,
+      "buttonColor": "#3b82f6",
+      "buttonTextAlign": "center",
+      "label": "Slide 2",
+      "buttonRadiusBR": 6,
+      "buttonWidth": 0,
+      "buttonPaddingX": 20,
+      "elements": [
+        {
+          "fontWeight": "700",
+          "height": 200,
+          "type": "text",
+          "width": 800,
+          "x": 890,
+          "name": "New Text",
+          "content": "New Text Block",
+          "color": "#1f2937",
+          "y": 870,
+          "padding": 10,
+          "opacity": 1,
+          "align": "center",
+          "id": "elem-1",
+          "fontSize": 52
+        }
+      ],
+      "buttonRadiusBL": 6
+    }
+  ]
+}

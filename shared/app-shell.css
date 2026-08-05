@@ -154,6 +154,13 @@ body {
 .project-row:hover { border-color: var(--accent); }
 .project-row .project-name { font-weight: 500; }
 .project-row .project-meta { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+.project-row-actions { display: flex; gap: var(--space-1); margin-left: var(--space-2); }
+.project-action-btn {
+  border: none; background: none; color: var(--ink-faint); cursor: pointer;
+  padding: 4px 6px; border-radius: var(--radius-sm); font-size: 12px;
+}
+.project-action-btn:hover { background: var(--surface-sunken); color: var(--ink); }
+.project-action-btn.danger:hover { background: var(--danger-soft); color: var(--danger); }
 .project-empty { text-align: center; color: var(--ink-soft); padding: var(--space-8) 0; font-size: var(--text-sm); }
 
 /* ---- Export code view ---- */

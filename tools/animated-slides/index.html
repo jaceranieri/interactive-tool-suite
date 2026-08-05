@@ -1,0 +1,2640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animated Slides</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Remaps Tailwind's default palette to the shared Animated Slides /
+      // Authoring Tools token colours, so every existing bg-indigo-*,
+      // text-gray-*, etc. class in this file picks up the shared look
+      // without needing to touch each one individually.
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              indigo: { 50:'#DCEBF2', 100:'#C3DEEA', 200:'#96C4DB', 300:'#69AACB', 400:'#3C8FB9', 500:'#1976A0', 600:'#0C5E82', 700:'#094A68', 800:'#073A52', 900:'#052A3C' },
+              gray:   { 50:'#FAFAF8', 100:'#F1F0EB', 200:'#E3E1DA', 300:'#CBC8BE', 400:'#8A9291', 500:'#4A5453', 600:'#4A5453', 700:'#1C2321', 800:'#14181A', 900:'#14181A' },
+              emerald:{ 50:'#E9F3EA', 400:'#6DA278', 500:'#4F8A5B', 600:'#4F8A5B', 700:'#3E6E48' },
+              rose:   { 400:'#D07A5F', 500:'#C1502E', 600:'#C1502E' }
+            },
+            fontFamily: {
+              sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../shared/design-tokens.css">
+    <link rel="stylesheet" href="../../shared/app-shell.css">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --ui-bg: #f3f4f6;
+            --canvas-bg: #ffffff;
+            --text-dark: #1f2937;
+        }
+        body {
+            margin: 0;
+            overflow: hidden; /* Prevent scrolling, app takes full screen */
+            font-family: 'IBM Plex Sans', sans-serif;
+            background-color: var(--ui-bg);
+            color: var(--text-dark);
+        }
+        /* App Layout */
+        #app-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+        
+        #tab-nav {
+            width: 80px;
+            flex-shrink: 0;
+            background: #111827; /* Gray-900 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1.5rem 0;
+            z-index: 30;
+            gap: 1rem;
+        }
+        
+        /* Dynamic Sidebars */
+        #sidebar {
+            width: 380px; /* Slightly wider for properties */
+            flex-shrink: 0;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            z-index: 20;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+        #properties-drawer {
+            width: 0;
+            flex-shrink: 0;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            z-index: 19;
+            box-shadow: 2px 0 15px rgba(0,0,0,0.05);
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+        #properties-drawer.open {
+            width: 340px;
+        }
+        #properties-inner {
+            width: 340px; /* Locks internal width to prevent reflow during animation */
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #canvas-area {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+            align-items: center;
+            position: relative;
+            background-color: var(--ui-bg);
+            overflow-y: auto;
+        }
+        .canvas-wrapper {
+            width: 100%;
+            max-width: 1200px;
+            flex-grow: 1;
+            flex-shrink: 1;
+            aspect-ratio: 16 / 9;
+            background-color: var(--canvas-bg);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+            border: 2px solid #e5e7eb;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        /* Startup Screen */
+        #startup-screen {
+            position: absolute;
+            inset: 0;
+            background-color: rgba(243, 244, 246, 0.95);
+            backdrop-filter: blur(8px);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.4s ease;
+        }
+
+        /* Typography */
+        .canvas-text-content {
+            font-family: 'Poppins', sans-serif;
+            font-size: 52px;
+            font-weight: 700;
+            line-height: 1.3;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            letter-spacing: -0.02em;
+            cursor: move;
+            box-sizing: border-box;
+        }
+        /* Authoring States */
+        .element-group:hover { opacity: 0.8; }
+        .element-group.selected rect.selection-border {
+            stroke: #3b82f6;
+            stroke-width: 4;
+            stroke-dasharray: 8;
+            fill: rgba(59, 130, 246, 0.05);
+        }
+        /* Resize Handle */
+        .resize-handle {
+            display: none;
+            fill: #ffffff;
+            stroke: #3b82f6;
+            stroke-width: 2.5px;
+            cursor: nwse-resize;
+        }
+        .element-group.selected .resize-handle {
+            display: block;
+        }
+        /* Modal display is now handled by .modal-overlay / .modal-overlay.active in app-shell.css */
+        /* Player Nav Buttons Preview */
+        .nav-btn {
+            border: none;
+            border-bottom: 4px solid #94a3b8;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            transition: 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            line-height: 1.2;
+            flex-shrink: 0;
+        }
+        .nav-btn:hover { filter: brightness(0.9); }
+        .nav-btn.active { box-shadow: 0 4px 6px rgba(0,0,0,0.1); transform: scale(1.05); }
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+
+        <!-- Full Overlay Startup Screen -->
+        <div id="startup-screen">
+            <div class="text-center mb-10">
+                <div class="bg-indigo-600 text-white w-20 h-20 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-5 text-4xl">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                </div>
+                <h1 class="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">Animated Slides</h1>
+                <p class="text-gray-500 font-medium text-lg">Your interactive e-learning component workspace</p>
+            </div>
+            <div class="flex gap-6">
+                <button onclick="openNewProjectModal()" class="p-8 bg-white border border-gray-200 hover:border-indigo-400 hover:shadow-xl rounded-2xl transition-all flex flex-col items-center justify-center gap-4 w-60 h-60 group">
+                    <div class="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-file-circle-plus text-3xl text-indigo-600"></i>
+                    </div>
+                    <span class="font-bold text-gray-800 text-lg">New Project</span>
+                    <span class="text-xs text-gray-400 text-center px-4">Start with a blank canvas and create from scratch.</span>
+                </button>
+                <button onclick="fetchProjectsFromSheet()" class="p-8 bg-white border border-gray-200 hover:border-indigo-400 hover:shadow-xl rounded-2xl transition-all flex flex-col items-center justify-center gap-4 w-60 h-60 group">
+                    <div class="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-cloud-arrow-down text-3xl text-emerald-600"></i>
+                    </div>
+                    <span class="font-bold text-gray-800 text-lg">Load Project</span>
+                    <span class="text-xs text-gray-400 text-center px-4">Fetch a saved project from GitHub.</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Far Left Tab Navigation -->
+        <div id="tab-nav">
+            <div class="w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center text-white shadow-md mb-2 cursor-pointer" title="Animated Slides">
+                <i class="fa-solid fa-wand-magic-sparkles text-xl"></i>
+            </div>
+            
+            <button onclick="switchTab('tab-workspace')" id="btn-tab-workspace" class="w-14 h-14 rounded-xl flex flex-col items-center justify-center text-white bg-indigo-600 shadow-md transition">
+                <i class="fa-solid fa-layer-group text-xl mb-1"></i>
+                <span class="text-[9px] font-bold">Workspace</span>
+            </button>
+            <button onclick="switchTab('tab-buttons')" id="btn-tab-buttons" class="w-14 h-14 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 transition">
+                <i class="fa-solid fa-toggle-on text-xl mb-1"></i>
+                <span class="text-[9px] font-bold">Nav</span>
+            </button>
+            <button onclick="switchTab('tab-canvas')" id="btn-tab-canvas" class="w-14 h-14 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 transition">
+                <i class="fa-solid fa-expand text-xl mb-1"></i>
+                <span class="text-[9px] font-bold">Canvas</span>
+            </button>
+            
+            <!-- Connection Status -->
+            <div class="mt-auto mb-2">
+                <div id="connection-status" class="w-10 h-10 rounded-xl flex items-center justify-center bg-gray-800 text-gray-400 transition cursor-help shadow-lg" title="Checking connection...">
+                    <i class="fa-solid fa-link-slash"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Primary Sidebar (Workspace / Tabs) -->
+        <div id="sidebar" class="custom-scroll">
+            
+            <!-- 1. WORKSPACE TAB (Insert + Tree) -->
+            <div id="tab-workspace" class="flex flex-col h-full bg-white w-full">
+                
+                <!-- Insert Elements Block -->
+                <div class="p-5 border-b border-gray-100 bg-white">
+                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Insert Element</h2>
+                    <div class="grid grid-cols-4 gap-2 mb-3">
+                        <button onclick="addElement('text')" class="bg-gray-50 border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 py-2.5 rounded-lg text-[10px] font-bold transition flex flex-col items-center gap-1.5 shadow-sm"><i class="fa-solid fa-font text-lg"></i> Text</button>
+                        <button onclick="addElement('rect')" class="bg-gray-50 border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 py-2.5 rounded-lg text-[10px] font-bold transition flex flex-col items-center gap-1.5 shadow-sm"><i class="fa-solid fa-square text-lg"></i> Shape</button>
+                        <button onclick="addElement('arrow')" class="bg-gray-50 border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 py-2.5 rounded-lg text-[10px] font-bold transition flex flex-col items-center gap-1.5 shadow-sm"><i class="fa-solid fa-arrow-down text-lg"></i> Arrow</button>
+                        <button onclick="addElement('icon')" class="bg-gray-50 border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 py-2.5 rounded-lg text-[10px] font-bold transition flex flex-col items-center gap-1.5 shadow-sm"><i class="fa-solid fa-star text-lg"></i> Icon</button>
+                    </div>
+                    <button onclick="openExistingModal()" class="w-full bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 hover:text-indigo-800 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-link"></i> Link Element from Slide
+                    </button>
+                </div>
+
+                <!-- Workspace Tree Header -->
+                <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center sticky top-0 z-10">
+                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wider">Project Structure</h2>
+                    <button onclick="addSlide()" class="bg-white border border-gray-200 text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50 px-2 py-1 rounded text-[10px] font-bold transition shadow-sm flex items-center gap-1"><i class="fa-solid fa-plus"></i> Slide</button>
+                </div>
+                
+                <!-- Workspace Tree Content -->
+                <div class="p-4 flex-grow overflow-y-auto custom-scroll bg-gray-50/50" id="workspace-tree">
+                    <!-- Unified Tree Injected Here -->
+                </div>
+            </div>
+
+            <!-- 2. BUTTONS TAB -->
+            <div id="tab-buttons" class="hidden flex-col h-full bg-white w-full">
+                <div class="p-5 border-b border-gray-100 bg-gray-50 sticky top-0 z-10">
+                    <h2 class="text-lg font-bold text-gray-800">Navigation Buttons</h2>
+                    <p class="text-[10px] text-gray-500 font-medium">Design the slide nav controls</p>
+                </div>
+                <div class="p-5 flex-grow overflow-y-auto custom-scroll pb-10" id="slide-settings-panel">
+                    <!-- Slide settings injected here -->
+                </div>
+            </div>
+
+            <!-- 3. CANVAS TAB -->
+            <div id="tab-canvas" class="hidden flex-col h-full bg-white w-full">
+                <div class="p-5 border-b border-gray-100 bg-gray-50 sticky top-0 z-10">
+                    <h2 class="text-lg font-bold text-gray-800">Canvas Settings</h2>
+                    <p class="text-[10px] text-gray-500 font-medium">Configure workspace logic</p>
+                </div>
+                <div class="p-5 space-y-6">
+                    
+                    <!-- Toggle Snap to Grid -->
+                    <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between">
+                        <div>
+                            <div class="font-bold text-sm text-indigo-900">Snap to Grid</div>
+                            <div class="text-[10px] text-indigo-600">Align elements precisely (10px)</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="canvas-snap" onchange="updateCanvasSetting('snapToGrid', this.checked)" class="sr-only peer" checked>
+                            <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                        </label>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Canvas Size</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-gray-600 mb-1">Width (px)</label>
+                                <input type="number" id="canvas-width" onchange="updateCanvasSetting('width', parseInt(this.value) || 1920)" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-semibold outline-none focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-gray-600 mb-1">Height (px)</label>
+                                <input type="number" id="canvas-height" onchange="updateCanvasSetting('height', parseInt(this.value) || 1080)" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-semibold outline-none focus:border-indigo-500">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Background Colors</label>
+                        <div class="grid grid-cols-2 gap-4 items-end">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-gray-600 mb-1">Canvas Fill</label>
+                                <input type="color" id="canvas-bg-color" oninput="updateCanvasSetting('bgColor', this.value)" class="w-full border border-gray-300 rounded h-10 outline-none cursor-pointer p-1">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-gray-600 mb-1">App/Preview Area</label>
+                                <input type="color" id="app-bg-color" oninput="updateCanvasSetting('appBgColor', this.value)" class="w-full border border-gray-300 rounded h-10 outline-none cursor-pointer p-1">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Decorations</label>
+                        <div class="flex flex-col gap-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="canvas-border" onchange="updateCanvasSetting('showBorder', this.checked)" class="cursor-pointer w-4 h-4 rounded text-indigo-600">
+                                <label class="text-sm font-semibold text-gray-700 cursor-pointer select-none" for="canvas-border">Show Border</label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="canvas-shadow" onchange="updateCanvasSetting('showShadow', this.checked)" class="cursor-pointer w-4 h-4 rounded text-indigo-600">
+                                <label class="text-sm font-semibold text-gray-700 cursor-pointer select-none" for="canvas-shadow">Drop Shadow</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Secondary Drawer: Properties -->
+        <div id="properties-drawer" class="custom-scroll">
+            <div id="properties-inner">
+                <div class="p-5 border-b border-gray-100 bg-indigo-50/50 flex justify-between items-center sticky top-0 z-10">
+                    <div>
+                        <h2 class="text-lg font-bold text-indigo-900">Properties</h2>
+                        <p class="text-[10px] text-indigo-500 font-semibold" id="drawer-subtitle">Edit layer</p>
+                    </div>
+                    <button onclick="selectElement(null)" class="text-gray-400 hover:text-gray-700 w-6 h-6 flex items-center justify-center rounded transition"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
+                <div class="p-5 flex-grow overflow-y-auto custom-scroll pb-10" id="properties-panel">
+                    <!-- Properties form injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Area: Canvas Workspace -->
+        <div id="canvas-area" onclick="handleCanvasAreaClick(event)">
+            <!-- Global Action Bar overlay inside Canvas Area -->
+            <div class="w-full max-w-[1200px] flex justify-between items-center mb-6 mt-2 shrink-0">
+                <div class="flex flex-col gap-1">
+                    <div class="title-block">Tool &middot; Animated Slides</div>
+                    <div class="flex items-center gap-4">
+                        <h2 id="display-project-name" class="text-2xl font-extrabold text-gray-800 tracking-tight">Untitled Project</h2>
+                        <button onclick="openSaveAsModal()" class="text-gray-400 hover:text-indigo-600 transition text-sm" title="Rename"><i class="fa-solid fa-pen"></i></button>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2 bg-white px-2 py-1.5 rounded-xl shadow-sm border border-gray-200">
+                    
+                    <!-- Clean Project Dropdown Menu -->
+                    <div class="relative inline-block text-left" id="project-dropdown-container">
+                        <button onclick="toggleProjectDropdown(event)" class="bg-white hover:bg-gray-50 text-gray-700 px-3.5 py-2 rounded-lg text-xs font-bold border border-gray-200 transition shadow-sm flex items-center gap-2">
+                            <i class="fa-solid fa-folder text-indigo-600"></i> Project <i class="fa-solid fa-chevron-down text-[10px] text-gray-400 transition-transform duration-200" id="project-dropdown-arrow"></i>
+                        </button>
+                        <div id="project-dropdown-menu" class="hidden absolute right-0 mt-2 w-52 rounded-xl shadow-xl bg-white border border-gray-100 divide-y divide-gray-100 focus:outline-none z-50">
+                            <div class="py-1">
+                                <button onclick="openNewProjectModal(); closeProjectDropdown();" class="text-gray-700 hover:bg-gray-50 hover:text-indigo-600 group flex items-center px-4 py-2.5 text-xs font-bold w-full gap-2.5 transition">
+                                    <i class="fa-solid fa-file-circle-plus text-gray-400 group-hover:text-indigo-600"></i> New Project
+                                </button>
+                                <button onclick="openImportModal(); closeProjectDropdown();" class="text-gray-700 hover:bg-gray-50 hover:text-indigo-600 group flex items-center px-4 py-2.5 text-xs font-bold w-full gap-2.5 transition">
+                                    <i class="fa-solid fa-upload text-gray-400 group-hover:text-indigo-600"></i> Import File
+                                </button>
+                            </div>
+                            <div class="py-1">
+                                <button onclick="fetchProjectsFromSheet(); closeProjectDropdown();" class="text-gray-700 hover:bg-gray-50 hover:text-indigo-600 group flex items-center px-4 py-2.5 text-xs font-bold w-full gap-2.5 transition">
+                                    <i class="fa-solid fa-cloud-arrow-down text-gray-400 group-hover:text-indigo-600"></i> Load Project
+                                </button>
+                                <button onclick="openExportModal(); closeProjectDropdown();" class="text-gray-700 hover:bg-gray-50 hover:text-indigo-600 group flex items-center px-4 py-2.5 text-xs font-bold w-full gap-2.5 transition">
+                                    <i class="fa-solid fa-code text-gray-400 group-hover:text-indigo-600"></i> Export HTML
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="w-px h-4 bg-gray-200 mx-1"></div>
+                    <button onclick="openSaveAsModal()" class="btn btn-secondary"><i class="fa-solid fa-copy"></i> Save As</button>
+                    <button onclick="saveToGoogleSheet()" class="btn btn-primary"><i class="fa-solid fa-cloud-arrow-up"></i> Save</button>
+                </div>
+            </div>
+
+            <!-- Interactive Player Wrapper (Canvas + Navs with Pagination Chevrons) -->
+            <div id="player-preview-wrapper" class="flex flex-col items-center justify-center w-full max-w-[1200px] gap-6 transition-all duration-300 relative">
+                <div class="canvas-wrapper" id="drop-zone" style="flex-shrink: 0;">
+                    <svg id="svg-canvas" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet">
+                        <defs>
+                            <pattern id="authoring-grid" width="10" height="10" patternUnits="userSpaceOnUse">
+                                <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e5e7eb" stroke-width="0.5" />
+                            </pattern>
+                        </defs>
+                        <rect id="canvas-grid-rect" width="1920" height="1080" fill="url(#authoring-grid)" pointer-events="none"></rect>
+                        <g id="elements-layer"></g>
+                    </svg>
+                </div>
+                
+                <!-- Unified container for Navigation + Chevrons -->
+                <div id="nav-outer-container" class="flex items-center gap-3 w-full select-none max-w-full">
+                    <!-- Chevron Prev -->
+                    <button id="nav-chevron-prev" onclick="scrollNavPreview(-1)" class="flex items-center justify-center transition shadow-sm border border-gray-200 shrink-0">
+                        <i class="fa-solid fa-chevron-left" id="chevron-prev-icon"></i>
+                    </button>
+                    
+                    <!-- Scroll Window Mask -->
+                    <div id="nav-scroll-window" class="overflow-hidden flex-grow transition-all duration-300">
+                        <div id="nav-preview-container" class="flex transition-transform duration-300 ease-out whitespace-nowrap"></div>
+                    </div>
+                    
+                    <!-- Chevron Next -->
+                    <button id="nav-chevron-next" onclick="scrollNavPreview(1)" class="flex items-center justify-center transition shadow-sm border border-gray-200 shrink-0">
+                        <i class="fa-solid fa-chevron-right" id="chevron-next-icon"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Padding spacer -->
+            <div class="h-10 w-full shrink-0"></div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="export-modal">
+        <div class="modal-dialog wide">
+            <div class="modal-header">
+                <div><div class="title-block">Export</div><h2>Code for Articulate</h2></div>
+                <button class="modal-close" onclick="closeExportModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color:var(--ink-soft); margin-bottom: var(--space-4);">Copy the code below and paste it into a Web Object or HTML code block in your Articulate course.</p>
+                <textarea id="export-textarea" class="code-view" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="copyExportCode()" id="copy-btn"><i class="fa-regular fa-copy"></i> Copy code</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div class="modal-overlay" id="import-modal">
+        <div class="modal-dialog wide">
+            <div class="modal-header">
+                <div><div class="title-block">Import</div><h2>Import local file</h2></div>
+                <button class="modal-close" onclick="closeImportModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color:var(--ink-soft); margin-bottom: var(--space-4);">Paste the exported code from a previous session to resume editing. This overwrites your current workspace.</p>
+                <textarea id="import-textarea" class="code-view" placeholder="Paste code here..." style="color:#C9E8DE;"></textarea>
+                <div id="import-error" class="hidden" style="color:var(--danger); font-size: var(--text-sm); margin-top: var(--space-3); font-weight:600;"><i class="fa-solid fa-circle-exclamation"></i> Invalid import code. Could not find slide data.</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="processImport()"><i class="fa-solid fa-file-import"></i> Process import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Existing Element Link Modal -->
+    <div class="modal-overlay" id="existing-modal">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div><div class="title-block">Link</div><h2>Link existing element</h2></div>
+                <button class="modal-close" onclick="closeExistingModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="existing-elements-list">
+                <!-- list items injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Project List Modal (Cloud Load) -->
+    <div class="modal-overlay" id="project-list-modal">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div><div class="title-block">Open</div><h2>Your projects</h2></div>
+                <button class="modal-close" onclick="closeProjectListModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="project-list-items">
+                <!-- Project rows injected here by Shell.renderProjectList -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeProjectListModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Project Modal -->
+    <div class="modal-overlay" id="new-project-modal">
+        <div class="modal-dialog" style="max-width:400px;">
+            <div class="modal-header">
+                <div><div class="title-block">New</div><h2>Create new project</h2></div>
+                <button class="modal-close" onclick="closeNewProjectModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="new-project-warning" style="display:none; color:var(--ink-soft); font-size:var(--text-sm); margin-bottom: var(--space-4);">Are you sure you want to start a new project? This will clear your current workspace.</p>
+                <div class="field-group">
+                    <span class="field-label">Project name</span>
+                    <input type="text" id="new-project-name-input" class="field-input-text" placeholder="My Awesome Project">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeNewProjectModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="executeNewProject()">Create project</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save As Modal -->
+    <div class="modal-overlay" id="save-as-modal">
+        <div class="modal-dialog" style="max-width:400px;">
+            <div class="modal-header">
+                <div><div class="title-block">Save as</div><h2>Save a copy</h2></div>
+                <button class="modal-close" onclick="closeSaveAsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="field-group">
+                    <span class="field-label">New project name</span>
+                    <input type="text" id="save-as-name-input" class="field-input-text" placeholder="Project Name Copy">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSaveAsModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="executeSaveAs()">Save copy</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../../shared/app-shell.js"></script>
+    <script src="../../shared/storage-connector.js"></script>
+    <script>
+        /**
+         * SVG ICON PATHS DICTIONARY (24x24 viewBox standard)
+         */
+        const ICON_PATHS = {
+            "star": "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+            "heart": "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
+            "check-circle": "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
+            "info": "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
+            "user": "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+            "warning": "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+            "flag": "M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z",
+            "bookmark": "M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"
+        };
+        
+        /**
+         * COLOR PRESETS CONFIG
+         */
+        const PRESET_PALETTES = {
+            "Highlights": {
+                "Object": "#c6e2ff",
+                "Clause": "#cdc3ff",
+                "Verb": "#d0ffce",
+                "Noun": "#ffb5e1",
+                "Conjunction": "#fdfc5a",
+                "Phrase": "#ffa39d"
+            },
+            "Underlines": {
+                "Dependent Clause": "#8c52ff",
+                "Adverbial": "#c2fe72",
+                "Adjectival": "#ff34ad",
+                "Prepositional": "#ffb31f"
+            }
+        };
+        
+        function generateColorPresetHTML(propToUpdate) {
+            let html = `<div class="mt-4 mb-2"><label class="block text-[10px] font-bold text-indigo-900 uppercase tracking-wider mb-2">Color Presets</label>`;
+            for (const [category, colors] of Object.entries(PRESET_PALETTES)) {
+                html += `<div class="mb-2"><div class="text-[10px] text-indigo-500 mb-1 font-semibold">${category}</div><div class="flex flex-wrap gap-1.5">`;
+                for (const [name, hex] of Object.entries(colors)) {
+                    html += `<button title="${name} (${hex})" onclick="updateElementProp('${propToUpdate}', '${hex}')" style="background-color: ${hex};" class="w-6 h-6 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm"></button>`;
+                }
+                html += `</div></div>`;
+            }
+            html += `</div>`;
+            return html;
+        }
+
+        /**
+         * APPLICATION STATE
+         */
+        const GRID_SIZE = 10; // Pixels to snap to
+        
+        let canvasSettings = {
+            bgColor: "#ffffff",
+            appBgColor: "#f3f4f6", // Default app preview background
+            showBorder: true,
+            showShadow: true,
+            width: 1920,
+            height: 1080,
+            snapToGrid: true, // default enabled
+            navPosition: 'bottom', // top, bottom, left, right
+            navAlignment: 'center', // start, center, end
+            navGap: 12, // default spacing
+            chevronBgColor: "#ffffff",
+            chevronIconColor: "#4b5563",
+            chevronHoverBgColor: "#f3f4f6",
+            chevronRadius: 8,
+            chevronSize: 36
+        };
+        
+        let currentProjectName = "Untitled Project";
+        
+        // Start app with empty state (loaded from execution/import)
+        let slides = [];
+        let currentSlideIndex = 0;
+        let selectedElementId = null;
+        let idCounter = 1;
+        let navScrollOffset = 0; // Tracks scroll offset for slide navigation
+        
+        const svgNS = "http://www.w3.org/2000/svg";
+        const canvasLayer = document.getElementById("elements-layer");
+        let activeDOMNodes = {}; 
+        
+        // Drag & Resize State
+        let isDragging = false;
+        let isResizing = false;
+        let dragTarget = null;
+        let dragOffset = { x: 0, y: 0 };
+        let dragStartData = null;
+
+        /**
+         * STORAGE BACKEND (Apps Script -> GitHub)
+         * Paste in the Web App URL and API key from your storage-backend.gs
+         * deployment. Every tool in the suite points at the same endpoint,
+         * distinguished by TOOL_ID.
+         */
+        const STORAGE_ENDPOINT = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+        const STORAGE_API_KEY = "PASTE_YOUR_API_KEY_HERE";
+        const TOOL_ID = "animated-slides";
+
+        /**
+         * INITIALIZATION
+         */
+        function init() {
+            updateConnectionStatus();
+            document.getElementById('display-project-name').innerText = currentProjectName;
+            
+            // Apply Canvas Settings
+            document.getElementById('canvas-width').value = canvasSettings.width || 1920;
+            document.getElementById('canvas-height').value = canvasSettings.height || 1080;
+            document.getElementById('canvas-bg-color').value = canvasSettings.bgColor || "#ffffff";
+            document.getElementById('app-bg-color').value = canvasSettings.appBgColor || "#f3f4f6";
+            document.getElementById('canvas-border').checked = canvasSettings.showBorder !== false;
+            document.getElementById('canvas-shadow').checked = canvasSettings.showShadow !== false;
+            document.getElementById('canvas-snap').checked = canvasSettings.snapToGrid !== false;
+            applyCanvasSettings();
+
+            if (!window._eventsSetup) {
+                setupDragEvents();
+                setupGlobalOutsideClicks();
+                window._eventsSetup = true;
+            }
+            updateChevronStyles();
+            updateChevronState();
+        }
+
+        /**
+         * TAB NAVIGATION SYSTEM
+         */
+        function switchTab(tabId) {
+            document.querySelectorAll('#sidebar > div').forEach(el => {
+                el.classList.add('hidden');
+                el.classList.remove('flex');
+            });
+            
+            const target = document.getElementById(tabId);
+            if (target) {
+                target.classList.remove('hidden');
+                target.classList.add('flex');
+            }
+
+            const tabs = ['workspace', 'buttons', 'canvas'];
+            tabs.forEach(t => {
+                const btn = document.getElementById(`btn-tab-${t}`);
+                if (`tab-${t}` === tabId) {
+                    btn.className = "w-14 h-14 rounded-xl flex flex-col items-center justify-center text-white bg-indigo-600 shadow-md transition";
+                } else {
+                    btn.className = "w-14 h-14 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 transition";
+                }
+            });
+        }
+
+        /**
+         * CONNECTION STATUS
+         */
+        function updateConnectionStatus() {
+            const statusEl = document.getElementById("connection-status");
+            if (STORAGE_ENDPOINT && STORAGE_ENDPOINT.trim() !== '' && !STORAGE_ENDPOINT.includes('PASTE_YOUR')) {
+                statusEl.className = "w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-500/20 text-emerald-400 transition cursor-help shadow-lg";
+                statusEl.innerHTML = '<i class="fa-solid fa-wifi text-base"></i>';
+                statusEl.title = "Connected to GitHub";
+            } else {
+                statusEl.className = "w-10 h-10 rounded-xl flex items-center justify-center bg-rose-500/20 text-rose-400 transition cursor-help";
+                statusEl.innerHTML = '<i class="fa-solid fa-link-slash text-base"></i>';
+                statusEl.title = "Disconnected";
+            }
+        }
+
+        function getApiUrl() { return STORAGE_ENDPOINT.trim(); }
+
+        /**
+         * PROJECT DROPDOWN HANDLERS
+         */
+        function toggleProjectDropdown(e) {
+            e.stopPropagation();
+            const menu = document.getElementById('project-dropdown-menu');
+            const arrow = document.getElementById('project-dropdown-arrow');
+            menu.classList.toggle('hidden');
+            arrow.classList.toggle('rotate-180');
+        }
+        function closeProjectDropdown() {
+            const menu = document.getElementById('project-dropdown-menu');
+            const arrow = document.getElementById('project-dropdown-arrow');
+            if (menu) menu.classList.add('hidden');
+            if (arrow) arrow.classList.remove('rotate-180');
+        }
+        function setupGlobalOutsideClicks() {
+            window.addEventListener('click', (e) => {
+                const dropdown = document.getElementById('project-dropdown-menu');
+                const btn = document.getElementById('project-dropdown-container');
+                if (dropdown && btn && !btn.contains(e.target)) {
+                    closeProjectDropdown();
+                }
+            });
+        }
+
+        /**
+         * TOAST MESSAGING SYSTEM
+         */
+        // Delegates to the shared shell's toast system (app-shell.js) so
+        // every tool shows notifications the same way. Every existing
+        // showToast(icon, message, color) call site elsewhere in this file
+        // keeps working unchanged.
+        function showToast(icon, message, color = 'gray') {
+            const typeMap = { green: 'success', red: 'danger', indigo: 'pending' };
+            return Shell.toast(message, typeMap[color] || '');
+        }
+
+        /**
+         * STARTUP SCREEN
+         */
+        function hideStartupScreen() {
+            const startup = document.getElementById('startup-screen');
+            startup.style.pointerEvents = 'none';
+            gsap.to(startup, { opacity: 0, duration: 0.5 });
+        }
+
+        /**
+         * NEW PROJECT & SAVE AS FUNCTIONALITY
+         */
+        function openNewProjectModal() { 
+            const warning = document.getElementById('new-project-warning');
+            if (slides.length > 0) {
+                warning.style.display = 'block';
+            } else {
+                warning.style.display = 'none';
+            }
+            document.getElementById('new-project-name-input').value = "";
+            document.getElementById('new-project-modal').classList.add('active'); 
+        }
+        
+        function closeNewProjectModal() { 
+            document.getElementById('new-project-modal').classList.remove('active'); 
+        }
+        
+        function openSaveAsModal() {
+            if (slides.length === 0) {
+                showToast('<i class="fa-solid fa-circle-exclamation"></i>', 'No active project to save.', 'red');
+                return;
+            }
+            document.getElementById('save-as-name-input').value = currentProjectName + " (Copy)";
+            document.getElementById('save-as-modal').classList.add('active');
+        }
+        
+        function closeSaveAsModal() { 
+            document.getElementById('save-as-modal').classList.remove('active'); 
+        }
+
+        function executeSaveAs() {
+            const newName = document.getElementById('save-as-name-input').value.trim();
+            if (!newName) {
+                showToast('<i class="fa-solid fa-circle-exclamation"></i>', 'Please enter a name for the copy.', 'red');
+                return;
+            }
+            currentProjectName = newName;
+            document.getElementById('display-project-name').innerText = currentProjectName;
+            closeSaveAsModal();
+            saveToGoogleSheet();
+        }
+
+        // Single source of truth for nav button styling defaults — used when
+        // starting a new project, and to backfill projects saved before this
+        // was a shared setting (see the migration in loadProjectFromSheet).
+        function defaultNavStyle() {
+            return {
+                buttonColor: "#3b82f6", buttonTextColor: "#ffffff", buttonBottomColor: "#2563eb",
+                buttonInactiveColor: "#cbd5e1", buttonInactiveTextColor: "#475569", buttonInactiveBottomColor: "#94a3b8",
+                buttonFontSize: 14, buttonRadiusTL: 6, buttonRadiusTR: 6, buttonRadiusBR: 6, buttonRadiusBL: 6,
+                buttonPaddingX: 20, buttonPaddingY: 8, buttonWidth: 0, buttonTextAlign: "center"
+            };
+        }
+
+        function executeNewProject() {
+            const newName = document.getElementById('new-project-name-input').value.trim();
+            if (!newName) {
+                showToast('<i class="fa-solid fa-circle-exclamation"></i>', 'Please enter a project name.', 'red');
+                return;
+            }
+            
+            currentProjectName = newName;
+            document.getElementById('display-project-name').innerText = currentProjectName;
+            closeNewProjectModal();
+            
+            slides = [{ id: "slide-0", label: "Slide 1", elements: [] }];
+            canvasSettings = { bgColor: "#ffffff", appBgColor: "#f3f4f6", showBorder: true, showShadow: true, width: 1920, height: 1080, snapToGrid: true, navPosition: 'bottom', navAlignment: 'center', navGap: 12, ...defaultNavStyle() };
+            currentSlideIndex = 0;
+            selectedElementId = null;
+            idCounter = 1;
+            canvasLayer.innerHTML = "";
+            activeDOMNodes = {};
+            
+            hideStartupScreen();
+            init();
+            
+            // Full UI reset update
+            renderWorkspaceTree();
+            renderSlideSettings();
+            renderSlide(currentSlideIndex);
+            updatePropertiesPanel();
+            switchTab('tab-workspace');
+            showToast('<i class="fa-solid fa-file-circle-check"></i>', 'New project workspace initiated!', 'green');
+        }
+
+        /**
+         * SAVE PROJECT (via storage-connector.js -> Apps Script -> GitHub)
+         */
+        async function saveToGoogleSheet() {
+            const apiEndpoint = getApiUrl();
+            if (!apiEndpoint || apiEndpoint.includes('PASTE_YOUR')) {
+                showToast('', 'Disconnected: set STORAGE_ENDPOINT in the code.', 'red');
+                return;
+            }
+            if (slides.length === 0) {
+                showToast('', 'Cannot save an empty project.', 'red');
+                return;
+            }
+
+            if (!currentProjectName || currentProjectName === "Untitled Project") {
+                openSaveAsModal();
+                return;
+            }
+
+            const pending = Shell.toast('Saving to GitHub…', 'pending');
+            try {
+                await Storage.saveProject(TOOL_ID, currentProjectName, { slides, canvasSettings });
+                pending.remove();
+                showToast('', `Project "${currentProjectName}" saved!`, 'green');
+            } catch (error) {
+                console.error("Save Error:", error);
+                pending.remove();
+                showToast('', `Save failed: ${error.message}`, 'red');
+            }
+        }
+
+        /**
+         * FETCH PROJECT LIST (via storage-connector.js -> Apps Script -> GitHub)
+         */
+        async function fetchProjectsFromSheet() {
+            const apiEndpoint = getApiUrl();
+            if (!apiEndpoint || apiEndpoint.includes('PASTE_YOUR')) {
+                showToast('', 'Disconnected: set STORAGE_ENDPOINT in the code.', 'red');
+                return;
+            }
+
+            const pending = Shell.toast('Fetching projects…', 'pending');
+            try {
+                const result = await Storage.listProjects(TOOL_ID);
+                pending.remove();
+                const listContainer = document.getElementById('project-list-items');
+                Shell.renderProjectList(listContainer, result.projects, (name) => loadProjectFromSheet(name));
+                openProjectListModal();
+            } catch (error) {
+                console.error("Fetch Error:", error);
+                pending.remove();
+                showToast('', `Fetch failed: ${error.message}`, 'red');
+            }
+        }
+
+        /**
+         * LOAD SPECIFIC PROJECT
+         */
+        async function loadProjectFromSheet(projectName) {
+            closeProjectListModal();
+            const apiEndpoint = getApiUrl();
+            if (!apiEndpoint || apiEndpoint.includes('PASTE_YOUR')) return;
+
+            const pending = Shell.toast(`Loading "${projectName}"...`, 'pending');
+            try {
+                const result = await Storage.loadProject(TOOL_ID, projectName);
+                pending.remove();
+                const projectData = result.content;
+
+                slides = projectData.slides;
+                canvasSettings = projectData.canvasSettings || { bgColor: "#ffffff", appBgColor: "#f3f4f6", showBorder: true, showShadow: true, width: 1920, height: 1080, snapToGrid: true, navPosition: 'bottom', navAlignment: 'center', navGap: 12, ...defaultNavStyle() };
+
+                // MIGRATION: projects saved before nav button styling was
+                // shared used to store it per-slide instead. If this
+                // project predates that (no buttonColor on canvasSettings
+                // yet), backfill canvasSettings from the first slide's old
+                // values so the look doesn't change on load, then every
+                // future edit goes through the shared setting.
+                if (canvasSettings.buttonColor === undefined) {
+                    const legacy = slides[0] || {};
+                    canvasSettings = { ...canvasSettings, ...defaultNavStyle(), ...Object.fromEntries(
+                        Object.entries(legacy).filter(([k]) => k.startsWith('button'))
+                    ) };
+                }
+
+                currentProjectName = projectName;
+                document.getElementById('display-project-name').innerText = currentProjectName;
+
+                currentSlideIndex = 0;
+                selectedElementId = null;
+
+                let maxId = 0;
+                slides.forEach(slide => {
+                    slide.elements.forEach(elem => {
+                        if (elem.id && elem.id.startsWith('elem-')) {
+                            const num = parseInt(elem.id.split('-')[1]);
+                            if (!isNaN(num) && num > maxId) maxId = num;
+                        }
+                    });
+                });
+                idCounter = maxId + 1;
+
+                canvasLayer.innerHTML = "";
+                activeDOMNodes = {};
+
+                hideStartupScreen();
+                init();
+
+                renderWorkspaceTree();
+                renderSlideSettings();
+                renderSlide(currentSlideIndex);
+                updatePropertiesPanel();
+
+                switchTab('tab-workspace');
+                showToast('', `Project "${projectName}" successfully loaded!`, 'green');
+            } catch (error) {
+                console.error("Load Error:", error);
+                pending.remove();
+                showToast('', `Load failed: ${error.message}`, 'red');
+            }
+        }
+
+        function openProjectListModal() { document.getElementById('project-list-modal').classList.add('active'); }
+        function closeProjectListModal() { document.getElementById('project-list-modal').classList.remove('active'); }
+
+        function updateCanvasSetting(key, value) {
+            canvasSettings[key] = value;
+            applyCanvasSettings();
+            if (key === 'snapToGrid') renderSlide(currentSlideIndex);
+            
+            // Re-render slide settings if nav positions changed to update live preview layout correctly
+            if (key === 'navPosition' || key === 'navAlignment' || key === 'navGap') {
+                renderSlideSettings();
+            }
+            updateChevronStyles();
+            updateChevronState();
+        }
+        
+        function applyCanvasSettings() {
+            document.getElementById("canvas-area").style.backgroundColor = canvasSettings.appBgColor || "#f3f4f6";
+
+            const wrapper = document.getElementById("drop-zone");
+            wrapper.style.backgroundColor = canvasSettings.bgColor;
+            wrapper.style.border = canvasSettings.showBorder !== false ? "2px solid #e5e7eb" : "none";
+            wrapper.style.boxShadow = canvasSettings.showShadow !== false ? "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)" : "none";
+            
+            const w = canvasSettings.width || 1920;
+            const h = canvasSettings.height || 1080;
+            
+            wrapper.style.aspectRatio = `${w} / ${h}`;
+            
+            const svg = document.getElementById("svg-canvas");
+            svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+            
+            const gridRect = document.getElementById("canvas-grid-rect");
+            if (gridRect) {
+                gridRect.setAttribute("width", w);
+                gridRect.setAttribute("height", h);
+            }
+            
+            // Global Nav Layout logic
+            const previewWrapper = document.getElementById("player-preview-wrapper");
+            const navOuter = document.getElementById("nav-outer-container");
+            const navContainer = document.getElementById("nav-preview-container");
+            const pos = canvasSettings.navPosition || 'bottom';
+            const align = canvasSettings.navAlignment || 'center';
+            const gap = canvasSettings.navGap !== undefined ? canvasSettings.navGap : 12;
+            
+            // Reset wrapper classes
+            previewWrapper.className = "flex w-full max-w-[1200px] gap-6 transition-all duration-300 ";
+            navOuter.className = "flex items-center gap-3 w-full select-none ";
+            navContainer.className = "flex transition-transform duration-300 ease-out whitespace-nowrap ";
+            navContainer.style.gap = gap + 'px';
+            
+            if (pos === 'bottom') {
+                previewWrapper.classList.add('flex-col', 'items-center');
+                navOuter.classList.add('flex-row', 'w-full');
+                navContainer.classList.add('flex-row');
+            } else if (pos === 'top') {
+                previewWrapper.classList.add('flex-col-reverse', 'items-center');
+                navOuter.classList.add('flex-row', 'w-full');
+                navContainer.classList.add('flex-row');
+            } else if (pos === 'left') {
+                previewWrapper.classList.add('flex-row-reverse', 'items-center', 'justify-center');
+                navOuter.classList.add('flex-col', 'h-[80%]');
+                navContainer.classList.add('flex-col');
+            } else if (pos === 'right') {
+                previewWrapper.classList.add('flex-row', 'items-center', 'justify-center');
+                navOuter.classList.add('flex-col', 'h-[80%]');
+                navContainer.classList.add('flex-col');
+            }
+
+            // Alignment
+            if (align === 'start') navOuter.style.justifyContent = 'flex-start';
+            else if (align === 'end') navOuter.style.justifyContent = 'flex-end';
+            else navOuter.style.justifyContent = 'center';
+        }
+
+        /**
+         * CHEVRON PAGINATION LOGIC
+         */
+        function scrollNavPreview(dir) {
+            const scrollWin = document.getElementById("nav-scroll-window");
+            const container = document.getElementById("nav-preview-container");
+            const pos = canvasSettings.navPosition || 'bottom';
+            const step = 150; // pixels to scroll per click
+            
+            if (pos === 'left' || pos === 'right') {
+                const maxScroll = Math.max(0, container.scrollHeight - scrollWin.clientHeight);
+                navScrollOffset = Math.max(0, Math.min(navScrollOffset + dir * step, maxScroll));
+                container.style.transform = `translateY(-${navScrollOffset}px)`;
+            } else {
+                const maxScroll = Math.max(0, container.scrollWidth - scrollWin.clientWidth);
+                navScrollOffset = Math.max(0, Math.min(navScrollOffset + dir * step, maxScroll));
+                container.style.transform = `translateX(-${navScrollOffset}px)`;
+            }
+            updateChevronState();
+        }
+
+        function updateChevronState() {
+            const scrollWin = document.getElementById("nav-scroll-window");
+            const container = document.getElementById("nav-preview-container");
+            const prevBtn = document.getElementById("nav-chevron-prev");
+            const nextBtn = document.getElementById("nav-chevron-next");
+            if (!scrollWin || !container || !prevBtn || !nextBtn) return;
+            
+            const pos = canvasSettings.navPosition || 'bottom';
+            let isOverflow = false;
+            let currentScroll = navScrollOffset;
+            let maxScroll = 0;
+            
+            if (pos === 'left' || pos === 'right') {
+                isOverflow = container.scrollHeight > scrollWin.clientHeight;
+                maxScroll = Math.max(0, container.scrollHeight - scrollWin.clientHeight);
+            } else {
+                isOverflow = container.scrollWidth > scrollWin.clientWidth;
+                maxScroll = Math.max(0, container.scrollWidth - scrollWin.clientWidth);
+            }
+            
+            if (!isOverflow) {
+                prevBtn.style.display = 'none';
+                nextBtn.style.display = 'none';
+                container.style.transform = 'none';
+                navScrollOffset = 0;
+                scrollWin.style.flexGrow = '0';
+            } else {
+                prevBtn.style.display = 'flex';
+                nextBtn.style.display = 'flex';
+                scrollWin.style.flexGrow = '1';
+                
+                // Disable/Fade buttons if at boundaries
+                prevBtn.style.opacity = currentScroll <= 0 ? '0.3' : '1';
+                prevBtn.style.pointerEvents = currentScroll <= 0 ? 'none' : 'auto';
+                nextBtn.style.opacity = currentScroll >= maxScroll ? '0.3' : '1';
+                nextBtn.style.pointerEvents = currentScroll >= maxScroll ? 'none' : 'auto';
+            }
+        }
+
+        function updateChevronStyles() {
+            const prevBtn = document.getElementById("nav-chevron-prev");
+            const nextBtn = document.getElementById("nav-chevron-next");
+            if (!prevBtn || !nextBtn) return;
+            
+            const bgColor = canvasSettings.chevronBgColor || "#ffffff";
+            const iconColor = canvasSettings.chevronIconColor || "#4b5563";
+            const hoverBgColor = canvasSettings.chevronHoverBgColor || "#f3f4f6";
+            const radius = canvasSettings.chevronRadius !== undefined ? canvasSettings.chevronRadius : 8;
+            const size = canvasSettings.chevronSize || 36;
+            
+            [prevBtn, nextBtn].forEach(btn => {
+                btn.style.backgroundColor = bgColor;
+                btn.style.color = iconColor;
+                btn.style.borderRadius = `${radius}px`;
+                btn.style.width = `${size}px`;
+                btn.style.height = `${size}px`;
+                
+                // Hover binding
+                btn.onmouseenter = () => btn.style.backgroundColor = hoverBgColor;
+                btn.onmouseleave = () => btn.style.backgroundColor = bgColor;
+            });
+            
+            const pos = canvasSettings.navPosition || 'bottom';
+            const prevIcon = document.getElementById("chevron-prev-icon");
+            const nextIcon = document.getElementById("chevron-next-icon");
+            if(prevIcon && nextIcon) {
+                if (pos === 'left' || pos === 'right') {
+                    prevIcon.className = "fa-solid fa-chevron-up";
+                    nextIcon.className = "fa-solid fa-chevron-down";
+                } else {
+                    prevIcon.className = "fa-solid fa-chevron-left";
+                    nextIcon.className = "fa-solid fa-chevron-right";
+                }
+            }
+        }
+
+        /**
+         * UNIFIED WORKSPACE TREE RENDERER (Slides + Nested Layers)
+         */
+        function renderWorkspaceTree() {
+            const list = document.getElementById("workspace-tree");
+            list.innerHTML = "";
+            
+            if (slides.length === 0) {
+                list.innerHTML = `<div class="text-center text-sm text-gray-500 py-4 font-medium">No slides available</div>`;
+                return;
+            }
+
+            slides.forEach((slide, sIdx) => {
+                const isSlideActive = (sIdx === currentSlideIndex);
+                
+                const slideDiv = document.createElement("div");
+                slideDiv.className = `flex flex-col border rounded-xl overflow-hidden mb-3 transition-all ${isSlideActive ? 'border-indigo-300 shadow-md ring-1 ring-indigo-100 bg-white' : 'border-gray-200 bg-white hover:border-indigo-200 shadow-sm'}`;
+
+                // Slide Header Block
+                const slideHeader = document.createElement("div");
+                slideHeader.className = `flex justify-between items-center p-3 cursor-pointer select-none transition ${isSlideActive ? 'bg-indigo-50' : 'bg-white hover:bg-gray-50'}`;
+                slideHeader.onclick = () => selectSlide(sIdx);
+                
+                const cleanLabel = slide.label.replace(/<[^>]*>?/gm, '') || "Untitled Slide";
+                
+                slideHeader.innerHTML = `
+                    <div class="flex items-center gap-2 flex-1 truncate">
+                        <i class="fa-solid fa-chevron-${isSlideActive ? 'down' : 'right'} text-[10px] w-3 text-center ${isSlideActive ? 'text-indigo-600' : 'text-gray-400'}"></i>
+                        <div class="font-bold text-sm truncate ${isSlideActive ? 'text-indigo-900' : 'text-gray-700'}">${sIdx + 1}. ${cleanLabel}</div>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0 ml-2">
+                        <button onclick="event.stopPropagation(); moveSlide('up', ${sIdx})" class="w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-white border border-transparent hover:border-gray-200 transition" title="Move Slide Up" ${sIdx === 0 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}><i class="fa-solid fa-arrow-up text-[10px]"></i></button>
+                        <button onclick="event.stopPropagation(); moveSlide('down', ${sIdx})" class="w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-white border border-transparent hover:border-gray-200 transition" title="Move Slide Down" ${sIdx === slides.length - 1 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}><i class="fa-solid fa-arrow-down text-[10px]"></i></button>
+                        <div class="w-px h-4 bg-gray-200 mx-0.5"></div>
+                        <button onclick="event.stopPropagation(); deleteSlide(${sIdx})" class="w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:text-rose-600 hover:bg-white border border-transparent hover:border-gray-200 transition" title="Delete Slide" ${slides.length === 1 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}><i class="fa-solid fa-trash-can text-[10px]"></i></button>
+                    </div>
+                `;
+                slideDiv.appendChild(slideHeader);
+
+                // Nested Layers Block (Only show if slide is active)
+                if (isSlideActive) {
+                    const layersContainer = document.createElement("div");
+                    layersContainer.className = "flex flex-col p-2 gap-1 border-t border-indigo-100 bg-white";
+                    
+                    if (slide.elements.length === 0) {
+                        layersContainer.innerHTML = `<div class="text-[11px] text-gray-400 text-center italic py-3 font-medium">Slide is empty. Add elements above.</div>`;
+                    } else {
+                        // Render elements top-to-bottom visually (reverse array z-index)
+                        for (let i = slide.elements.length - 1; i >= 0; i--) {
+                            const elem = slide.elements[i];
+                            const isSelected = elem.id === selectedElementId;
+                            
+                            const layerDiv = document.createElement("div");
+                            layerDiv.className = `flex justify-between items-center px-3 py-2 rounded-lg border text-xs cursor-pointer transition ${isSelected ? 'bg-indigo-50 border-indigo-200 text-indigo-800 shadow-sm' : 'bg-white border-transparent hover:bg-gray-50 text-gray-600 hover:border-gray-200'}`;
+                            layerDiv.onclick = (e) => { e.stopPropagation(); selectElement(elem.id); };
+                            
+                            let name = elem.name;
+                            if (!name) {
+                                name = elem.type.charAt(0).toUpperCase() + elem.type.slice(1);
+                                if (elem.type === 'text') {
+                                    const stripped = elem.content.replace(/<[^>]*>?/gm, '');
+                                    name += ` ("${stripped.substring(0, 12)}${stripped.length > 12 ? '...' : ''}")`;
+                                }
+                            }
+                            
+                            let iconClass = 'fa-square';
+                            if (elem.type === 'text') iconClass = 'fa-font';
+                            else if (elem.type === 'arrow') iconClass = 'fa-arrow-down';
+                            else if (elem.type === 'icon') iconClass = 'fa-star';
+                            
+                            layerDiv.innerHTML = `
+                                <div class="truncate flex-1 pr-2 flex items-center gap-2">
+                                    <div class="w-5 h-5 rounded flex items-center justify-center ${isSelected ? 'bg-indigo-100' : 'bg-gray-100'}"><i class="fa-solid ${iconClass} text-[10px] ${isSelected ? 'text-indigo-600' : 'text-gray-400'}"></i></div>
+                                    <span class="font-medium ${isSelected ? 'text-indigo-900' : 'text-gray-700'}">${name}</span>
+                                </div>
+                                <div class="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition" style="opacity: ${isSelected ? 1 : ''}">
+                                    <button onclick="event.stopPropagation(); moveLayer('up', '${elem.id}')" class="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-indigo-600 hover:bg-white border border-transparent hover:border-gray-200 transition" title="Bring Forward" ${i === slide.elements.length - 1 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}><i class="fa-solid fa-arrow-up text-[10px]"></i></button>
+                                    <button onclick="event.stopPropagation(); moveLayer('down', '${elem.id}')" class="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-indigo-600 hover:bg-white border border-transparent hover:border-gray-200 transition" title="Send Back" ${i === 0 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''}><i class="fa-solid fa-arrow-down text-[10px]"></i></button>
+                                </div>
+                            `;
+                            layerDiv.classList.add('group');
+                            layersContainer.appendChild(layerDiv);
+                        }
+                    }
+                    slideDiv.appendChild(layersContainer);
+                }
+                
+                list.appendChild(slideDiv);
+            });
+            
+            updateCanvasNavPreview();
+            setTimeout(updateChevronState, 50);
+        }
+
+        function renderSlideSettings() {
+            const panel = document.getElementById("slide-settings-panel");
+            if (slides.length === 0) { panel.innerHTML = ''; return; }
+            const slide = slides[currentSlideIndex];
+            
+            const globalSettingsHTML = `
+                <div class="mb-6 bg-indigo-50/50 p-4 border border-indigo-100 rounded-xl">
+                    <h3 class="font-bold text-indigo-900 text-sm mb-3"><i class="fa-solid fa-arrows-to-circle mr-1.5"></i> Global Navigation Layout</h3>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-[10px] font-bold text-indigo-700 uppercase tracking-wider mb-1.5">Position</label>
+                            <select onchange="updateCanvasSetting('navPosition', this.value)" class="w-full border border-indigo-200 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 bg-white shadow-sm font-semibold">
+                                <option value="top" ${canvasSettings.navPosition === 'top' ? 'selected' : ''}>Top</option>
+                                <option value="bottom" ${(!canvasSettings.navPosition || canvasSettings.navPosition === 'bottom') ? 'selected' : ''}>Bottom</option>
+                                <option value="left" ${canvasSettings.navPosition === 'left' ? 'selected' : ''}>Left</option>
+                                <option value="right" ${canvasSettings.navPosition === 'right' ? 'selected' : ''}>Right</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-indigo-700 uppercase tracking-wider mb-1.5">Alignment</label>
+                            <select onchange="updateCanvasSetting('navAlignment', this.value)" class="w-full border border-indigo-200 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 bg-white shadow-sm font-semibold">
+                                <option value="start" ${canvasSettings.navAlignment === 'start' ? 'selected' : ''}>Start (Left/Top)</option>
+                                <option value="center" ${(!canvasSettings.navAlignment || canvasSettings.navAlignment === 'center') ? 'selected' : ''}>Center</option>
+                                <option value="end" ${canvasSettings.navAlignment === 'end' ? 'selected' : ''}>End (Right/Bottom)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-indigo-700 uppercase tracking-wider mb-1.5">Spacing (px)</label>
+                            <input type="number" value="${canvasSettings.navGap !== undefined ? canvasSettings.navGap : 12}" oninput="updateCanvasSetting('navGap', parseInt(this.value) || 0)" class="w-full border border-indigo-200 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 bg-white shadow-sm font-semibold">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Customizable Chevron Styles -->
+                <div class="mb-6 bg-gray-50 p-4 border border-gray-200 rounded-xl">
+                    <h3 class="font-bold text-gray-700 text-sm mb-3"><i class="fa-solid fa-icons mr-1.5"></i> Chevron (Scroller) Styling</h3>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-[9px] font-semibold text-gray-500 mb-1">Background</label>
+                            <input type="color" value="${canvasSettings.chevronBgColor || '#ffffff'}" oninput="updateCanvasSetting('chevronBgColor', this.value); updateChevronStyles();" class="w-full border rounded h-8 cursor-pointer p-0.5">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-semibold text-gray-500 mb-1">Icon Color</label>
+                            <input type="color" value="${canvasSettings.chevronIconColor || '#4b5563'}" oninput="updateCanvasSetting('chevronIconColor', this.value); updateChevronStyles();" class="w-full border rounded h-8 cursor-pointer p-0.5">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-semibold text-gray-500 mb-1">Hover Color</label>
+                            <input type="color" value="${canvasSettings.chevronHoverBgColor || '#f3f4f6'}" oninput="updateCanvasSetting('chevronHoverBgColor', this.value); updateChevronStyles();" class="w-full border rounded h-8 cursor-pointer p-0.5">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-3">
+                        <div>
+                            <label class="block text-[9px] font-semibold text-gray-500 mb-1">Size (px)</label>
+                            <input type="number" value="${canvasSettings.chevronSize || 36}" oninput="updateCanvasSetting('chevronSize', parseInt(this.value) || 36); updateChevronStyles();" class="w-full border rounded p-1 text-xs outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-semibold text-gray-500 mb-1">Radius (px)</label>
+                            <input type="number" value="${canvasSettings.chevronRadius !== undefined ? canvasSettings.chevronRadius : 8}" oninput="updateCanvasSetting('chevronRadius', parseInt(this.value) || 0); updateChevronStyles();" class="w-full border rounded p-1 text-xs outline-none text-center">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3"><label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Navigation Button Style</label><p class="text-[10px] text-gray-400 mt-0.5">Shared across every slide</p></div>
+            `;
+            
+            panel.innerHTML = globalSettingsHTML + `
+                <div class="mb-5 p-4 bg-gray-100 rounded-lg flex justify-center items-center gap-3 border border-gray-200 min-h-[80px] overflow-hidden">
+                    <button id="btn-preview" style="transition: all 0.2s; border-bottom-width: 4px; border-bottom-style: solid; line-height: 1.2;" class="font-bold shadow-sm">Preview</button>
+                    <button id="btn-preview-inactive" style="transition: all 0.2s; border-bottom-width: 4px; border-bottom-style: solid; line-height: 1.2;" class="font-bold shadow-sm opacity-90">Preview</button>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Slide Name (Button Label)</label>
+                    <textarea rows="2" oninput="updateSlideSetting('label', this.value)" class="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 font-mono">${slide.label}</textarea>
+                </div>
+                <div class="mb-1 mt-6"><label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Active State Colors</label></div>
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Background</label>
+                        <input type="color" value="${canvasSettings.buttonColor || '#3b82f6'}" oninput="updateNavStyle('buttonColor', this.value)" class="w-full border rounded h-8 outline-none cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Text</label>
+                        <input type="color" value="${canvasSettings.buttonTextColor || '#ffffff'}" oninput="updateNavStyle('buttonTextColor', this.value)" class="w-full border rounded h-8 outline-none cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Border</label>
+                        <input type="color" value="${canvasSettings.buttonBottomColor || '#2563eb'}" oninput="updateNavStyle('buttonBottomColor', this.value)" class="w-full border rounded h-8 outline-none cursor-pointer">
+                    </div>
+                </div>
+                <div class="mb-1"><label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Inactive State Colors</label></div>
+                <div class="grid grid-cols-3 gap-3 mb-6">
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Background</label>
+                        <input type="color" value="${canvasSettings.buttonInactiveColor || '#cbd5e1'}" oninput="updateNavStyle('buttonInactiveColor', this.value)" class="w-full border rounded h-8 outline-none cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Text</label>
+                        <input type="color" value="${canvasSettings.buttonInactiveTextColor || '#475569'}" oninput="updateNavStyle('buttonInactiveTextColor', this.value)" class="w-full border rounded h-8 outline-none cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Border</label>
+                        <input type="color" value="${canvasSettings.buttonInactiveBottomColor || '#94a3b8'}" oninput="updateNavStyle('buttonInactiveBottomColor', this.value)" class="w-full border rounded h-8 outline-none cursor-pointer">
+                    </div>
+                </div>
+                
+                <div class="mb-1"><label class="text-xs font-bold text-gray-500 uppercase tracking-wider">Layout & Size</label></div>
+                <div class="grid grid-cols-4 gap-2 mb-4">
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Pad X</label>
+                        <input type="number" value="${canvasSettings.buttonPaddingX !== undefined ? canvasSettings.buttonPaddingX : 20}" oninput="updateNavStyle('buttonPaddingX', parseInt(this.value) || 0)" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs outline-none focus:border-indigo-500 text-center">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Pad Y</label>
+                        <input type="number" value="${canvasSettings.buttonPaddingY !== undefined ? canvasSettings.buttonPaddingY : 8}" oninput="updateNavStyle('buttonPaddingY', parseInt(this.value) || 0)" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs outline-none focus:border-indigo-500 text-center">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Width (0=auto)</label>
+                        <input type="number" value="${canvasSettings.buttonWidth || 0}" oninput="updateNavStyle('buttonWidth', parseInt(this.value) || 0)" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs outline-none focus:border-indigo-500 text-center" title="0 means auto width">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-semibold text-gray-600 mb-1">Align</label>
+                        <select onchange="updateNavStyle('buttonTextAlign', this.value)" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs outline-none focus:border-indigo-500">
+                            <option value="left" ${canvasSettings.buttonTextAlign === 'left' ? 'selected' : ''}>Left</option>
+                            <option value="center" ${(!canvasSettings.buttonTextAlign || canvasSettings.buttonTextAlign === 'center') ? 'selected' : ''}>Center</option>
+                            <option value="right" ${canvasSettings.buttonTextAlign === 'right' ? 'selected' : ''}>Right</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-[10px] font-semibold text-gray-600 mb-1">Font Size (px)</label>
+                    <input type="number" value="${canvasSettings.buttonFontSize || 14}" oninput="updateNavStyle('buttonFontSize', parseInt(this.value) || 14)" class="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-semibold text-gray-600 mb-1">Corner Radii (TL, TR, BR, BL)</label>
+                    <div class="grid grid-cols-4 gap-2">
+                        <input type="number" value="${canvasSettings.buttonRadiusTL !== undefined ? canvasSettings.buttonRadiusTL : 6}" oninput="updateNavStyle('buttonRadiusTL', parseInt(this.value) || 0)" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs outline-none focus:border-indigo-500 text-center" title="Top Left">
+                        <input type="number" value="${canvasSettings.buttonRadiusTR !== undefined ? canvasSettings.buttonRadiusTR : 6}" oninput="updateNavStyle('buttonRadiusTR', parseInt(this.value) || 0)" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs outline-none focus:border-indigo-500 text-center" title="Top Right">
+                        <input type="number" value="${canvasSettings.buttonRadiusBR !== undefined ? canvasSettings.buttonRadiusBR : 6}" oninput="updateNavStyle('buttonRadiusBR', parseInt(this.value) || 0)" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs outline-none focus:border-indigo-500 text-center" title="Bottom Right">
+                        <input type="number" value="${canvasSettings.buttonRadiusBL !== undefined ? canvasSettings.buttonRadiusBL : 6}" oninput="updateNavStyle('buttonRadiusBL', parseInt(this.value) || 0)" class="w-full border border-gray-300 rounded-lg p-1.5 text-xs outline-none focus:border-indigo-500 text-center" title="Bottom Left">
+                    </div>
+                </div>
+            `;
+            updateLivePreview();
+        }
+
+        function updateCanvasNavPreview() {
+            const container = document.getElementById("nav-preview-container");
+            if (!container) return;
+            container.innerHTML = "";
+            if(slides.length === 0) return;
+            
+            slides.forEach((s, i) => {
+                const btn = document.createElement("button");
+                btn.className = "nav-btn" + (i === currentSlideIndex ? " active" : "");
+                btn.innerHTML = s.label || "Untitled";
+                btn.onclick = () => selectSlide(i);
+
+                const cs = canvasSettings;
+                const tl = cs.buttonRadiusTL !== undefined ? cs.buttonRadiusTL : 6;
+                const tr = cs.buttonRadiusTR !== undefined ? cs.buttonRadiusTR : 6;
+                const br = cs.buttonRadiusBR !== undefined ? cs.buttonRadiusBR : 6;
+                const bl = cs.buttonRadiusBL !== undefined ? cs.buttonRadiusBL : 6;
+                btn.style.borderRadius = `${tl}px ${tr}px ${br}px ${bl}px`;
+                btn.style.fontSize = `${cs.buttonFontSize || 14}px`;
+
+                const padX = cs.buttonPaddingX !== undefined ? cs.buttonPaddingX : 20;
+                const padY = cs.buttonPaddingY !== undefined ? cs.buttonPaddingY : 8;
+                btn.style.padding = `${padY}px ${padX}px`;
+                btn.style.textAlign = cs.buttonTextAlign || "center";
+                btn.style.width = cs.buttonWidth ? `${cs.buttonWidth}px` : "auto";
+
+                if (i === currentSlideIndex) {
+                    btn.style.backgroundColor = cs.buttonColor || "#3b82f6";
+                    btn.style.color = cs.buttonTextColor || "#ffffff";
+                    btn.style.borderBottomColor = cs.buttonBottomColor || "#2563eb";
+                } else {
+                    btn.style.backgroundColor = cs.buttonInactiveColor || "#cbd5e1";
+                    btn.style.color = cs.buttonInactiveTextColor || "#475569";
+                    btn.style.borderBottomColor = cs.buttonInactiveBottomColor || "#94a3b8";
+                }
+
+                container.appendChild(btn);
+            });
+        }
+
+        function updateLivePreview() {
+            const btn = document.getElementById("btn-preview");
+            const btnInactive = document.getElementById("btn-preview-inactive");
+            if (!btn || !btnInactive || slides.length === 0) return;
+            const s = slides[currentSlideIndex]; // label only — style is shared, not per-slide
+            const cs = canvasSettings;
+
+            const radiusStr = `${cs.buttonRadiusTL !== undefined ? cs.buttonRadiusTL : 6}px ${cs.buttonRadiusTR !== undefined ? cs.buttonRadiusTR : 6}px ${cs.buttonRadiusBR !== undefined ? cs.buttonRadiusBR : 6}px ${cs.buttonRadiusBL !== undefined ? cs.buttonRadiusBL : 6}px`;
+            const padStr = `${cs.buttonPaddingY !== undefined ? cs.buttonPaddingY : 8}px ${cs.buttonPaddingX !== undefined ? cs.buttonPaddingX : 20}px`;
+            const widthStr = cs.buttonWidth ? `${cs.buttonWidth}px` : "auto";
+            const alignStr = cs.buttonTextAlign || "center";
+            const fontStr = `${cs.buttonFontSize || 14}px`;
+            btn.innerHTML = s.label; 
+            btn.style.backgroundColor = cs.buttonColor || "#3b82f6";
+            btn.style.color = cs.buttonTextColor || "#ffffff";
+            btn.style.borderBottomColor = cs.buttonBottomColor || "#2563eb";
+            btn.style.fontSize = fontStr;
+            btn.style.borderRadius = radiusStr;
+            btn.style.padding = padStr;
+            btn.style.textAlign = alignStr;
+            btn.style.width = widthStr;
+            btnInactive.innerHTML = s.label; 
+            btnInactive.style.backgroundColor = cs.buttonInactiveColor || "#cbd5e1";
+            btnInactive.style.color = cs.buttonInactiveTextColor || "#475569";
+            btnInactive.style.borderBottomColor = cs.buttonInactiveBottomColor || "#94a3b8";
+            btnInactive.style.fontSize = fontStr;
+            btnInactive.style.borderRadius = radiusStr;
+            btnInactive.style.padding = padStr;
+            btnInactive.style.textAlign = alignStr;
+            btnInactive.style.width = widthStr;
+            
+            updateCanvasNavPreview();
+        }
+        
+        function updateSlideSetting(key, value) {
+            slides[currentSlideIndex][key] = value;
+            if (key === 'label') renderWorkspaceTree();
+            updateLivePreview();
+        }
+        // Nav button styling is shared across the whole project (not
+        // per-slide) — see defaultNavStyle() — so this writes to
+        // canvasSettings instead of the current slide.
+        function updateNavStyle(key, value) {
+            canvasSettings[key] = value;
+            updateLivePreview();
+            updateChevronState();
+        }
+        function selectSlide(index) {
+            if (index === currentSlideIndex) return;
+            selectElement(null);
+            
+            currentSlideIndex = index;
+            renderWorkspaceTree();
+            renderSlideSettings();
+            renderSlide(currentSlideIndex);
+        }
+        function addSlide() {
+            const previousSlide = slides[currentSlideIndex] || {};
+            const previousElements = previousSlide.elements ? JSON.parse(JSON.stringify(previousSlide.elements)) : [];
+            slides.push({
+                id: `slide-${Date.now()}`,
+                label: `Slide ${slides.length + 1}`,
+                elements: previousElements
+            });
+            selectSlide(slides.length - 1);
+        }
+        function deleteSlide(index) {
+            slides.splice(index, 1);
+            if (currentSlideIndex >= slides.length) currentSlideIndex = slides.length - 1;
+            renderWorkspaceTree();
+            renderSlideSettings();
+            renderSlide(currentSlideIndex);
+        }
+        function addElement(type) {
+            if(slides.length === 0) return;
+            const newId = `elem-${idCounter++}`;
+            const w = canvasSettings.width || 1920;
+            const h = canvasSettings.height || 1080;
+            const center = { x: Math.round(w / 2), y: Math.round(h / 2) }; 
+            let newElem;
+            if (type === 'text') {
+                newElem = { id: newId, name: "New Text", type: "text", x: center.x - 400, y: center.y - 100, width: 800, height: 200, content: "New Text Block", color: "#1f2937", fontSize: 52, fontWeight: "700", opacity: 1, align: "center", padding: 10 };
+            } else if (type === 'rect') {
+                newElem = { id: newId, name: "New Shape", type: "rect", x: center.x - 120, y: center.y - 60, width: 240, height: 120, fill: "#e1f6db", rx: 12, opacity: 1 };
+            } else if (type === 'arrow') {
+                newElem = { id: newId, name: "New Arrow", type: "arrow", x: center.x, y: center.y - 100, width: 100, height: 200, points: {x1: 50, y1: 0, x2: 50, y2: 150}, color: "#1f2937", opacity: 1 };
+            } else if (type === 'icon') {
+                newElem = { id: newId, name: "New Icon", type: "icon", iconName: "star", x: center.x - 40, y: center.y - 40, width: 80, height: 80, color: "#1f2937", opacity: 1 };
+            }
+            slides[currentSlideIndex].elements.push(newElem);
+            renderSlide(currentSlideIndex);
+            selectElement(newId);
+        }
+        function moveLayer(direction, id = selectedElementId) {
+            const arr = slides[currentSlideIndex].elements;
+            const idx = arr.findIndex(e => e.id === id);
+            if (idx === -1) return;
+            if (direction === 'up' && idx < arr.length - 1) {
+                [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+            } else if (direction === 'down' && idx > 0) {
+                [arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]];
+            }
+            renderSlide(currentSlideIndex);
+            renderWorkspaceTree();
+        }
+        
+        function createDOMNode(data) {
+            const group = document.createElementNS(svgNS, "g");
+            group.setAttribute("id", data.id);
+            group.setAttribute("class", "element-group draggable");
+            group.setAttribute("data-id", data.id);
+            gsap.set(group, { x: data.x, y: data.y, opacity: 0 }); 
+            
+            const bounds = document.createElementNS(svgNS, "rect");
+            bounds.setAttribute("class", "selection-border");
+            
+            // Dynamic bounds initialization (Crucial fix for arrow bounds)
+            if (data.type === 'arrow') {
+                const padding = 15;
+                const minX = Math.min(data.points.x1, data.points.x2);
+                const maxX = Math.max(data.points.x1, data.points.x2);
+                const minY = Math.min(data.points.y1, data.points.y2);
+                const maxY = Math.max(data.points.y1, data.points.y2);
+                bounds.setAttribute("x", minX - padding);
+                bounds.setAttribute("y", minY - padding);
+                bounds.setAttribute("width", maxX - minX + padding * 2);
+                bounds.setAttribute("height", maxY - minY + padding * 2);
+            } else {
+                bounds.setAttribute("x", 0);
+                bounds.setAttribute("y", 0);
+                bounds.setAttribute("width", data.width);
+                bounds.setAttribute("height", data.height);
+            }
+            
+            bounds.setAttribute("fill", "transparent");
+            bounds.setAttribute("rx", "8");
+            group.appendChild(bounds);
+            
+            let foreignObj, wrapper, shape, line, markerPath, iconSvg, iconPath;
+            if (data.type === 'text') {
+                foreignObj = document.createElementNS(svgNS, "foreignObject");
+                foreignObj.setAttribute("width", data.width);
+                foreignObj.setAttribute("height", data.height);
+                foreignObj.style.pointerEvents = "none"; 
+                wrapper = document.createElement("div");
+                wrapper.className = "canvas-text-content";
+                wrapper.innerHTML = data.content;
+                wrapper.style.color = data.color || "#1f2937";
+                wrapper.style.fontSize = `${data.fontSize || 52}px`;
+                wrapper.style.fontWeight = data.fontWeight || "700";
+                wrapper.style.opacity = data.opacity !== undefined ? data.opacity : 1;
+                
+                const align = data.align || "center";
+                wrapper.style.textAlign = align;
+                if (align === 'left' || align === 'justify') wrapper.style.justifyContent = 'flex-start';
+                else if (align === 'right') wrapper.style.justifyContent = 'flex-end';
+                else wrapper.style.justifyContent = 'center';
+                
+                wrapper.style.padding = `${data.padding !== undefined ? data.padding : 10}px`;
+                
+                foreignObj.appendChild(wrapper);
+                group.appendChild(foreignObj);
+            } else if (data.type === 'rect') {
+                shape = document.createElementNS(svgNS, "rect");
+                shape.setAttribute("width", data.width);
+                shape.setAttribute("height", data.height);
+                shape.setAttribute("fill", data.fill || "#e1f6db");
+                shape.setAttribute("rx", data.rx || 0);
+                shape.setAttribute("opacity", data.opacity !== undefined ? data.opacity : 1);
+                shape.style.pointerEvents = "none";
+                
+                group.appendChild(shape);
+            } else if (data.type === 'arrow') {
+                const defs = document.createElementNS(svgNS, "defs");
+                const marker = document.createElementNS(svgNS, "marker");
+                marker.setAttribute("id", "marker-" + data.id);
+                marker.setAttribute("markerWidth", "6");
+                marker.setAttribute("markerHeight", "6");
+                marker.setAttribute("refX", "4");
+                marker.setAttribute("refY", "3");
+                marker.setAttribute("orient", "auto");
+                
+                markerPath = document.createElementNS(svgNS, "path");
+                markerPath.setAttribute("d", "M 0 1 L 4 3 L 0 5 Z");
+                markerPath.setAttribute("fill", data.color || "#1f2937");
+                markerPath.setAttribute("stroke", data.color || "#1f2937");
+                markerPath.setAttribute("stroke-width", "1.5");
+                markerPath.setAttribute("stroke-linejoin", "round");
+                markerPath.setAttribute("opacity", data.opacity !== undefined ? data.opacity : 1);
+                
+                marker.appendChild(markerPath);
+                defs.appendChild(marker);
+                group.appendChild(defs);
+                line = document.createElementNS(svgNS, "line");
+                line.setAttribute("x1", data.points.x1);
+                line.setAttribute("y1", data.points.y1);
+                line.setAttribute("x2", data.points.x2);
+                line.setAttribute("y2", data.points.y2);
+                line.setAttribute("stroke", data.color || "#1f2937"); 
+                line.setAttribute("stroke-width", "8");
+                line.setAttribute("stroke-linecap", "round");
+                line.setAttribute("opacity", data.opacity !== undefined ? data.opacity : 1);
+                line.setAttribute("marker-end", `url(#marker-${data.id})`);
+                line.style.pointerEvents = "none";
+                group.appendChild(line);
+            } else if (data.type === 'icon') {
+                iconSvg = document.createElementNS(svgNS, "svg");
+                iconSvg.setAttribute("viewBox", "0 0 24 24");
+                iconSvg.setAttribute("width", data.width);
+                iconSvg.setAttribute("height", data.height);
+                iconSvg.setAttribute("fill", data.color || "#1f2937");
+                iconSvg.setAttribute("opacity", data.opacity !== undefined ? data.opacity : 1);
+                iconSvg.style.pointerEvents = "none";
+                
+                iconPath = document.createElementNS(svgNS, "path");
+                iconPath.setAttribute("d", ICON_PATHS[data.iconName] || ICON_PATHS['star']);
+                
+                iconSvg.appendChild(iconPath);
+                group.appendChild(iconSvg);
+            }
+            const handle = document.createElementNS(svgNS, "circle");
+            handle.setAttribute("class", "resize-handle");
+            handle.setAttribute("r", "6");
+            
+            if (data.type === 'arrow') {
+                handle.setAttribute("cx", data.points.x2);
+                handle.setAttribute("cy", data.points.y2);
+            } else {
+                handle.setAttribute("cx", data.width);
+                handle.setAttribute("cy", data.height);
+            }
+            group.appendChild(handle);
+            return { group, bounds, foreignObj, wrapper, shape, line, markerPath, iconSvg, iconPath, handle };
+        }
+        function renderSlide(index) {
+            if(slides.length === 0) return;
+            const elementsData = slides[index].elements;
+            const targetIds = elementsData.map(e => e.id);
+            for (const id in activeDOMNodes) {
+                if (!targetIds.includes(id)) {
+                    const node = activeDOMNodes[id];
+                    gsap.to(node.group, { opacity: 0, duration: 0.5, onComplete: () => node.group.remove() });
+                    delete activeDOMNodes[id];
+                }
+            }
+            elementsData.forEach(data => {
+                let node = activeDOMNodes[data.id];
+                const newOp = data.opacity !== undefined ? data.opacity : 1;
+                
+                if (node) {
+                    gsap.to(node.group, { x: data.x, y: data.y, opacity: 1, duration: 0.8, ease: "power3.inOut" });
+                    
+                    if (data.type === 'text') {
+                        if (node.wrapper.innerHTML !== data.content) node.wrapper.innerHTML = data.content;
+                        node.wrapper.style.color = data.color || "#1f2937";
+                        node.wrapper.style.fontWeight = data.fontWeight || "700";
+                        
+                        const align = data.align || "center";
+                        node.wrapper.style.textAlign = align;
+                        if (align === 'left' || align === 'justify') node.wrapper.style.justifyContent = 'flex-start';
+                        else if (align === 'right') node.wrapper.style.justifyContent = 'flex-end';
+                        else node.wrapper.style.justifyContent = 'center';
+                        
+                        node.wrapper.style.padding = `${data.padding !== undefined ? data.padding : 10}px`;
+                        gsap.to(node.wrapper, { fontSize: data.fontSize || 52, opacity: newOp, duration: 0.8 });
+                        gsap.to(node.bounds, { attr: { width: data.width, height: data.height }, duration: 0.8 });
+                        gsap.to(node.foreignObj, { attr: { width: data.width, height: data.height }, duration: 0.8 });
+                        gsap.to(node.handle, { attr: { cx: data.width, cy: data.height }, duration: 0.8 });
+                    } else if (data.type === 'rect') {
+                        gsap.to(node.shape, { attr: { width: data.width, height: data.height, fill: data.fill, rx: data.rx, opacity: newOp }, duration: 0.8 });
+                        gsap.to(node.bounds, { attr: { width: data.width, height: data.height }, duration: 0.8 });
+                        gsap.to(node.handle, { attr: { cx: data.width, cy: data.height }, duration: 0.8 });
+                    } else if (data.type === 'arrow') {
+                        gsap.to(node.line, { attr: { x1: data.points.x1, y1: data.points.y1, x2: data.points.x2, y2: data.points.y2, opacity: newOp }, stroke: data.color || "#1f2937", duration: 0.8 });
+                        if (node.markerPath) {
+                            gsap.to(node.markerPath, { attr: { fill: data.color || "#1f2937", stroke: data.color || "#1f2937", opacity: newOp }, duration: 0.8 });
+                        }
+                        gsap.to(node.handle, { attr: { cx: data.points.x2, cy: data.points.y2 }, duration: 0.8 });
+                        
+                        // Dynamically update bounds for animated arrows
+                        const padding = 15;
+                        const minX = Math.min(data.points.x1, data.points.x2);
+                        const maxX = Math.max(data.points.x1, data.points.x2);
+                        const minY = Math.min(data.points.y1, data.points.y2);
+                        const maxY = Math.max(data.points.y1, data.points.y2);
+                        gsap.to(node.bounds, { attr: { x: minX - padding, y: minY - padding, width: maxX - minX + padding * 2, height: maxY - minY + padding * 2 }, duration: 0.8 });
+                    } else if (data.type === 'icon') {
+                        gsap.to(node.bounds, { attr: { width: data.width, height: data.height }, duration: 0.8 });
+                        gsap.to(node.handle, { attr: { cx: data.width, cy: data.height }, duration: 0.8 });
+                        gsap.to(node.iconSvg, { attr: { width: data.width, height: data.height, fill: data.color || "#1f2937", opacity: newOp }, duration: 0.8 });
+                        if (node.iconPath && node.iconPath.getAttribute("d") !== ICON_PATHS[data.iconName]) {
+                            node.iconPath.setAttribute("d", ICON_PATHS[data.iconName] || ICON_PATHS['star']);
+                        }
+                    }
+                } else {
+                    node = createDOMNode(data);
+                    activeDOMNodes[data.id] = node;
+                    gsap.to(node.group, { opacity: 1, duration: 0.8, ease: "power3.inOut" });
+                }
+                canvasLayer.appendChild(node.group);
+            });
+            highlightSelectedNode();
+        }
+
+        function setupDragEvents() {
+            const svg = document.getElementById("svg-canvas");
+            
+            function getMousePos(evt) {
+                const CTM = svg.getScreenCTM();
+                return { x: (evt.clientX - CTM.e) / CTM.a, y: (evt.clientY - CTM.f) / CTM.d };
+            }
+            
+            svg.addEventListener('mousedown', (e) => {
+                const handle = e.target.closest('.resize-handle');
+                if (handle) {
+                    const group = handle.closest('.element-group');
+                    const id = group.getAttribute('data-id');
+                    if (id !== selectedElementId) return;
+                    isResizing = true;
+                    dragTarget = group;
+                    const elem = slides[currentSlideIndex].elements.find(el => el.id === id);
+                    dragStartData = { width: elem.width, height: elem.height, fontSize: elem.fontSize || 52 };
+                    return; 
+                }
+                
+                const target = e.target.closest('.draggable');
+                if (target) {
+                    const id = target.getAttribute('data-id');
+                    if (id !== selectedElementId) {
+                        selectElement(id); // Auto-select clicked element
+                    }
+                    isDragging = true;
+                    dragTarget = target;
+                    const mousePos = getMousePos(e);
+                    const x = gsap.getProperty(dragTarget, "x");
+                    const y = gsap.getProperty(dragTarget, "y");
+                    
+                    dragOffset = { x: mousePos.x - x, y: mousePos.y - y };
+                } else {
+                    // Clicked on blank canvas space -> deselect
+                    selectElement(null);
+                }
+            });
+            
+            window.addEventListener('mousemove', (e) => {
+                if (!dragTarget) return;
+                const mousePos = getMousePos(e);
+                
+                // Determine active grid sizing
+                const activeGridSize = canvasSettings.snapToGrid !== false ? GRID_SIZE : 1;
+                
+                if (isResizing) {
+                    const x = gsap.getProperty(dragTarget, "x");
+                    const y = gsap.getProperty(dragTarget, "y");
+                    const rawWidth = mousePos.x - x;
+                    const rawHeight = mousePos.y - y;
+                    const id = dragTarget.getAttribute('data-id');
+                    const elemData = slides[currentSlideIndex].elements.find(el => el.id === id);
+                    const node = activeDOMNodes[id];
+                    if (elemData.type === 'arrow') {
+                        const endX = rawWidth;
+                        const endY = rawHeight;
+                        elemData.points.x2 = endX;
+                        elemData.points.y2 = endY;
+                        node.line.setAttribute("x2", endX);
+                        node.line.setAttribute("y2", endY);
+                        node.handle.setAttribute("cx", endX);
+                        node.handle.setAttribute("cy", endY);
+                        
+                        // Live update arrow bounds
+                        const padding = 15;
+                        const minX = Math.min(elemData.points.x1, endX);
+                        const maxX = Math.max(elemData.points.x1, endX);
+                        const minY = Math.min(elemData.points.y1, endY);
+                        const maxY = Math.max(elemData.points.y1, endY);
+                        node.bounds.setAttribute("x", minX - padding);
+                        node.bounds.setAttribute("y", minY - padding);
+                        node.bounds.setAttribute("width", maxX - minX + padding * 2);
+                        node.bounds.setAttribute("height", maxY - minY + padding * 2);
+
+                    } else if (elemData.type === 'icon') {
+                        const size = Math.max(10, Math.max(rawWidth, rawHeight));
+                        elemData.width = size;
+                        elemData.height = size;
+                        node.bounds.setAttribute("width", size);
+                        node.bounds.setAttribute("height", size);
+                        node.handle.setAttribute("cx", size);
+                        node.handle.setAttribute("cy", size);
+                        
+                        node.iconSvg.setAttribute("width", size);
+                        node.iconSvg.setAttribute("height", size);
+                    } else {
+                        const newWidth = Math.max(10, Math.round(rawWidth / activeGridSize) * activeGridSize);
+                        const newHeight = Math.max(10, Math.round(rawHeight / activeGridSize) * activeGridSize);
+                        elemData.width = newWidth;
+                        elemData.height = newHeight;
+                        node.bounds.setAttribute("width", newWidth);
+                        node.bounds.setAttribute("height", newHeight);
+                        node.handle.setAttribute("cx", newWidth);
+                        node.handle.setAttribute("cy", newHeight);
+                        
+                        if (elemData.type === 'rect') {
+                            node.shape.setAttribute("width", newWidth);
+                            node.shape.setAttribute("height", newHeight);
+                        } else if (elemData.type === 'text') {
+                            const scale = newHeight / dragStartData.height;
+                            elemData.fontSize = Math.max(10, Math.round(dragStartData.fontSize * scale));
+                            node.foreignObj.setAttribute("width", newWidth);
+                            node.foreignObj.setAttribute("height", newHeight);
+                            node.wrapper.style.fontSize = `${elemData.fontSize}px`;
+                        }
+                    }
+                    updatePropertiesPanel();
+                } else if (isDragging) {
+                    const rawX = mousePos.x - dragOffset.x;
+                    const rawY = mousePos.y - dragOffset.y;
+                    
+                    const id = dragTarget.getAttribute('data-id');
+                    const elemData = slides[currentSlideIndex].elements.find(el => el.id === id);
+                    let newX, newY;
+                    if (elemData && (elemData.type === 'arrow' || elemData.type === 'icon')) {
+                        newX = rawX;
+                        newY = rawY;
+                    } else {
+                        newX = Math.round(rawX / activeGridSize) * activeGridSize;
+                        newY = Math.round(rawY / activeGridSize) * activeGridSize;
+                    }
+                    
+                    gsap.set(dragTarget, { x: newX, y: newY });
+                }
+            });
+            window.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    dragTarget = null;
+                    renderSlide(currentSlideIndex);
+                } else if (isDragging && dragTarget) {
+                    const id = dragTarget.getAttribute('data-id');
+                    const x = gsap.getProperty(dragTarget, "x");
+                    const y = gsap.getProperty(dragTarget, "y");
+                    
+                    const elemData = slides[currentSlideIndex].elements.find(e => e.id === id);
+                    if (elemData) {
+                        elemData.x = Math.round(x);
+                        elemData.y = Math.round(y);
+                    }
+                    
+                    isDragging = false;
+                    dragTarget = null;
+                    updatePropertiesPanel();
+                }
+            });
+        }
+        
+        function handleCanvasAreaClick(e) {
+            // Prevent deselecting when clicking action bars, buttons or dropdowns
+            if (e.target.closest('#project-dropdown-container') || e.target.closest('.bg-white') || e.target.closest('.fixed')) {
+                return;
+            }
+        }
+        
+        function selectElement(id) {
+            selectedElementId = id;
+            highlightSelectedNode();
+            updatePropertiesPanel();
+            renderWorkspaceTree();
+            
+            // Logic for Properties Drawer
+            const drawer = document.getElementById('properties-drawer');
+            
+            if (id) {
+                drawer.classList.add('open');
+            } else {
+                drawer.classList.remove('open');
+            }
+        }
+        
+        function highlightSelectedNode() {
+            document.querySelectorAll('.element-group').forEach(g => {
+                g.classList.remove('selected');
+                g.style.pointerEvents = 'none';
+            });
+            
+            if (selectedElementId && activeDOMNodes[selectedElementId]) {
+                const node = activeDOMNodes[selectedElementId].group;
+                node.classList.add('selected');
+                node.style.pointerEvents = 'all';
+            }
+        }
+        function updatePropertiesPanel() {
+            const panel = document.getElementById("properties-panel");
+            if (!selectedElementId) {
+                panel.innerHTML = `
+                    <div class="text-center text-indigo-300 mt-6 text-sm flex flex-col items-center">
+                        <i class="fa-solid fa-hand-pointer mb-2 text-3xl opacity-50"></i>
+                        <span>Select a layer to edit</span>
+                    </div>`;
+                return;
+            }
+            const elem = slides[currentSlideIndex].elements.find(e => e.id === selectedElementId);
+            if (!elem) return;
+            
+            document.getElementById('drawer-subtitle').innerText = `Editing ${elem.type.toUpperCase()}`;
+            
+            let html = `
+                <div class="mb-5 bg-white border border-indigo-100 p-3 rounded-xl shadow-sm">
+                    <label class="block text-[10px] font-bold text-indigo-900 uppercase tracking-wider mb-2">Layer Name</label>
+                    <input type="text" value="${elem.name || ''}" onchange="updateElementProp('name', this.value)" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500 font-semibold text-indigo-950">
+                </div>
+                
+                <div class="flex gap-2 mb-6">
+                    <button onclick="moveLayer('up')" class="flex-1 bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 py-2 rounded-lg text-xs font-bold border border-gray-200 transition shadow-sm"><i class="fa-solid fa-arrow-up"></i> Forward</button>
+                    <button onclick="moveLayer('down')" class="flex-1 bg-white hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 py-2 rounded-lg text-xs font-bold border border-gray-200 transition shadow-sm"><i class="fa-solid fa-arrow-down"></i> Back</button>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3 mb-6">
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">X Position</label>
+                        <input type="number" step="${(elem.type === 'arrow' || elem.type === 'icon') ? 1 : GRID_SIZE}" value="${elem.x}" onchange="updateElementProp('x', parseInt(this.value))" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Y Position</label>
+                        <input type="number" step="${(elem.type === 'arrow' || elem.type === 'icon') ? 1 : GRID_SIZE}" value="${elem.y}" onchange="updateElementProp('y', parseInt(this.value))" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+                
+                <div class="mb-6">
+                    <div class="flex justify-between items-center mb-1.5">
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Opacity</label>
+                        <span class="text-xs text-indigo-700 font-mono bg-indigo-100 px-1.5 py-0.5 rounded font-bold" id="opacity-val-${elem.id}">${Math.round((elem.opacity !== undefined ? elem.opacity : 1) * 100)}%</span>
+                    </div>
+                    <input type="range" min="0" max="1" step="0.05" value="${elem.opacity !== undefined ? elem.opacity : 1}" 
+                           oninput="document.getElementById('opacity-val-${elem.id}').innerText = Math.round(this.value * 100) + '%'" 
+                           onchange="updateElementProp('opacity', parseFloat(this.value))" 
+                           class="w-full cursor-pointer accent-indigo-600">
+                </div>
+            `;
+            if (elem.type === 'text') {
+                html += `
+                    <div class="grid grid-cols-2 gap-3 mb-4">
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Font Size</label>
+                            <input type="number" value="${elem.fontSize || 52}" onchange="updateElementProp('fontSize', parseInt(this.value))" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Text Color</label>
+                            <input type="color" value="${elem.color || '#1f2937'}" onchange="updateElementProp('color', this.value)" class="w-full border border-gray-300 rounded-lg p-1 h-10 outline-none cursor-pointer">
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Weight</label>
+                        <select onchange="updateElementProp('fontWeight', this.value)" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500 bg-white">
+                            <option value="400" ${elem.fontWeight == '400' ? 'selected' : ''}>Normal</option>
+                            <option value="500" ${elem.fontWeight == '500' ? 'selected' : ''}>Medium</option>
+                            <option value="600" ${elem.fontWeight == '600' ? 'selected' : ''}>Semi-Bold</option>
+                            <option value="700" ${elem.fontWeight == '700' || !elem.fontWeight ? 'selected' : ''}>Bold</option>
+                            <option value="800" ${elem.fontWeight == '800' ? 'selected' : ''}>Extra-Bold</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Alignment</label>
+                        <div class="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                            <button onclick="updateElementProp('align', 'left')" class="flex-1 py-1.5 rounded text-sm transition ${elem.align === 'left' ? 'bg-white text-indigo-600 shadow-sm font-bold' : 'text-gray-500 hover:text-gray-900'}"><i class="fa-solid fa-align-left"></i></button>
+                            <button onclick="updateElementProp('align', 'center')" class="flex-1 py-1.5 rounded text-sm transition ${elem.align === 'center' || !elem.align ? 'bg-white text-indigo-600 shadow-sm font-bold' : 'text-gray-500 hover:text-gray-900'}"><i class="fa-solid fa-align-center"></i></button>
+                            <button onclick="updateElementProp('align', 'right')" class="flex-1 py-1.5 rounded text-sm transition ${elem.align === 'right' ? 'bg-white text-indigo-600 shadow-sm font-bold' : 'text-gray-500 hover:text-gray-900'}"><i class="fa-solid fa-align-right"></i></button>
+                            <button onclick="updateElementProp('align', 'justify')" class="flex-1 py-1.5 rounded text-sm transition ${elem.align === 'justify' ? 'bg-white text-indigo-600 shadow-sm font-bold' : 'text-gray-500 hover:text-gray-900'}"><i class="fa-solid fa-align-justify"></i></button>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Padding</label>
+                            <span id="padding-val-${elem.id}" class="text-xs text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded font-mono">${elem.padding !== undefined ? elem.padding : 10}px</span>
+                        </div>
+                        <input type="range" min="0" max="100" step="1" value="${elem.padding !== undefined ? elem.padding : 10}" oninput="document.getElementById('padding-val-${elem.id}').innerText = this.value + 'px'; updateElementProp('padding', parseInt(this.value))" class="w-full accent-indigo-600 cursor-pointer">
+                    </div>
+                    ${generateColorPresetHTML('color')}
+                    <div class="mb-6 mt-4">
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Content (HTML allowed)</label>
+                        <textarea rows="4" onchange="updateElementProp('content', this.value)" class="w-full border border-gray-300 rounded-lg p-3 text-sm outline-none focus:border-indigo-500 font-mono shadow-inner leading-relaxed">${elem.content}</textarea>
+                    </div>
+                `;
+            } else if (elem.type === 'rect') {
+                html += `
+                    <div class="grid grid-cols-2 gap-3 mb-4">
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Width</label>
+                            <input type="number" step="${GRID_SIZE}" value="${elem.width}" onchange="updateElementProp('width', parseInt(this.value))" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Height</label>
+                            <input type="number" step="${GRID_SIZE}" value="${elem.height}" onchange="updateElementProp('height', parseInt(this.value))" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mb-2">
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Fill Color</label>
+                            <input type="color" value="${elem.fill}" onchange="updateElementProp('fill', this.value)" class="w-full border border-gray-300 rounded-lg p-1 h-10 outline-none cursor-pointer">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Corner Radius</label>
+                            <input type="number" value="${elem.rx}" onchange="updateElementProp('rx', parseInt(this.value))" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+                    ${generateColorPresetHTML('fill')}
+                `;
+            } else if (elem.type === 'arrow') {
+                html += `
+                    <div class="mb-2">
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Arrow Color</label>
+                        <input type="color" value="${elem.color || '#1f2937'}" onchange="updateElementProp('color', this.value)" class="w-full border border-gray-300 rounded-lg p-1 h-10 outline-none cursor-pointer">
+                    </div>
+                    ${generateColorPresetHTML('color')}
+                `;
+            } else if (elem.type === 'icon') {
+                html += `
+                    <div class="mb-4">
+                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Icon Shape</label>
+                        <select onchange="updateElementProp('iconName', this.value)" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500 bg-white">
+                            ${Object.keys(ICON_PATHS).map(key => `<option value="${key}" ${elem.iconName === key ? 'selected' : ''}>${key.charAt(0).toUpperCase() + key.slice(1)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mb-2">
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Size (px)</label>
+                            <input type="number" value="${elem.width}" onchange="updateElementProp('width', parseInt(this.value)); updateElementProp('height', parseInt(this.value))" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Color</label>
+                            <input type="color" value="${elem.color || '#1f2937'}" onchange="updateElementProp('color', this.value)" class="w-full border border-gray-300 rounded-lg p-1 h-10 outline-none cursor-pointer">
+                        </div>
+                    </div>
+                    ${generateColorPresetHTML('color')}
+                `;
+            }
+            
+            // Add global delete button at bottom
+            html += `
+                <div class="mt-8 pt-4 border-t border-indigo-100">
+                    <button onclick="deleteElement('${elem.id}')" class="w-full bg-rose-50 hover:bg-rose-100 text-rose-600 py-3 rounded-lg text-xs font-bold border border-rose-200 transition shadow-sm flex items-center justify-center gap-2"><i class="fa-solid fa-trash-can"></i> Delete Layer</button>
+                </div>
+            `;
+            
+            panel.innerHTML = html;
+        }
+        function updateElementProp(prop, value) {
+            const elem = slides[currentSlideIndex].elements.find(e => e.id === selectedElementId);
+            if (elem) {
+                elem[prop] = value;
+                renderSlide(currentSlideIndex);
+                if (prop === 'name') renderWorkspaceTree();
+                if (['fill', 'color', 'align', 'iconName'].includes(prop)) updatePropertiesPanel(); 
+            }
+        }
+        function deleteElement(id) {
+            slides[currentSlideIndex].elements = slides[currentSlideIndex].elements.filter(e => e.id !== id);
+            selectedElementId = null;
+            
+            // Automatically close the properties drawer since layer is gone
+            document.getElementById('properties-drawer').classList.remove('open');
+            
+            renderSlide(currentSlideIndex);
+            updatePropertiesPanel();
+            renderWorkspaceTree();
+        }
+        function openExportModal() {
+            const modal = document.getElementById('export-modal');
+            const textarea = document.getElementById('export-textarea');
+            const playerHTML = generatePlayerCode();
+            
+            textarea.value = playerHTML;
+            modal.classList.add('active');
+            document.getElementById('copy-btn').innerHTML = '<i class="fa-regular fa-copy mr-2"></i> Copy Code';
+        }
+        function closeExportModal() {
+            document.getElementById('export-modal').classList.remove('active');
+        }
+        function copyExportCode() {
+            const textarea = document.getElementById('export-textarea');
+            textarea.select();
+            document.execCommand('copy');
+            document.getElementById('copy-btn').innerHTML = '<i class="fa-solid fa-check mr-2"></i> Copied!';
+        }
+        function openImportModal() {
+            document.getElementById('import-textarea').value = '';
+            document.getElementById('import-error').style.display = 'none';
+            document.getElementById('import-modal').classList.add('active');
+        }
+        function closeImportModal() {
+            document.getElementById('import-modal').classList.remove('active');
+        }
+        function processImport() {
+            const html = document.getElementById('import-textarea').value;
+            const errorElement = document.getElementById('import-error');
+            
+            try {
+                const slideMatch = html.match(/const slides = (\[[\s\S]*?\]);\s*(?:let|var|const)\s+currentIndex/);
+                const settingsMatch = html.match(/const canvasSettings = (\{[\s\S]*?\});/);
+                
+                if (!slideMatch || !slideMatch[1]) throw new Error("Could not extract JSON data from the provided code.");
+                const importedSlides = JSON.parse(slideMatch[1]);
+                
+                if (!Array.isArray(importedSlides) || importedSlides.length === 0) {
+                    throw new Error("Invalid or empty slide data.");
+                }
+                if (settingsMatch && settingsMatch[1]) {
+                    canvasSettings = JSON.parse(settingsMatch[1]);
+                    if (!canvasSettings.width) canvasSettings.width = 1920;
+                    if (!canvasSettings.height) canvasSettings.height = 1080;
+                    if (!canvasSettings.appBgColor) canvasSettings.appBgColor = "#f3f4f6";
+                } else {
+                    canvasSettings = { bgColor: "#ffffff", appBgColor: "#f3f4f6", showBorder: true, showShadow: true, width: 1920, height: 1080, snapToGrid: true, navPosition: 'bottom', navAlignment: 'center', navGap: 12 };
+                }
+                
+                currentProjectName = "Imported Project";
+                document.getElementById('display-project-name').innerText = currentProjectName;
+                
+                slides = importedSlides;
+                currentSlideIndex = 0;
+                selectedElementId = null;
+                
+                let maxId = 0;
+                slides.forEach(slide => {
+                    slide.elements.forEach(elem => {
+                        if (elem.id && elem.id.startsWith('elem-')) {
+                            const num = parseInt(elem.id.split('-')[1]);
+                            if (!isNaN(num) && num > maxId) maxId = num;
+                        }
+                    });
+                });
+                idCounter = maxId + 1;
+                closeImportModal();
+                hideStartupScreen();
+                init(); 
+                
+                renderWorkspaceTree();
+                renderSlideSettings();
+                renderSlide(currentSlideIndex);
+                updatePropertiesPanel();
+                switchTab('tab-workspace');
+                showToast('<i class="fa-solid fa-file-import"></i>', 'Project imported locally.', 'green');
+                
+            } catch (e) {
+                console.error(e);
+                errorElement.style.display = 'flex';
+                errorElement.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> Error: ${e.message}`;
+            }
+        }
+        function openExistingModal() {
+            const currentSlide = slides[currentSlideIndex];
+            const currentIds = new Set(currentSlide.elements.map(e => e.id));
+            
+            const availableElements = new Map();
+            
+            slides.forEach((slide, sIdx) => {
+                if (sIdx === currentSlideIndex) return; 
+                slide.elements.forEach(elem => {
+                    if (!currentIds.has(elem.id)) {
+                        if (!availableElements.has(elem.id)) {
+                            availableElements.set(elem.id, { ...elem, sourceSlide: slide.label });
+                        }
+                    }
+                });
+            });
+            const listContainer = document.getElementById('existing-elements-list');
+            listContainer.innerHTML = '';
+            if (availableElements.size === 0) {
+                listContainer.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">No available elements found. You must create elements on other slides first to link them.</p>';
+            } else {
+                availableElements.forEach((elem, id) => {
+                    const div = document.createElement('div');
+                    div.className = "flex justify-between items-center p-3 border-b border-gray-100 hover:bg-gray-50 transition";
+                    
+                    let iconClass = 'fa-square';
+                    if (elem.type === 'text') iconClass = 'fa-font';
+                    else if (elem.type === 'arrow') iconClass = 'fa-arrow-down';
+                    else if (elem.type === 'icon') iconClass = 'fa-star';
+                    let displayLabel = elem.name || elem.id;
+                    if (elem.type === 'text' && !elem.name) {
+                        const stripped = elem.content.replace(/<[^>]*>?/gm, '');
+                        displayLabel = `Text ("${stripped.substring(0, 12)}${stripped.length > 12 ? '...' : ''}")`;
+                    }
+                    div.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <i class="fa-solid ${iconClass} text-gray-400 w-4 text-center"></i>
+                            <div>
+                                <div class="font-semibold text-sm text-gray-700">${displayLabel}</div>
+                                <div class="text-[10px] text-gray-400">Exists on: ${elem.sourceSlide}</div>
+                            </div>
+                        </div>
+                        <button onclick="addExistingElement('${id}')" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1 rounded text-xs font-bold transition flex-shrink-0">Link</button>
+                    `;
+                    listContainer.appendChild(div);
+                });
+            }
+            document.getElementById('existing-modal').classList.add('active');
+        }
+        function closeExistingModal() {
+            document.getElementById('existing-modal').classList.remove('active');
+        }
+        function addExistingElement(id) {
+            let elemToCopy = null;
+            for (const slide of slides) {
+                const found = slide.elements.find(e => e.id === id);
+                if (found) {
+                    elemToCopy = found;
+                    break;
+                }
+            }
+            if (elemToCopy) {
+                const newElem = JSON.parse(JSON.stringify(elemToCopy));
+                slides[currentSlideIndex].elements.push(newElem);
+                renderSlide(currentSlideIndex);
+                selectElement(newElem.id);
+            }
+            closeExistingModal();
+        }
+        function generatePlayerCode() {
+            const dataStr = JSON.stringify(slides);
+            const settingsStr = JSON.stringify(canvasSettings);
+            const w = canvasSettings.width || 1920;
+            const h = canvasSettings.height || 1080;
+            const appBg = canvasSettings.appBgColor || "#f3f4f6";
+            
+            const pos = canvasSettings.navPosition || 'bottom';
+            const align = canvasSettings.navAlignment || 'center';
+            const gap = canvasSettings.navGap !== undefined ? canvasSettings.navGap : 12;
+            
+            let containerFlexDir = 'column';
+            let navFlexDir = 'row';
+            let navJustify = 'center';
+            let navOuterFlexDir = 'row';
+            let navScrollStyle = 'overflow-x: hidden;';
+            let navContainerStyle = `display: flex; gap: ${gap}px;`;
+            
+            if (pos === 'top') {
+                containerFlexDir = 'column-reverse';
+            } else if (pos === 'left') {
+                containerFlexDir = 'row-reverse';
+                navFlexDir = 'column';
+                navOuterFlexDir = 'column';
+                navScrollStyle = 'overflow-y: hidden; height: 100%;';
+                navContainerStyle = `display: flex; flex-direction: column; gap: ${gap}px;`;
+            } else if (pos === 'right') {
+                containerFlexDir = 'row';
+                navFlexDir = 'column';
+                navOuterFlexDir = 'column';
+                navScrollStyle = 'overflow-y: hidden; height: 100%;';
+                navContainerStyle = `display: flex; flex-direction: column; gap: ${gap}px;`;
+            }
+            
+            if (align === 'start') navJustify = 'flex-start';
+            if (align === 'end') navJustify = 'flex-end';
+            
+            return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.tailwindcss.com"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"><\/script>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+body{margin:0;padding:0;background:${appBg};}
+.player-container{display:flex;align-items:center;justify-content:center;width:100%;box-sizing:border-box;gap:24px;flex-direction:${containerFlexDir};}
+.canvas-wrapper{width:100%;max-width:1200px;aspect-ratio:${w}/${h};background:${canvasSettings.bgColor};border-radius:12px;box-shadow:${canvasSettings.showShadow !== false ? '0 4px 6px -1px rgba(0,0,0,.1)' : 'none'};position:relative;overflow:hidden;border:${canvasSettings.showBorder !== false ? '1px solid #e5e7eb' : 'none'};flex-shrink:0;}
+svg{width:100%;height:100%;display:block;}
+.canvas-text-content{font-family:'Poppins',sans-serif;font-size:52px;font-weight:700;line-height:1.3;text-align:center;display:flex;align-items:center;justify-content:center;width:100%;height:100%;letter-spacing:-0.02em;box-sizing:border-box;}
+.nav-outer{display:flex;gap:12px;align-items:center;justify-content:${navJustify};flex-direction:${navOuterFlexDir};}
+.nav-scroll{position:relative;${navScrollStyle}}
+.nav-controls{transition:transform 0.3s ease-out;will-change:transform;${navContainerStyle}}
+.nav-btn{border:none;border-bottom:4px solid #94a3b8;font-weight:bold;cursor:pointer;font-family:'Inter',sans-serif;transition:0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.05);line-height:1.2;flex-shrink:0;}
+.nav-btn:hover{filter:brightness(0.9);}
+.nav-btn.active{box-shadow:0 4px 6px rgba(0,0,0,0.1);transform:scale(1.05);}
+.chevron-btn{display:flex;align-items:center;justify-content:center;border:1px solid #e5e7eb;box-shadow:0 2px 4px rgba(0,0,0,0.05);cursor:pointer;transition:0.2s;flex-shrink:0;}
+</style>
+</head>
+<body class="p-2 md:p-6">
+<div class="player-container">
+    <div class="canvas-wrapper">
+        <svg id="svg-canvas" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
+            <g id="elements-layer"></g>
+        </svg>
+    </div>
+    
+    <div class="nav-outer" id="nav-outer-container">
+        <button id="nav-chevron-prev" onclick="scrollPlayerNav(-1)" class="chevron-btn">
+            <i class="fa-solid fa-chevron-left" id="prev-icon"></i>
+        </button>
+        <div class="nav-scroll" id="nav-scroll-window">
+            <div class="nav-controls" id="nav-container"></div>
+        </div>
+        <button id="nav-chevron-next" onclick="scrollPlayerNav(1)" class="chevron-btn">
+            <i class="fa-solid fa-chevron-right" id="next-icon"></i>
+        </button>
+    </div>
+</div>
+<script>
+    const ICON_PATHS = {
+        "star": "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+        "heart": "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
+        "check-circle": "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
+        "info": "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
+        "user": "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+        "warning": "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+        "flag": "M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z",
+        "bookmark": "M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"
+    };
+    const canvasSettings = ${settingsStr};
+    const slides = ${dataStr};
+    let currentIndex = 0;
+    let playerScrollOffset = 0;
+    const svgNS = "http://www.w3.org/2000/svg";
+    const layer = document.getElementById("elements-layer");
+    const nav = document.getElementById("nav-container");
+    let activeNodes = {};
+    
+    function initPlayer(){
+        slides.forEach((s, i) => {
+            let b = document.createElement("button");
+            b.className = "nav-btn" + (i===0?" active":"");
+            b.innerHTML = s.label; 
+            b.onclick = () => goToSlide(i);
+            nav.appendChild(b);
+        });
+        updateNavStyles(0);
+        render(0);
+        
+        applyChevronStyles();
+        updateChevronState();
+        window.addEventListener('resize', updateChevronState);
+    }
+    
+    function goToSlide(idx){
+        if(idx === currentIndex) return;
+        currentIndex = idx;
+        updateNavStyles(idx);
+        render(idx);
+    }
+    
+    function updateNavStyles(idx) {
+        const cs = canvasSettings; // shared nav style — same for every button, not per-slide
+        document.querySelectorAll(".nav-btn").forEach((b, i) => {
+            const tl = cs.buttonRadiusTL !== undefined ? cs.buttonRadiusTL : 6;
+            const tr = cs.buttonRadiusTR !== undefined ? cs.buttonRadiusTR : 6;
+            const br = cs.buttonRadiusBR !== undefined ? cs.buttonRadiusBR : 6;
+            const bl = cs.buttonRadiusBL !== undefined ? cs.buttonRadiusBL : 6;
+            b.style.borderRadius = tl + "px " + tr + "px " + br + "px " + bl + "px";
+            b.style.fontSize = (cs.buttonFontSize || 14) + "px";
+            
+            const padX = cs.buttonPaddingX !== undefined ? cs.buttonPaddingX : 20;
+            const padY = cs.buttonPaddingY !== undefined ? cs.buttonPaddingY : 8;
+            b.style.padding = padY + "px " + padX + "px";
+            b.style.textAlign = cs.buttonTextAlign || "center";
+            b.style.width = cs.buttonWidth ? cs.buttonWidth + "px" : "auto";
+            
+            if (i === idx) {
+                b.classList.add("active");
+                b.style.backgroundColor = cs.buttonColor || "#3b82f6";
+                b.style.color = cs.buttonTextColor || "#ffffff";
+                b.style.borderBottomColor = cs.buttonBottomColor || "#2563eb";
+            } else {
+                b.classList.remove("active");
+                b.style.backgroundColor = cs.buttonInactiveColor || "#cbd5e1";
+                b.style.color = cs.buttonInactiveTextColor || "#475569";
+                b.style.borderBottomColor = cs.buttonInactiveBottomColor || "#94a3b8";
+            }
+        });
+    }
+
+    function applyChevronStyles() {
+        const prevBtn = document.getElementById("nav-chevron-prev");
+        const nextBtn = document.getElementById("nav-chevron-next");
+        if (!prevBtn || !nextBtn) return;
+        
+        const bgColor = canvasSettings.chevronBgColor || "#ffffff";
+        const iconColor = canvasSettings.chevronIconColor || "#4b5563";
+        const hoverBgColor = canvasSettings.chevronHoverBgColor || "#f3f4f6";
+        const radius = canvasSettings.chevronRadius !== undefined ? canvasSettings.chevronRadius : 8;
+        const size = canvasSettings.chevronSize || 36;
+        
+        [prevBtn, nextBtn].forEach(btn => {
+            btn.style.backgroundColor = bgColor;
+            btn.style.color = iconColor;
+            btn.style.borderRadius = radius + "px";
+            btn.style.width = size + "px";
+            btn.style.height = size + "px";
+            btn.onmouseenter = () => btn.style.backgroundColor = hoverBgColor;
+            btn.onmouseleave = () => btn.style.backgroundColor = bgColor;
+        });
+        
+        const pos = canvasSettings.navPosition || 'bottom';
+        if (pos === 'left' || pos === 'right') {
+            document.getElementById("prev-icon").className = "fa-solid fa-chevron-up";
+            document.getElementById("next-icon").className = "fa-solid fa-chevron-down";
+            document.getElementById("nav-outer-container").style.height = "80vh";
+        } else {
+            document.getElementById("prev-icon").className = "fa-solid fa-chevron-left";
+            document.getElementById("next-icon").className = "fa-solid fa-chevron-right";
+        }
+    }
+
+    function scrollPlayerNav(dir) {
+        const scrollWin = document.getElementById("nav-scroll-window");
+        const container = document.getElementById("nav-container");
+        const pos = canvasSettings.navPosition || 'bottom';
+        const step = 150;
+        
+        if (pos === 'left' || pos === 'right') {
+            const maxScroll = Math.max(0, container.scrollHeight - scrollWin.clientHeight);
+            playerScrollOffset = Math.max(0, Math.min(playerScrollOffset + dir * step, maxScroll));
+            container.style.transform = "translateY(-" + playerScrollOffset + "px)";
+        } else {
+            const maxScroll = Math.max(0, container.scrollWidth - scrollWin.clientWidth);
+            playerScrollOffset = Math.max(0, Math.min(playerScrollOffset + dir * step, maxScroll));
+            container.style.transform = "translateX(-" + playerScrollOffset + "px)";
+        }
+        updateChevronState();
+    }
+
+    function updateChevronState() {
+        const scrollWin = document.getElementById("nav-scroll-window");
+        const container = document.getElementById("nav-container");
+        const prevBtn = document.getElementById("nav-chevron-prev");
+        const nextBtn = document.getElementById("nav-chevron-next");
+        if (!scrollWin || !container || !prevBtn || !nextBtn) return;
+        
+        const pos = canvasSettings.navPosition || 'bottom';
+        let isOverflow = false;
+        let maxScroll = 0;
+        
+        if (pos === 'left' || pos === 'right') {
+            isOverflow = container.scrollHeight > scrollWin.clientHeight;
+            maxScroll = Math.max(0, container.scrollHeight - scrollWin.clientHeight);
+        } else {
+            isOverflow = container.scrollWidth > scrollWin.clientWidth;
+            maxScroll = Math.max(0, container.scrollWidth - scrollWin.clientWidth);
+        }
+        
+        if (!isOverflow) {
+            prevBtn.style.display = 'none';
+            nextBtn.style.display = 'none';
+            container.style.transform = 'none';
+            playerScrollOffset = 0;
+            scrollWin.style.flexGrow = '0';
+        } else {
+            prevBtn.style.display = 'flex';
+            nextBtn.style.display = 'flex';
+            scrollWin.style.flexGrow = '1';
+            prevBtn.style.opacity = playerScrollOffset <= 0 ? '0.3' : '1';
+            prevBtn.style.pointerEvents = playerScrollOffset <= 0 ? 'none' : 'auto';
+            nextBtn.style.opacity = playerScrollOffset >= maxScroll ? '0.3' : '1';
+            nextBtn.style.pointerEvents = playerScrollOffset >= maxScroll ? 'none' : 'auto';
+        }
+    }
+
+    function createNode(data){
+        const g = document.createElementNS(svgNS, "g");
+        g.setAttribute("id", data.id);
+        gsap.set(g, {x: data.x, y: data.y, opacity: 0});
+        
+        if(data.type === 'text'){
+            const fo = document.createElementNS(svgNS, "foreignObject");
+            fo.setAttribute("width", data.width); fo.setAttribute("height", data.height);
+            const w = document.createElement("div"); w.className = "canvas-text-content"; w.innerHTML = data.content;
+            if(data.color) w.style.color = data.color;
+            w.style.fontSize = (data.fontSize || 52) + "px";
+            w.style.fontWeight = data.fontWeight || "700";
+            
+            const align = data.align || "center";
+            w.style.textAlign = align;
+            if (align === 'left' || align === 'justify') w.style.justifyContent = 'flex-start';
+            else if (align === 'right') w.style.justifyContent = 'flex-end';
+            else w.style.justifyContent = 'center';
+            
+            w.style.padding = (data.padding !== undefined ? data.padding : 10) + "px";
+            w.style.opacity = data.opacity !== undefined ? data.opacity : 1;
+            fo.appendChild(w); g.appendChild(fo);
+            return {group: g, wrapper: w};
+        } else if(data.type === 'rect') {
+            const r = document.createElementNS(svgNS, "rect");
+            r.setAttribute("width", data.width); r.setAttribute("height", data.height);
+            r.setAttribute("fill", data.fill || "#e1f6db"); r.setAttribute("rx", data.rx || 0);
+            r.setAttribute("opacity", data.opacity !== undefined ? data.opacity : 1);
+            g.appendChild(r);
+            return {group: g, shape: r};
+        } else if(data.type === 'arrow'){
+            const defs = document.createElementNS(svgNS, "defs");
+            const marker = document.createElementNS(svgNS, "marker");
+            marker.setAttribute("id", "marker-" + data.id);
+            marker.setAttribute("markerWidth", "6"); marker.setAttribute("markerHeight", "6");
+            marker.setAttribute("refX", "4"); marker.setAttribute("refY", "3");
+            marker.setAttribute("orient", "auto");
+            const path = document.createElementNS(svgNS, "path");
+            path.setAttribute("d", "M 0 1 L 4 3 L 0 5 Z");
+            path.setAttribute("fill", data.color || "#1f2937");
+            path.setAttribute("stroke", data.color || "#1f2937");
+            path.setAttribute("stroke-width", "1.5");
+            path.setAttribute("stroke-linejoin", "round");
+            path.setAttribute("opacity", data.opacity !== undefined ? data.opacity : 1);
+            marker.appendChild(path); defs.appendChild(marker); g.appendChild(defs);
+            const l = document.createElementNS(svgNS, "line");
+            l.setAttribute("x1", data.points.x1); l.setAttribute("y1", data.points.y1);
+            l.setAttribute("x2", data.points.x2); l.setAttribute("y2", data.points.y2);
+            l.setAttribute("stroke", data.color || "#1f2937"); l.setAttribute("stroke-width", "8");
+            l.setAttribute("stroke-linecap", "round"); l.setAttribute("marker-end", "url(#marker-" + data.id + ")");
+            l.setAttribute("opacity", data.opacity !== undefined ? data.opacity : 1);
+            g.appendChild(l); return {group: g, line: l, markerPath: path};
+        } else if(data.type === 'icon'){
+            const iconSvg = document.createElementNS(svgNS, "svg");
+            iconSvg.setAttribute("viewBox", "0 0 24 24");
+            iconSvg.setAttribute("width", data.width);
+            iconSvg.setAttribute("height", data.height);
+            iconSvg.setAttribute("fill", data.color || "#1f2937");
+            iconSvg.setAttribute("opacity", data.opacity !== undefined ? data.opacity : 1);
+            
+            const iconPath = document.createElementNS(svgNS, "path");
+            iconPath.setAttribute("d", ICON_PATHS[data.iconName] || ICON_PATHS['star']);
+            iconSvg.appendChild(iconPath);
+            g.appendChild(iconSvg);
+            
+            return {group: g, iconSvg: iconSvg, iconPath: iconPath};
+        }
+    }
+    function render(idx){
+        if(slides.length === 0) return;
+        const targets = slides[idx].elements;
+        const targetIds = targets.map(e=>e.id);
+        
+        for(let id in activeNodes){
+            if(!targetIds.includes(id)){
+                let n = activeNodes[id];
+                gsap.to(n.group, {opacity:0, duration:0.5, onComplete:()=>n.group.remove()});
+                delete activeNodes[id];
+            }
+        }
+        
+        targets.forEach(d => {
+            let n = activeNodes[d.id];
+            const newOp = d.opacity !== undefined ? d.opacity : 1;
+            
+            if(n){
+                gsap.to(n.group, {x:d.x, y:d.y, opacity:1, duration:0.8, ease:"power3.inOut"});
+                if(d.type==='text') {
+                    if(n.wrapper.innerHTML !== d.content) n.wrapper.innerHTML = d.content;
+                    if(d.color) n.wrapper.style.color = d.color;
+                    n.wrapper.style.fontWeight = d.fontWeight || "700";
+                    
+                    const align = d.align || "center";
+                    n.wrapper.style.textAlign = align;
+                    if (align === 'left' || align === 'justify') n.wrapper.style.justifyContent = 'flex-start';
+                    else if (align === 'right') n.wrapper.style.justifyContent = 'flex-end';
+                    else n.wrapper.style.justifyContent = 'center';
+                    
+                    n.wrapper.style.padding = (d.padding !== undefined ? d.padding : 10) + "px";
+                    gsap.to(n.wrapper, {fontSize: d.fontSize || 52, opacity: newOp, duration: 0.8});
+                    gsap.to(n.group.querySelector("foreignObject"), {attr: {width: d.width, height: d.height}, duration: 0.8});
+                } else if(d.type==='rect') {
+                    gsap.to(n.shape, {attr: {width: d.width, height: d.height, fill: d.fill, rx: d.rx, opacity: newOp}, duration: 0.8});
+                } else if(d.type==='arrow') {
+                    gsap.to(n.line, {attr: {x1: d.points.x1, y1: d.points.y1, x2: d.points.x2, y2: d.points.y2, opacity: newOp}, stroke: d.color || "#1f2937", duration: 0.8});
+                    if (n.markerPath) gsap.to(n.markerPath, {attr: {fill: d.color || "#1f2937", stroke: d.color || "#1f2937", opacity: newOp}, duration: 0.8});
+                } else if(d.type==='icon') {
+                    gsap.to(n.iconSvg, { attr: { width: d.width, height: d.height, fill: d.color || "#1f2937", opacity: newOp }, duration: 0.8 });
+                    if (n.iconPath && n.iconPath.getAttribute("d") !== ICON_PATHS[d.iconName]) {
+                        n.iconPath.setAttribute("d", ICON_PATHS[d.iconName] || ICON_PATHS['star']);
+                    }
+                }
+            } else {
+                n = createNode(d);
+                activeNodes[d.id] = n;
+                gsap.to(n.group, {opacity:1, duration:0.8, ease:"power3.inOut"});
+            }
+            layer.appendChild(n.group); 
+        });
+    }
+    
+    window.onload = initPlayer;
+<\/script>
+</body>
+</html>`;
+        }
+        window.onload = () => {
+            Shell.init({ toolName: 'Animated Slides' });
+            Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
+            init();
+            switchTab('tab-workspace'); // default tab
+        };
+    </script>
+</body>
+</html>

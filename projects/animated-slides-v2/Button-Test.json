@@ -1,0 +1,47 @@
+{
+  "activeIndex": 2,
+  "canvasSettings": {
+    "width": 1920,
+    "nav": {
+      "buttonPaddingX": 30,
+      "buttonPaddingY": 20,
+      "buttonInactiveTextColor": "#073048",
+      "buttonRadius": 20,
+      "buttonTextColor": "#ffffff",
+      "navPosition": "top",
+      "navGap": 30,
+      "buttonInactiveBottomColor": "#B8D4DF",
+      "buttonInactiveColor": "#DCEBF2",
+      "buttonFontSize": 20,
+      "navAlignment": "center",
+      "buttonColor": "#0C5E82",
+      "buttonBottomColor": "#094A68"
+    },
+    "gridSize": 20,
+    "snapToGrid": true,
+    "height": 500,
+    "backgroundColor": "#ffffff"
+  },
+  "slides": [
+    {
+      "name": "Slide 1",
+      "id": "slide-1785912755239",
+      "elements": []
+    },
+    {
+      "name": "Slide 2",
+      "elements": [],
+      "id": "slide-1785912788701"
+    },
+    {
+      "elements": [],
+      "id": "slide-1785912788909",
+      "name": "Slide 3"
+    },
+    {
+      "id": "slide-1785912789084",
+      "elements": [],
+      "name": "Slide 4"
+    }
+  ]
+}

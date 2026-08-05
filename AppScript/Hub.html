@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<base target="_top">
+<title>Authoring Tools</title>
+<?!= include('DesignTokens'); ?>
+<?!= include('AppShellCss'); ?>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { padding: var(--space-8); }
+  .hub-header { max-width: 960px; margin: 0 auto var(--space-8); }
+  .hub-header .title-block { margin-bottom: var(--space-2); }
+  .hub-header h1 { font-size: var(--text-2xl); margin: 0 0 var(--space-2); }
+  .hub-header p { color: var(--ink-soft); margin: 0; }
+  .hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-4); max-width: 960px; margin: 0 auto; }
+  .hub-tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: var(--space-5); box-shadow: var(--shadow-sm); cursor: pointer; text-decoration: none;
+    display: block; color: inherit; transition: box-shadow var(--duration-base) var(--ease-standard);
+  }
+  .hub-tile:hover { box-shadow: var(--shadow-md); }
+  .hub-tile-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .hub-tile h3 { margin: var(--space-2) 0 0; font-size: var(--text-lg); font-weight: 600; }
+  .hub-tile p { color: var(--ink-soft); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
+  .status-pill.beta { background: var(--warn-soft); color: #7A5210; }
+  .status-pill.beta .dot { background: var(--warn); }
+</style>
+</head>
+<body>
+
+  <div class="hub-header">
+    <div class="title-block">Authoring Tools</div>
+    <h1>Pick a tool</h1>
+    <p>Choose the right tool for the interactive you're building.</p>
+  </div>
+
+  <div class="hub-grid" id="hub-grid"></div>
+
+  <script>
+    const tools = <?!= toolsJson ?>;
+    const baseUrl = <?!= JSON.stringify(baseUrl) ?>;
+
+    const grid = document.getElementById('hub-grid');
+    tools.forEach((tool) => {
+      const a = document.createElement('a');
+      a.className = 'hub-tile';
+      a.href = baseUrl + '?page=' + tool.id;
+
+      const badge = tool.status === 'beta'
+        ? '<span class="status-pill beta"><span class="dot"></span>Beta</span>'
+        : '';
+
+      a.innerHTML = `
+        <div class="hub-tile-top">
+          <div class="title-block">Tool</div>
+          ${badge}
+        </div>
+        <h3></h3>
+        <p></p>
+      `;
+      a.querySelector('h3').textContent = tool.title;
+      a.querySelector('p').textContent = tool.description || '';
+
+      grid.appendChild(a);
+    });
+  </script>
+
+</body>
+</html>

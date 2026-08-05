@@ -1,0 +1,204 @@
+<style>
+/* ==========================================================================
+   Authoring Tools — Shared App Shell (styles)
+   Requires design-tokens.css to be loaded first.
+   Every tool includes this file, then adds only its own unique
+   authoring-surface CSS on top.
+   ========================================================================== */
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+}
+
+/* ---- Layout shell ---- */
+#shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* ---- Top bar ---- */
+#top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: 60px;
+  padding: 0 var(--space-5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  z-index: 40;
+}
+#top-bar .top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+#top-bar .hub-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+#top-bar .hub-link:hover { background: var(--surface-sunken); }
+#top-bar .tool-identity h1 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.2;
+}
+#top-bar .top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* ---- Buttons (extends design-tokens' color intent) ---- */
+.btn {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+.btn-primary { background: var(--button-bg); color: white; }
+.btn-primary:hover { background: var(--button-bg-hover); }
+.btn-secondary { background: var(--surface); color: var(--ink); border: 1px solid var(--border-strong); }
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent-ink); }
+.btn-danger { background: var(--surface); color: var(--danger); border: 1px solid var(--danger-soft); }
+.btn-danger:hover { background: var(--danger-soft); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.status-pill {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-xs); font-family: var(--font-mono);
+  padding: var(--space-1) var(--space-3); border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.status-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.status-pill.pending .dot { background: var(--warn); }
+.status-pill.error .dot { background: var(--danger); }
+
+/* ---- Main content area (each tool renders its authoring surface here) ---- */
+#shell-main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ---- Modals ---- */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(20, 24, 26, 0.45);
+  backdrop-filter: blur(3px);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.active { display: flex; }
+.modal-dialog {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal-dialog.wide { max-width: 720px; }
+.modal-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: var(--space-5); border-bottom: 1px solid var(--border);
+}
+.modal-header h2 { margin: var(--space-1) 0 0; font-size: var(--text-lg); font-weight: 600; }
+.modal-header .modal-close {
+  background: none; border: none; cursor: pointer; color: var(--ink-faint);
+  font-size: var(--text-lg); line-height: 1; padding: var(--space-1);
+}
+.modal-header .modal-close:hover { color: var(--ink); }
+.modal-body { padding: var(--space-5); overflow-y: auto; }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: var(--space-3);
+  padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border);
+}
+
+/* ---- Project browser (used inside the "Open project" modal) ---- */
+.project-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  cursor: pointer; transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.project-row:hover { border-color: var(--accent); }
+.project-row .project-name { font-weight: 500; }
+.project-row .project-meta { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+.project-empty { text-align: center; color: var(--ink-soft); padding: var(--space-8) 0; font-size: var(--text-sm); }
+
+/* ---- Export code view ---- */
+.code-view {
+  width: 100%; height: 220px;
+  background: var(--ink); color: #C9E8DE;
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  border-radius: var(--radius-md); border: none; resize: none;
+  padding: var(--space-4); outline: none;
+}
+
+/* ---- Basic form fields ---- */
+.field-label {
+  display: block; font-size: var(--text-xs); font-weight: 500; color: var(--ink-soft);
+  margin-bottom: var(--space-2); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.field-group { margin-bottom: var(--space-5); }
+input[type="text"].field-input-text, textarea.field-input-text {
+  width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3); outline: none;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+input[type="text"].field-input-text:focus, textarea.field-input-text:focus { border-color: var(--accent); }
+
+/* ---- Toasts ---- */
+#toast-stack {
+  position: fixed; bottom: var(--space-5); right: var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-2);
+  z-index: 200;
+}
+.toast {
+  display: flex; align-items: center; gap: var(--space-3);
+  background: var(--ink); color: white;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  font-size: var(--text-sm); box-shadow: var(--shadow-lg);
+  animation: toast-in var(--duration-base) var(--ease-standard);
+}
+.toast.success { background: var(--success); }
+.toast.danger { background: var(--danger); }
+.toast.pending { background: var(--ink-soft); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+</style>

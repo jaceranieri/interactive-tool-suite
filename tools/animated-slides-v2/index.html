@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Animated Slides v2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/design-tokens.css">
+<link rel="stylesheet" href="../../shared/app-shell.css">
+<style>
+  #shell-main { min-height: 0; }
+  #left-rail { width: 200px; background: var(--surface); border-right: 1px solid var(--border); padding: var(--space-4); overflow-y: auto; flex-shrink: 0; }
+  #left-rail h2 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); margin: 0 0 var(--space-3); }
+  .layer-row { display: flex; align-items: center; gap: var(--space-2); padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--text-sm); }
+  .layer-row:hover { background: var(--paper); }
+  .layer-row.active { background: var(--accent-soft); }
+  .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer-controls { display: flex; gap: 2px; }
+  .layer-controls button { border: none; background: none; color: var(--ink-soft); cursor: pointer; padding: 2px 4px; font-size: 10px; }
+  .layer-controls button:hover { color: var(--accent); }
+  .layer-empty { font-size: var(--text-xs); color: var(--ink-soft); font-style: italic; }
+
+  #canvas-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-6); min-height: 0; }
+  #player-root { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: var(--space-4); }
+  #canvas-wrapper { position: relative; width: 100%; aspect-ratio: 16/9; background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+  #canvas-wrapper svg { width: 100%; height: 100%; display: block; }
+
+  #editor-slide-bar { flex-shrink: 0; padding: var(--space-3) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-3); }
+  #editor-slide-bar .title-block { margin-right: var(--space-2); }
+  #slide-tabs { display: flex; gap: var(--space-2); flex: 1; overflow-x: auto; }
+  .slide-tab { font-family: var(--font-mono); font-size: var(--text-xs); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); border: 1px solid var(--border); background: white; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .slide-tab.active { background: var(--ink); color: white; border-color: var(--ink); }
+
+  .element-popup { position: absolute; z-index: 50; width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--space-4); }
+  .popup-name { display: block; width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 700; color: var(--ink); border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 var(--space-2); margin-bottom: var(--space-3); outline: none; background: transparent; }
+  .popup-name:focus { border-bottom-color: var(--accent); }
+  .popup-fields .popup-field { margin-bottom: var(--space-3); }
+  .popup-field:last-child { margin-bottom: 0; }
+  .popup-field label { display: block; font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
+  .popup-field input, .popup-field select, .popup-field textarea { width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
+  .popup-field input[type=color] { height: 28px; padding: 2px; }
+  .popup-more-toggle { width: 100%; margin-top: 4px; padding: 6px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
+  .popup-fields + .popup-more-toggle { margin-top: var(--space-3); }
+  .popup-more-toggle + .popup-fields { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<div id="shell">
+  <div id="top-bar">
+    <div class="top-bar-left">
+      <a href="#" class="hub-link" title="Back to hub">&larr;</a>
+      <div class="tool-identity">
+        <div class="title-block">Tool &middot; Animated Slides v2</div>
+        <h1 id="display-project-name">Untitled project</h1>
+      </div>
+    </div>
+    <div class="top-bar-right">
+      <span id="shell-status" class="status-pill"><span class="dot"></span>Not connected</span>
+      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); refreshProjectList();">Open</button>
+      <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
+      <button class="btn btn-secondary" id="undo-btn" onclick="history.undo()">Undo</button>
+      <button class="btn btn-secondary" id="redo-btn" onclick="history.redo()">Redo</button>
+      <button class="btn btn-primary" onclick="saveProject()"><i class="fa-solid fa-cloud-arrow-up"></i> Save</button>
+    </div>
+  </div>
+
+  <div id="shell-main" style="display:flex;">
+    <div id="left-rail">
+      <h2>Layers</h2>
+      <div id="layer-list"></div>
+    </div>
+    <div id="canvas-col">
+      <div id="stage">
+        <div id="player-root">
+          <div id="canvas-wrapper">
+            <svg id="canvas-svg" viewBox="0 0 1920 1080">
+              <g id="elements-layer"></g>
+            </svg>
+          </div>
+          <div id="player-nav-bar"></div>
+        </div>
+      </div>
+      <div id="editor-slide-bar">
+        <div class="title-block">Slides (editor)</div>
+        <div id="slide-tabs"></div>
+        <button class="btn btn-secondary" onclick="addSlide()">+ Slide</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Open project modal -->
+<div class="modal-overlay" id="open-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div><div class="title-block">Open</div><h2>Your projects</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('open-modal')">&times;</button>
+    </div>
+    <div class="modal-body"><div id="project-list-container"></div></div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Export</div><h2>Code for Articulate</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('export-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--ink-soft); margin-bottom: var(--space-4);">Copy the code below and paste it into a Web Object or HTML code block in your Articulate course.</p>
+      <textarea id="export-textarea" class="code-view" readonly></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="copyExportCode()"><i class="fa-regular fa-copy"></i> Copy code</button>
+    </div>
+  </div>
+</div>
+
+<script src="../../shared/app-shell.js"></script>
+<script src="../../shared/storage-connector.js"></script>
+<script src="element-types.js"></script>
+<script src="element-renderer.js"></script>
+<script src="canvas-editor.js"></script>
+<script src="history.js"></script>
+<script src="slide-manager.js"></script>
+<script src="layer-panel.js"></script>
+<script src="nav-bar.js"></script>
+<script>
+  /**
+   * STORAGE BACKEND (Apps Script -> GitHub)
+   * Same endpoint as every other tool in the suite — distinguished by
+   * TOOL_ID, so this saves under its own namespace, fully independent of
+   * v1's "animated-slides" projects.
+   */
+  const STORAGE_ENDPOINT = "https://script.google.com/a/macros/syd.catholic.edu.au/s/AKfycbwj2Yk2R8o0ffnPBCO6gi-rRxfB1ETeZ6Rm61IeWXjQumpE0PUCfiPQrxDyXpe_HHK5Xw/exec";
+  const STORAGE_API_KEY = "PASTE_YOUR_API_KEY_HERE";
+  const TOOL_ID = "animated-slides-v2";
+
+  const svg = document.getElementById('canvas-svg');
+  const layer = document.getElementById('elements-layer');
+  const popupHost = document.getElementById('canvas-wrapper');
+  const layerListEl = document.getElementById('layer-list');
+
+  let currentProjectName = "Untitled project";
+
+  function defaultSlides() {
+    return [{ id: 'slide-' + Date.now(), name: 'Slide 1', elements: [] }];
+  }
+
+  const slideManager = new SlideManager({ svg, layer, slides: defaultSlides() });
+  const navStyle = defaultNavStyle();
+  const playerNavBarEl = document.getElementById('player-nav-bar');
+  if (navStyle.navPosition === 'top') {
+    document.getElementById('player-root').insertBefore(playerNavBarEl, document.getElementById('canvas-wrapper'));
+  }
+  const navBar = setupNavBar(playerNavBarEl, navStyle, (i) => slideManager.goToSlide(i));
+
+  function refreshUI() {
+    renderLayerPanel(layerListEl, slideManager, editor);
+    renderSlideTabs();
+    navBar.refresh(slideManager.slides, slideManager.activeIndex);
+  }
+
+  const undoBtn = document.getElementById('undo-btn');
+  const redoBtn = document.getElementById('redo-btn');
+  const history = new History({
+    getState: () => slideManager.getState(),
+    setState: (s) => slideManager.setState(s),
+    onChange: () => {
+      undoBtn.disabled = !history.canUndo();
+      redoBtn.disabled = !history.canRedo();
+    },
+  });
+  undoBtn.disabled = true; redoBtn.disabled = true;
+  window.addEventListener('keydown', (e) => {
+    const cmd = e.metaKey || e.ctrlKey;
+    if (!cmd || e.key.toLowerCase() !== 'z') return;
+    e.preventDefault();
+    if (e.shiftKey) history.redo(); else history.undo();
+  });
+
+  const editor = new CanvasEditor({
+    svg, elements: slideManager.elements, nodes: slideManager.nodes, popupHost, history,
+    onSelect: () => renderLayerPanel(layerListEl, slideManager, editor),
+  });
+  slideManager.attachEditor(editor);
+  slideManager.onSlideChange = refreshUI;
+
+  function addSlide() {
+    history.beginAction();
+    slideManager.addSlide();
+    history.commitAction();
+  }
+
+  function renderSlideTabs() {
+    const tabs = document.getElementById('slide-tabs');
+    tabs.innerHTML = '';
+    slideManager.slides.forEach((s, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'slide-tab' + (i === slideManager.activeIndex ? ' active' : '');
+      btn.textContent = s.name;
+      btn.addEventListener('click', () => slideManager.goToSlide(i));
+      tabs.appendChild(btn);
+    });
+  }
+
+  /* ---- Storage ---- */
+
+  function getApiUrl() { return STORAGE_ENDPOINT.trim(); }
+
+  async function saveProject() {
+    if (!currentProjectName || currentProjectName === "Untitled project") {
+      const name = prompt("Project name:");
+      if (!name) return;
+      currentProjectName = name;
+      document.getElementById('display-project-name').innerText = currentProjectName;
+    }
+    const pending = Shell.toast('Saving to GitHub…', 'pending');
+    try {
+      await Storage.saveProject(TOOL_ID, currentProjectName, slideManager.getState());
+      pending.remove();
+      Shell.toast(`Project "${currentProjectName}" saved!`, 'success');
+      Shell.setStatus('Connected', '');
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Save failed: ${error.message}`, 'danger');
+      Shell.setStatus('Error', 'error');
+    }
+  }
+
+  async function refreshProjectList() {
+    const pending = Shell.toast('Fetching projects…', 'pending');
+    try {
+      Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
+      const result = await Storage.listProjects(TOOL_ID);
+      pending.remove();
+      Shell.renderProjectList(
+        document.getElementById('project-list-container'),
+        result.projects,
+        (name) => loadProject(name)
+      );
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Fetch failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function loadProject(name) {
+    Shell.closeModal('open-modal');
+    const pending = Shell.toast(`Loading "${name}"...`, 'pending');
+    try {
+      const result = await Storage.loadProject(TOOL_ID, name);
+      pending.remove();
+      currentProjectName = name;
+      document.getElementById('display-project-name').innerText = currentProjectName;
+      slideManager.setState(result.content);
+      // A freshly loaded project shouldn't carry over undo history from
+      // whatever was open before.
+      history.undoStack = [];
+      history.redoStack = [];
+      history.onChange();
+      Shell.toast(`Project "${name}" loaded!`, 'success');
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Load failed: ${error.message}`, 'danger');
+    }
+  }
+
+  /* ---- Export ----
+     Reuses element-types.js / element-renderer.js / slide-manager.js /
+     nav-bar.js VERBATIM inside the exported file — same engine that just
+     rendered the authoring preview renders the exported player, so
+     there's no second copy of any of this logic to drift out of sync. */
+
+  async function fetchModuleSources() {
+    const files = ['element-types.js', 'element-renderer.js', 'slide-manager.js', 'nav-bar.js'];
+    const texts = await Promise.all(files.map((f) => fetch(f).then((r) => r.text())));
+    return texts.join('\n\n');
+  }
+
+  async function openExportModal() {
+    const modules = await fetchModuleSources();
+    const slidesJSON = JSON.stringify(slideManager.slides.map((s) => ({ ...s })));
+    const navStyleJSON = JSON.stringify(navStyle);
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${currentProjectName}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"><\/script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: 'IBM Plex Sans', sans-serif; }
+  #player-root { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+  #canvas-wrapper { position: relative; flex: 1; min-height: 0; background: white; }
+  #canvas-wrapper svg { width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<div id="player-root">
+  <div id="canvas-wrapper">
+    <svg id="canvas-svg" viewBox="0 0 1920 1080"><g id="elements-layer"></g></svg>
+  </div>
+  <div id="player-nav-bar"></div>
+</div>
+<script>
+${modules}
+
+const slides = ${slidesJSON};
+const navStyle = ${navStyleJSON};
+const svg = document.getElementById('canvas-svg');
+const layer = document.getElementById('elements-layer');
+const slideManager = new SlideManager({ svg, layer, slides });
+const navBarEl = document.getElementById('player-nav-bar');
+if (navStyle.navPosition === 'top') {
+  document.getElementById('player-root').insertBefore(navBarEl, document.getElementById('canvas-wrapper'));
+}
+const navBar = setupNavBar(navBarEl, navStyle, (i) => slideManager.goToSlide(i));
+slideManager.onSlideChange = () => navBar.refresh(slideManager.slides, slideManager.activeIndex);
+navBar.refresh(slideManager.slides, slideManager.activeIndex);
+<\/script>
+</body>
+</html>`;
+
+    document.getElementById('export-textarea').value = html;
+    Shell.openModal('export-modal');
+  }
+
+  function copyExportCode() {
+    const textarea = document.getElementById('export-textarea');
+    textarea.select();
+    navigator.clipboard.writeText(textarea.value).then(() => {
+      Shell.toast('Code copied to clipboard', 'success');
+    }).catch(() => {
+      document.execCommand('copy');
+      Shell.toast('Code copied to clipboard', 'success');
+    });
+  }
+
+  /* ---- Init ---- */
+  Shell.init({ toolName: 'Animated Slides v2' });
+  Shell.bindOverlayDismiss();
+  Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
+  refreshUI();
+</script>
+</body>
+</html>

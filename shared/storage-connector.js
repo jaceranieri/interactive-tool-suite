@@ -54,6 +54,19 @@ const Storage = (() => {
     return request('GET', { action: 'load', tool, name, key: apiKey });
   }
 
+  async function deleteProject(tool, name) {
+    if (isAppsScriptHosted) return runRPC('apiDeleteProject', tool, name);
+    return request('POST', { action: 'delete', tool, name, key: apiKey });
+  }
+
+  // GitHub has no native rename — this commits the content under the new
+  // name and removes the old file, which is why it needs the content on
+  // hand rather than just the two names.
+  async function renameProject(tool, oldName, newName) {
+    if (isAppsScriptHosted) return runRPC('apiRenameProject', tool, oldName, newName);
+    return request('POST', { action: 'rename', tool, name: oldName, newName, key: apiKey });
+  }
+
   async function request(method, params) {
     if (!endpoint) throw new Error('Storage.configure(url, apiKey) must be called before use.');
     let res;
@@ -83,5 +96,5 @@ const Storage = (() => {
     return data;
   }
 
-  return { configure, saveProject, listProjects, loadProject };
+  return { configure, saveProject, listProjects, loadProject, deleteProject, renameProject };
 })();

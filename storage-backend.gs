@@ -44,6 +44,8 @@ function doPost(e) {
     }
     return json(saveProject(p.tool, p.name, content));
   }
+  if (p.action === 'delete') return json(deleteProject(p.tool, p.name));
+  if (p.action === 'rename') return json(renameProject(p.tool, p.name, p.newName));
   return json({ error: 'Unknown action' });
 }
 
@@ -104,6 +106,58 @@ function loadProject(tool, name) {
   const file = JSON.parse(resp.getContentText());
   const raw = Utilities.newBlob(Utilities.base64Decode(file.content)).getDataAsString();
   return { content: JSON.parse(raw) };
+}
+
+function deleteProject(tool, name) {
+  if (!tool || !name) return { error: 'Missing tool or name' };
+  const path = `projects/${tool}/${sanitize(name)}.json`;
+  const sha = ghGetFileSha(path);
+  if (!sha) return { error: 'Project not found' };
+  const resp = ghRequest('DELETE', `contents/${path}`, {
+    message: `Delete "${name}" (${tool}) — ${new Date().toISOString()}`,
+    sha: sha,
+    branch: GITHUB_BRANCH,
+  });
+  if (resp.getResponseCode() >= 300) {
+    return { error: 'GitHub delete failed', detail: resp.getContentText() };
+  }
+  return { ok: true };
+}
+
+function renameProject(tool, oldName, newName) {
+  if (!tool || !oldName || !newName) return { error: 'Missing tool, name, or newName' };
+  const oldPath = `projects/${tool}/${sanitize(oldName)}.json`;
+  const newPath = `projects/${tool}/${sanitize(newName)}.json`;
+
+  const oldResp = ghRequest('GET', `contents/${oldPath}`);
+  if (oldResp.getResponseCode() >= 300) {
+    return { error: 'Rename failed (could not read original)', detail: oldResp.getContentText() };
+  }
+  const oldFile = JSON.parse(oldResp.getContentText());
+
+  const existingAtNewPath = ghGetFileSha(newPath);
+  const createPayload = {
+    message: `Rename "${oldName}" to "${newName}" (${tool}) — ${new Date().toISOString()}`,
+    content: oldFile.content,
+    branch: GITHUB_BRANCH,
+  };
+  if (existingAtNewPath) createPayload.sha = existingAtNewPath;
+
+  const createResp = ghRequest('PUT', `contents/${newPath}`, createPayload);
+  if (createResp.getResponseCode() >= 300) {
+    return { error: 'Rename failed (could not create new file)', detail: createResp.getContentText() };
+  }
+
+  const deleteResp = ghRequest('DELETE', `contents/${oldPath}`, {
+    message: `Remove old name after rename to "${newName}" (${tool})`,
+    sha: oldFile.sha,
+    branch: GITHUB_BRANCH,
+  });
+  if (deleteResp.getResponseCode() >= 300) {
+    return { error: 'Renamed, but could not remove the old file', detail: deleteResp.getContentText() };
+  }
+
+  return { ok: true };
 }
 
 /* ---- GitHub helpers ---- */

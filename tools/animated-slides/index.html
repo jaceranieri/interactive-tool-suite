@@ -919,12 +919,45 @@
                 const result = await Storage.listProjects(TOOL_ID);
                 pending.remove();
                 const listContainer = document.getElementById('project-list-items');
-                Shell.renderProjectList(listContainer, result.projects, (name) => loadProjectFromSheet(name));
+                Shell.renderProjectList(listContainer, result.projects, (name) => loadProjectFromSheet(name), {
+                    onRename: (oldName, newName) => renameProjectAction(oldName, newName),
+                    onDelete: (name) => deleteProjectAction(name),
+                });
                 openProjectListModal();
             } catch (error) {
                 console.error("Fetch Error:", error);
                 pending.remove();
                 showToast('', `Fetch failed: ${error.message}`, 'red');
+            }
+        }
+
+        async function renameProjectAction(oldName, newName) {
+            const pending = Shell.toast(`Renaming "${oldName}"…`, 'pending');
+            try {
+                await Storage.renameProject(TOOL_ID, oldName, newName);
+                pending.remove();
+                showToast('', `Renamed to "${newName}"`, 'green');
+                if (currentProjectName === oldName) {
+                    currentProjectName = newName;
+                    document.getElementById('display-project-name').innerText = newName;
+                }
+                fetchProjectsFromSheet();
+            } catch (error) {
+                pending.remove();
+                showToast('', `Rename failed: ${error.message}`, 'red');
+            }
+        }
+
+        async function deleteProjectAction(name) {
+            const pending = Shell.toast(`Deleting "${name}"…`, 'pending');
+            try {
+                await Storage.deleteProject(TOOL_ID, name);
+                pending.remove();
+                showToast('', `Deleted "${name}"`, 'green');
+                fetchProjectsFromSheet();
+            } catch (error) {
+                pending.remove();
+                showToast('', `Delete failed: ${error.message}`, 'red');
             }
         }
 

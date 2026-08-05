@@ -12,7 +12,18 @@
   #shell-main { min-height: 0; }
   #left-rail { width: 200px; background: var(--surface); border-right: 1px solid var(--border); padding: var(--space-4); overflow-y: auto; flex-shrink: 0; }
   #left-rail h2 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); margin: 0 0 var(--space-3); }
-  .layer-row { display: flex; align-items: center; gap: var(--space-2); padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--text-sm); }
+  .add-element-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin-bottom: var(--space-5); }
+  .add-element-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: var(--space-3) var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); cursor: pointer; font-family: var(--font-ui); font-size: 11px; color: var(--ink-soft);
+    transition: border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+  }
+  .add-element-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .add-element-btn i { font-size: 16px; color: var(--accent); }
+  .layer-row { display: flex; align-items: center; gap: var(--space-2); padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--text-sm); border-top: 2px solid transparent; }
+  .layer-row.dragging { opacity: 0.4; }
+  .layer-row.drag-over { border-top-color: var(--accent); }
   .layer-row:hover { background: var(--paper); }
   .layer-row.active { background: var(--accent-soft); }
   .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -26,12 +37,71 @@
   #player-root { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: var(--space-4); }
   #canvas-wrapper { position: relative; width: 100%; aspect-ratio: 16/9; background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
   #canvas-wrapper svg { width: 100%; height: 100%; display: block; }
+  #empty-state-hint {
+    position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; pointer-events: none; color: var(--ink-faint); text-align: center;
+  }
+  #empty-state-hint i { font-size: 32px; margin-bottom: var(--space-2); }
+  #empty-state-hint p { margin: 0; font-weight: 600; font-size: var(--text-base); color: var(--ink-soft); }
+  #empty-state-hint span { font-size: var(--text-sm); }
 
   #editor-slide-bar { flex-shrink: 0; padding: var(--space-3) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-3); }
   #editor-slide-bar .title-block { margin-right: var(--space-2); }
-  #slide-tabs { display: flex; gap: var(--space-2); flex: 1; overflow-x: auto; }
-  .slide-tab { font-family: var(--font-mono); font-size: var(--text-xs); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); border: 1px solid var(--border); background: white; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
-  .slide-tab.active { background: var(--ink); color: white; border-color: var(--ink); }
+  #slide-tabs { display: flex; gap: var(--space-2); flex: 1; overflow-x: auto; padding: 8px 10px 6px 10px; margin: -8px -10px -6px -10px; }
+  .slide-tab-wrap { position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .slide-thumb-container { position: relative; }
+  .slide-thumb {
+    width: 76px; height: 43px; border-radius: 4px; border: 2px solid var(--border);
+    overflow: hidden; background: white; cursor: pointer;
+  }
+  .slide-thumb.active { border-color: var(--ink); }
+  .slide-thumb-container.dragging { opacity: 0.4; }
+  .slide-thumb-container.drag-over .slide-thumb { border-color: var(--accent); }
+  .slide-thumb svg { width: 100%; height: 100%; display: block; pointer-events: none; }
+  .slide-tab-name {
+    font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); max-width: 80px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-align: center;
+  }
+  .slide-tab-name.active { color: var(--ink); font-weight: 600; }
+  .slide-tab-rename-input {
+    font-family: var(--font-mono); font-size: var(--text-xs); padding: 2px 6px;
+    border-radius: var(--radius-sm); border: 1px solid var(--accent); outline: none; width: 90px; text-align: center;
+  }
+  .slide-tab-delete {
+    display: none; position: absolute; top: -6px; right: -6px; width: 16px; height: 16px;
+    border-radius: 50%; border: 1px solid var(--border); background: white; color: var(--ink-soft);
+    font-size: 10px; line-height: 1; cursor: pointer; align-items: center; justify-content: center;
+  }
+  .slide-thumb-container:hover .slide-tab-delete { display: flex; }
+  .slide-tab-delete:hover { background: var(--danger); color: white; border-color: var(--danger); }
+  .slide-tab-duplicate {
+    display: none; position: absolute; top: -6px; left: -6px; width: 16px; height: 16px;
+    border-radius: 50%; border: 1px solid var(--border); background: white; color: var(--ink-soft);
+    font-size: 9px; line-height: 1; cursor: pointer; align-items: center; justify-content: center;
+  }
+  .slide-thumb-container:hover .slide-tab-duplicate { display: flex; }
+  .slide-tab-duplicate:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+  .shortcuts-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  .shortcuts-table td { padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+  .shortcuts-table td:last-child { color: var(--ink-soft); text-align: right; }
+  .shortcuts-table tr:last-child td { border-bottom: none; }
+  kbd {
+    font-family: var(--font-mono); font-size: 11px; background: var(--paper); border: 1px solid var(--border-strong);
+    border-radius: 4px; padding: 1px 5px; box-shadow: 0 1px 0 var(--border-strong);
+  }
+
+  #settings-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-5); }
+  .top-bar-divider { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
+  .settings-section h3 { font-size: var(--text-sm); font-weight: 600; margin: 0 0 var(--space-3); color: var(--ink); }
+
+  .cross-slide-group { margin-bottom: var(--space-4); }
+  .cross-slide-group h4 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); margin: 0 0 var(--space-2); }
+  .cross-slide-row { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: var(--space-2); cursor: pointer; }
+  .cross-slide-row:hover { border-color: var(--accent); }
+  .cross-slide-row .name { flex: 1; font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cross-slide-row button { font-size: 11px; padding: 5px 10px; flex-shrink: 0; }
+  .linked-badge { color: var(--accent); font-size: 10px; margin-right: 4px; }
 
   .element-popup { position: absolute; z-index: 50; width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--space-4); }
   .popup-name { display: block; width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 700; color: var(--ink); border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 var(--space-2); margin-bottom: var(--space-3); outline: none; background: transparent; }
@@ -40,6 +110,7 @@
   .popup-field:last-child { margin-bottom: 0; }
   .popup-field label { display: block; font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
   .popup-field input, .popup-field select, .popup-field textarea { width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
+  .popup-field textarea { resize: vertical; max-width: 100%; }
   .popup-field input[type=color] { height: 28px; padding: 2px; }
   .popup-more-toggle { width: 100%; margin-top: 4px; padding: 6px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
   .popup-fields + .popup-more-toggle { margin-top: var(--space-3); }
@@ -55,20 +126,32 @@
       <div class="tool-identity">
         <div class="title-block">Tool &middot; Animated Slides v2</div>
         <h1 id="display-project-name">Untitled project</h1>
+        <span id="unsaved-dot" title="Unsaved changes" style="display:none; width:8px; height:8px; border-radius:50%; background:var(--warn); margin-left:8px; vertical-align:middle;"></span>
       </div>
     </div>
     <div class="top-bar-right">
       <span id="shell-status" class="status-pill"><span class="dot"></span>Not connected</span>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" onclick="newProject()">New</button>
       <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); refreshProjectList();">Open</button>
+      <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
+      <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" id="undo-btn" onclick="history.undo()">Undo</button>
       <button class="btn btn-secondary" id="redo-btn" onclick="history.redo()">Redo</button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" onclick="Shell.openModal('shortcuts-modal')" title="Keyboard shortcuts"><i class="fa-regular fa-circle-question"></i></button>
+      <button class="btn btn-secondary" onclick="openSettingsModal()"><i class="fa-solid fa-gear"></i> Settings</button>
+      <div class="top-bar-divider"></div>
       <button class="btn btn-primary" onclick="saveProject()"><i class="fa-solid fa-cloud-arrow-up"></i> Save</button>
     </div>
   </div>
 
   <div id="shell-main" style="display:flex;">
     <div id="left-rail">
+      <h2>Add element</h2>
+      <div class="add-element-grid" id="add-element-grid"></div>
+      <button class="btn btn-secondary" style="width:100%; margin-bottom: var(--space-5);" onclick="openCrossSlideModal()"><i class="fa-solid fa-link"></i> From another slide</button>
       <h2>Layers</h2>
       <div id="layer-list"></div>
     </div>
@@ -77,8 +160,19 @@
         <div id="player-root">
           <div id="canvas-wrapper">
             <svg id="canvas-svg" viewBox="0 0 1920 1080">
+              <defs>
+                <pattern id="grid-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+                  <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#000" stroke-opacity="0.08" stroke-width="1"/>
+                </pattern>
+              </defs>
+              <rect id="grid-overlay" x="0" y="0" width="100%" height="100%" fill="url(#grid-pattern)" style="display:none; pointer-events:none;"></rect>
               <g id="elements-layer"></g>
             </svg>
+            <div id="empty-state-hint">
+              <i class="fa-regular fa-image"></i>
+              <p>Nothing on this slide yet</p>
+              <span>Add an element from the panel on the left to get started</span>
+            </div>
           </div>
           <div id="player-nav-bar"></div>
         </div>
@@ -88,6 +182,66 @@
         <div id="slide-tabs"></div>
         <button class="btn btn-secondary" onclick="addSlide()">+ Slide</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- From another slide modal -->
+<div class="modal-overlay" id="cross-slide-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Add</div><h2>From another slide</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('cross-slide-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--ink-soft); margin-bottom: var(--space-4); font-size: var(--text-sm);">
+        Check the elements you want, then <strong>Link</strong> them (same elements, animate into position between slides) or <strong>Copy</strong> them (independent duplicates).
+      </p>
+      <div id="cross-slide-list"></div>
+    </div>
+    <div class="modal-footer">
+      <span id="cross-slide-count" style="flex:1; align-self:center; color:var(--ink-soft); font-size:var(--text-sm);">0 selected</span>
+      <button class="btn btn-secondary" onclick="copySelectedFromSlides()">Copy selected</button>
+      <button class="btn btn-primary" onclick="linkSelectedFromSlides()">Link selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- Keyboard shortcuts modal -->
+<div class="modal-overlay" id="shortcuts-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div><div class="title-block">Help</div><h2>Keyboard shortcuts</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('shortcuts-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <table class="shortcuts-table">
+        <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete selection</td></tr>
+        <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>D</kbd></td><td>Duplicate selection</td></tr>
+        <tr><td><kbd>Arrow keys</kbd></td><td>Nudge 1px</td></tr>
+        <tr><td><kbd>Shift</kbd> + <kbd>Arrow keys</kbd></td><td>Nudge 10px</td></tr>
+        <tr><td><kbd>Shift</kbd> / <kbd>Cmd/Ctrl</kbd> + click</td><td>Add/remove from selection</td></tr>
+        <tr><td>Drag on empty canvas</td><td>Select multiple (marquee)</td></tr>
+        <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>Z</kbd></td><td>Undo</td></tr>
+        <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></td><td>Redo</td></tr>
+        <tr><td>Double-click a slide name</td><td>Rename slide</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Settings</div><h2>Canvas settings</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('settings-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="settings-fields"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Shell.closeModal('settings-modal')">Close</button>
     </div>
   </div>
 </div>
@@ -146,23 +300,65 @@
   const layerListEl = document.getElementById('layer-list');
 
   let currentProjectName = "Untitled project";
+  let lastSavedStateJSON = null; // snapshot at last save/load/new — comparing against this is what "unsaved changes" means
+
+  function hasUnsavedChanges() {
+    return JSON.stringify(slideManager.getState()) !== lastSavedStateJSON;
+  }
 
   function defaultSlides() {
     return [{ id: 'slide-' + Date.now(), name: 'Slide 1', elements: [] }];
   }
 
   const slideManager = new SlideManager({ svg, layer, slides: defaultSlides() });
-  const navStyle = defaultNavStyle();
   const playerNavBarEl = document.getElementById('player-nav-bar');
-  if (navStyle.navPosition === 'top') {
-    document.getElementById('player-root').insertBefore(playerNavBarEl, document.getElementById('canvas-wrapper'));
+  const playerRootEl = document.getElementById('player-root');
+  const canvasWrapperEl = document.getElementById('canvas-wrapper');
+
+  // navStyle here IS slideManager.canvasSettings.nav — the same object,
+  // mutated in place everywhere (including across undo/load), never
+  // reassigned, so the nav bar always reflects current settings without
+  // needing to be reconstructed.
+  const navBar = setupNavBar(playerNavBarEl, slideManager.canvasSettings.nav, (i) => slideManager.goToSlide(i));
+
+  function applyCanvasSizing() {
+    const cs = slideManager.canvasSettings;
+    svg.setAttribute('viewBox', `0 0 ${cs.width} ${cs.height}`);
+    canvasWrapperEl.style.aspectRatio = `${cs.width} / ${cs.height}`;
+    canvasWrapperEl.style.background = cs.backgroundColor;
   }
-  const navBar = setupNavBar(playerNavBarEl, navStyle, (i) => slideManager.goToSlide(i));
+
+  // Visual grid — authoring canvas only, never part of what gets
+  // exported (the exported bootstrap script builds its own bare SVG with
+  // no grid markup at all, so this can't leak into the player output).
+  function applyGridOverlay() {
+    const cs = slideManager.canvasSettings;
+    const pattern = document.getElementById('grid-pattern');
+    const overlay = document.getElementById('grid-overlay');
+    pattern.setAttribute('width', cs.gridSize);
+    pattern.setAttribute('height', cs.gridSize);
+    pattern.querySelector('path').setAttribute('d', `M ${cs.gridSize} 0 L 0 0 0 ${cs.gridSize}`);
+    overlay.style.display = cs.snapToGrid ? '' : 'none';
+  }
+
+  function applyNavPosition() {
+    // Idempotent — safe to call every refresh regardless of current order.
+    if (slideManager.canvasSettings.nav.navPosition === 'top') {
+      playerRootEl.insertBefore(playerNavBarEl, canvasWrapperEl);
+    } else {
+      playerRootEl.appendChild(playerNavBarEl);
+    }
+  }
 
   function refreshUI() {
+    applyCanvasSizing();
+    applyGridOverlay();
+    applyNavPosition();
+    document.getElementById('empty-state-hint').style.display = Object.keys(slideManager.elements).length === 0 ? 'flex' : 'none';
     renderLayerPanel(layerListEl, slideManager, editor);
     renderSlideTabs();
     navBar.refresh(slideManager.slides, slideManager.activeIndex);
+    document.getElementById('unsaved-dot').style.display = hasUnsavedChanges() ? '' : 'none';
   }
 
   const undoBtn = document.getElementById('undo-btn');
@@ -186,6 +382,8 @@
   const editor = new CanvasEditor({
     svg, elements: slideManager.elements, nodes: slideManager.nodes, popupHost, history,
     onSelect: () => renderLayerPanel(layerListEl, slideManager, editor),
+    onChange: () => renderLayerPanel(layerListEl, slideManager, editor),
+    getCanvasSettings: () => slideManager.canvasSettings,
   });
   slideManager.attachEditor(editor);
   slideManager.onSlideChange = refreshUI;
@@ -196,16 +394,400 @@
     history.commitAction();
   }
 
+  function renderSlideThumbnailSVG(slide) {
+    const cs = slideManager.canvasSettings;
+    const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgEl.setAttribute('viewBox', `0 0 ${cs.width} ${cs.height}`);
+    svgEl.style.background = cs.backgroundColor;
+    // Reuses the exact same createElementNode() from the shared renderer —
+    // no separate "how do I draw a thumbnail" logic to keep in sync with
+    // the real canvas. These nodes are never registered with the editor,
+    // so they're purely visual, non-interactive.
+    slide.elements.forEach((data) => {
+      try {
+        const node = createElementNode({ ...data }); // clone — createElementNode can mutate (e.g. text auto-height), and this must never touch the real element data
+        gsap.set(node.group, { opacity: 1 }); // skip the authoring fade-in; thumbnails should just appear
+        svgEl.appendChild(node.group);
+      } catch (err) { /* a malformed element shouldn't break the whole thumbnail row */ }
+    });
+    return svgEl;
+  }
+
   function renderSlideTabs() {
+    slideManager.commitActiveSlideElements(); // so the active slide's own thumbnail reflects its current (uncommitted-to-array) live state too
     const tabs = document.getElementById('slide-tabs');
     tabs.innerHTML = '';
+    let draggedIndex = null;
+
     slideManager.slides.forEach((s, i) => {
-      const btn = document.createElement('button');
-      btn.className = 'slide-tab' + (i === slideManager.activeIndex ? ' active' : '');
-      btn.textContent = s.name;
-      btn.addEventListener('click', () => slideManager.goToSlide(i));
-      tabs.appendChild(btn);
+      const wrap = document.createElement('div');
+      wrap.className = 'slide-tab-wrap';
+
+      const thumbContainer = document.createElement('div');
+      thumbContainer.className = 'slide-thumb-container';
+      thumbContainer.draggable = true;
+
+      const thumb = document.createElement('div');
+      thumb.className = 'slide-thumb' + (i === slideManager.activeIndex ? ' active' : '');
+      thumb.appendChild(renderSlideThumbnailSVG(s));
+      thumb.addEventListener('click', () => slideManager.goToSlide(i));
+
+      const del = document.createElement('button');
+      del.className = 'slide-tab-delete';
+      del.innerHTML = '&times;';
+      del.title = 'Delete slide';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteSlideWithHistory(i);
+      });
+
+      const dup = document.createElement('button');
+      dup.className = 'slide-tab-duplicate';
+      dup.innerHTML = '<i class="fa-regular fa-copy"></i>';
+      dup.title = 'Duplicate slide (elements stay linked to the original)';
+      dup.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        slideManager.duplicateSlide(i);
+        history.commitAction();
+      });
+
+      thumbContainer.appendChild(thumb);
+      thumbContainer.appendChild(dup);
+      // Only offer delete when there's more than one slide — SlideManager
+      // itself already refuses to delete the last one, but hiding the
+      // button here is clearer than letting someone click it and have
+      // nothing happen.
+      if (slideManager.slides.length > 1) thumbContainer.appendChild(del);
+
+      thumbContainer.addEventListener('dragstart', (e) => {
+        draggedIndex = i;
+        thumbContainer.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      thumbContainer.addEventListener('dragend', () => {
+        thumbContainer.classList.remove('dragging');
+        tabs.querySelectorAll('.slide-thumb-container').forEach((c) => c.classList.remove('drag-over'));
+      });
+      thumbContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (draggedIndex !== null && draggedIndex !== i) thumbContainer.classList.add('drag-over');
+      });
+      thumbContainer.addEventListener('dragleave', () => thumbContainer.classList.remove('drag-over'));
+      thumbContainer.addEventListener('drop', (e) => {
+        e.preventDefault();
+        thumbContainer.classList.remove('drag-over');
+        if (draggedIndex === null || draggedIndex === i) return;
+        history.beginAction();
+        slideManager.reorderSlide(draggedIndex, i);
+        history.commitAction();
+      });
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'slide-tab-name' + (i === slideManager.activeIndex ? ' active' : '');
+      nameEl.textContent = s.name;
+      nameEl.addEventListener('click', () => slideManager.goToSlide(i));
+      nameEl.addEventListener('dblclick', () => startRenameSlide(wrap, nameEl, i));
+
+      wrap.appendChild(thumbContainer);
+      wrap.appendChild(nameEl);
+      tabs.appendChild(wrap);
     });
+  }
+
+  function startRenameSlide(wrap, nameEl, index) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'slide-tab-rename-input';
+    input.value = slideManager.slides[index].name;
+    wrap.replaceChild(input, nameEl);
+    input.focus();
+    input.select();
+
+    let committed = false;
+    function commit() {
+      if (committed) return;
+      committed = true;
+      const newName = input.value.trim();
+      if (newName && newName !== slideManager.slides[index].name) {
+        history.beginAction();
+        slideManager.slides[index].name = newName;
+        history.commitAction();
+        refreshUI();
+      } else {
+        renderSlideTabs(); // no real change (or emptied) — just redraw the label back
+      }
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+      if (e.key === 'Escape') { committed = true; renderSlideTabs(); }
+    });
+  }
+
+  function deleteSlideWithHistory(index) {
+    history.beginAction();
+    slideManager.deleteSlide(index);
+    history.commitAction();
+  }
+
+  function renderAddElementButtons() {
+    const container = document.getElementById('add-element-grid');
+    container.innerHTML = '';
+    // Driven by ELEMENT_TYPES (element-types.js) — a new element type
+    // added there shows up here automatically, nothing to update in this
+    // file when that happens.
+    Object.entries(ELEMENT_TYPES).forEach(([type, schema]) => {
+      const btn = document.createElement('button');
+      btn.className = 'add-element-btn';
+      btn.innerHTML = `<i class="fa-solid ${schema.icon}"></i><span>${schema.label}</span>`;
+      btn.addEventListener('click', () => addElement(type));
+      container.appendChild(btn);
+    });
+  }
+
+  function addElement(type) {
+    history.beginAction();
+    const id = 'el-' + Date.now();
+    // Slight cascade so repeatedly clicking "Add" doesn't stack every new
+    // element in exactly the same spot.
+    const count = Object.keys(slideManager.elements).length;
+    const offset = (count % 6) * 24;
+    const data = makeDefaultElement(type, id, 200 + offset, 150 + offset);
+    const node = createElementNode(data);
+    layer.appendChild(node.group);
+    gsap.to(node.group, { opacity: 1, duration: 0.4 });
+    slideManager.elements[id] = data;
+    slideManager.nodes[id] = node;
+    editor.registerNode(node);
+    history.commitAction();
+    refreshUI();
+    editor.select(id); // straight into editing — no reason to make an author hunt for what they just added
+  }
+
+  async function newProject() {
+    if (hasUnsavedChanges()) {
+      const proceed = await Shell.confirm('Starting a new project will discard them.', { heading: 'Unsaved changes', okLabel: 'Discard and continue', danger: true });
+      if (!proceed) return;
+    }
+    currentProjectName = "Untitled project";
+    document.getElementById('display-project-name').innerText = currentProjectName;
+    slideManager.setState({ activeIndex: 0, slides: defaultSlides() });
+    history.undoStack = [];
+    history.redoStack = [];
+    history.onChange();
+    lastSavedStateJSON = JSON.stringify(slideManager.getState());
+    refreshUI();
+    Shell.toast('New project started', 'success');
+  }
+
+  /* ---- Canvas settings ---- */
+
+  const CANVAS_SETTING_FIELDS = [
+    { group: 'Artboard', key: 'width', label: 'Width', type: 'number', root: true },
+    { group: 'Artboard', key: 'height', label: 'Height', type: 'number', root: true },
+    { group: 'Artboard', key: 'backgroundColor', label: 'Background', type: 'color', root: true },
+    { group: 'Artboard', key: 'snapToGrid', label: 'Snap to grid', type: 'checkbox', root: true },
+    { group: 'Artboard', key: 'gridSize', label: 'Grid size', type: 'number', root: true },
+    { group: 'Navigation', key: 'navPosition', label: 'Position', type: 'select', options: [['bottom', 'Bottom'], ['top', 'Top']] },
+    { group: 'Navigation', key: 'navGap', label: 'Gap', type: 'number' },
+    { group: 'Navigation', key: 'buttonFontSize', label: 'Font size', type: 'number' },
+    { group: 'Navigation', key: 'buttonPaddingX', label: 'Padding X', type: 'number' },
+    { group: 'Navigation', key: 'buttonPaddingY', label: 'Padding Y', type: 'number' },
+    { group: 'Navigation', key: 'buttonRadius', label: 'Corner radius', type: 'number' },
+    { group: 'Button colors', key: 'buttonColor', label: 'Active background', type: 'color' },
+    { group: 'Button colors', key: 'buttonTextColor', label: 'Active text', type: 'color' },
+    { group: 'Button colors', key: 'buttonBottomColor', label: 'Active border', type: 'color' },
+    { group: 'Button colors', key: 'buttonInactiveColor', label: 'Inactive background', type: 'color' },
+    { group: 'Button colors', key: 'buttonInactiveTextColor', label: 'Inactive text', type: 'color' },
+    { group: 'Button colors', key: 'buttonInactiveBottomColor', label: 'Inactive border', type: 'color' },
+  ];
+
+  function getSettingValue(field) {
+    return field.root ? slideManager.canvasSettings[field.key] : slideManager.canvasSettings.nav[field.key];
+  }
+  function setSettingValue(field, value) {
+    if (field.root) slideManager.canvasSettings[field.key] = value;
+    else slideManager.canvasSettings.nav[field.key] = value;
+  }
+
+  function renderSettingsModal() {
+    const container = document.getElementById('settings-fields');
+    container.innerHTML = '';
+    const groups = {};
+    CANVAS_SETTING_FIELDS.forEach((f) => { (groups[f.group] = groups[f.group] || []).push(f); });
+
+    Object.entries(groups).forEach(([groupName, fields]) => {
+      const section = document.createElement('div');
+      section.className = 'settings-section';
+      const h3 = document.createElement('h3');
+      h3.textContent = groupName;
+      section.appendChild(h3);
+
+      fields.forEach((field) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'popup-field';
+        const label = document.createElement('label');
+        label.textContent = field.label;
+        wrap.appendChild(label);
+
+        let input;
+        if (field.type === 'select') {
+          input = document.createElement('select');
+          field.options.forEach(([val, text]) => {
+            const opt = document.createElement('option');
+            opt.value = val; opt.textContent = text;
+            if (val === getSettingValue(field)) opt.selected = true;
+            input.appendChild(opt);
+          });
+        } else if (field.type === 'checkbox') {
+          input = document.createElement('input');
+          input.type = 'checkbox';
+          input.style.width = 'auto';
+          input.checked = !!getSettingValue(field);
+        } else {
+          input = document.createElement('input');
+          input.type = field.type;
+          input.value = getSettingValue(field);
+        }
+
+        input.addEventListener('focus', () => { if (history) history.beginAction(); });
+        input.addEventListener('input', () => {
+          let val = field.type === 'checkbox' ? input.checked : input.value;
+          if (field.type === 'number') val = parseFloat(val) || 0;
+          setSettingValue(field, val);
+          refreshUI();
+        });
+        input.addEventListener('change', () => { if (history) history.commitAction(); });
+
+        wrap.appendChild(input);
+        section.appendChild(wrap);
+      });
+
+      container.appendChild(section);
+    });
+  }
+
+  function openSettingsModal() {
+    renderSettingsModal();
+    Shell.openModal('settings-modal');
+  }
+
+  /* ---- Add from another slide (copy or link) ---- */
+
+  function openCrossSlideModal() {
+    slideManager.commitActiveSlideElements(); // ensure other slides' arrays are current before reading them
+    const container = document.getElementById('cross-slide-list');
+    container.innerHTML = '';
+    const usedIds = new Set(Object.keys(slideManager.elements)); // ids already on THIS slide — if a match exists elsewhere, it's already linked here
+
+    let hasAny = false;
+    slideManager.slides.forEach((slide, i) => {
+      if (i === slideManager.activeIndex || slide.elements.length === 0) return;
+      hasAny = true;
+
+      const group = document.createElement('div');
+      group.className = 'cross-slide-group';
+      const h4 = document.createElement('h4');
+      h4.textContent = slide.name;
+      group.appendChild(h4);
+
+      slide.elements.forEach((data) => {
+        const alreadyLinked = usedIds.has(data.id);
+
+        const row = document.createElement('label'); // label wrapping the checkbox — clicking anywhere on the row toggles it
+        row.className = 'cross-slide-row';
+        if (alreadyLinked) row.style.opacity = '0.5';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.style.width = 'auto';
+        checkbox.disabled = alreadyLinked;
+        checkbox.dataset.elementData = ''; // placeholder so we can attach the real object below without JSON round-tripping
+        checkbox._elementData = data;
+        checkbox.addEventListener('change', updateCrossSlideCount);
+
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid ' + (ELEMENT_TYPES[data.type].icon || 'fa-shapes');
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'name';
+        nameSpan.textContent = (data.name || ELEMENT_TYPES[data.type].label) + (alreadyLinked ? ' (already linked here)' : '');
+
+        row.appendChild(checkbox);
+        row.appendChild(icon);
+        row.appendChild(nameSpan);
+        group.appendChild(row);
+      });
+
+      container.appendChild(group);
+    });
+
+    if (!hasAny) {
+      container.innerHTML = '<div class="layer-empty">No elements on other slides yet.</div>';
+    }
+    updateCrossSlideCount();
+    Shell.openModal('cross-slide-modal');
+  }
+
+  function getCrossSlideSelection() {
+    return Array.from(document.querySelectorAll('#cross-slide-list input[type=checkbox]:checked')).map((cb) => cb._elementData);
+  }
+
+  function updateCrossSlideCount() {
+    const n = getCrossSlideSelection().length;
+    document.getElementById('cross-slide-count').textContent = `${n} selected`;
+  }
+
+  /** Adds the SAME elements (same ids) to the current slide — this id
+   *  match is the entire mechanic that makes an element animate between
+   *  slides rather than fade out/in as two unrelated ones. */
+  function linkSelectedFromSlides() {
+    const items = getCrossSlideSelection();
+    if (items.length === 0) return;
+    history.beginAction();
+    let selectedId = null;
+    items.forEach((data) => {
+      const clone = { ...data };
+      const node = createElementNode(clone);
+      layer.appendChild(node.group);
+      gsap.to(node.group, { opacity: 1, duration: 0.4 });
+      slideManager.elements[clone.id] = clone;
+      slideManager.nodes[clone.id] = node;
+      editor.registerNode(node);
+      selectedId = clone.id;
+    });
+    history.commitAction();
+    refreshUI();
+    if (selectedId) editor.select(selectedId);
+    Shell.closeModal('cross-slide-modal');
+    Shell.toast(`Linked ${items.length} element${items.length > 1 ? 's' : ''} — animates between slides now`, 'success');
+  }
+
+  /** Adds independent duplicates — new ids, no ongoing connection to the
+   *  originals beyond having started as copies of them. */
+  function copySelectedFromSlides() {
+    const items = getCrossSlideSelection();
+    if (items.length === 0) return;
+    history.beginAction();
+    let selectedId = null;
+    items.forEach((data, i) => {
+      const newId = data.type + '-' + Date.now() + '-' + i + '-' + Math.floor(Math.random() * 1000);
+      const clone = { ...data, id: newId };
+      if (clone.name) clone.name = clone.name + ' copy';
+      const node = createElementNode(clone);
+      layer.appendChild(node.group);
+      gsap.to(node.group, { opacity: 1, duration: 0.4 });
+      slideManager.elements[newId] = clone;
+      slideManager.nodes[newId] = node;
+      editor.registerNode(node);
+      selectedId = newId;
+    });
+    history.commitAction();
+    refreshUI();
+    if (selectedId) editor.select(selectedId);
+    Shell.closeModal('cross-slide-modal');
+    Shell.toast(`Copied ${items.length} element${items.length > 1 ? 's' : ''}`, 'success');
   }
 
   /* ---- Storage ---- */
@@ -214,7 +796,7 @@
 
   async function saveProject() {
     if (!currentProjectName || currentProjectName === "Untitled project") {
-      const name = prompt("Project name:");
+      const name = await Shell.prompt('', '', { heading: 'Name this project', okLabel: 'Save' });
       if (!name) return;
       currentProjectName = name;
       document.getElementById('display-project-name').innerText = currentProjectName;
@@ -223,6 +805,7 @@
     try {
       await Storage.saveProject(TOOL_ID, currentProjectName, slideManager.getState());
       pending.remove();
+      lastSavedStateJSON = JSON.stringify(slideManager.getState());
       Shell.toast(`Project "${currentProjectName}" saved!`, 'success');
       Shell.setStatus('Connected', '');
     } catch (error) {
@@ -241,11 +824,45 @@
       Shell.renderProjectList(
         document.getElementById('project-list-container'),
         result.projects,
-        (name) => loadProject(name)
+        (name) => loadProject(name),
+        {
+          onRename: (oldName, newName) => renameProjectAction(oldName, newName),
+          onDelete: (name) => deleteProjectAction(name),
+        }
       );
     } catch (error) {
       pending.remove();
       Shell.toast(`Fetch failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function renameProjectAction(oldName, newName) {
+    const pending = Shell.toast(`Renaming "${oldName}"…`, 'pending');
+    try {
+      await Storage.renameProject(TOOL_ID, oldName, newName);
+      pending.remove();
+      Shell.toast(`Renamed to "${newName}"`, 'success');
+      if (currentProjectName === oldName) {
+        currentProjectName = newName;
+        document.getElementById('display-project-name').innerText = newName;
+      }
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Rename failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function deleteProjectAction(name) {
+    const pending = Shell.toast(`Deleting "${name}"…`, 'pending');
+    try {
+      await Storage.deleteProject(TOOL_ID, name);
+      pending.remove();
+      Shell.toast(`Deleted "${name}"`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Delete failed: ${error.message}`, 'danger');
     }
   }
 
@@ -263,6 +880,7 @@
       history.undoStack = [];
       history.redoStack = [];
       history.onChange();
+      lastSavedStateJSON = JSON.stringify(slideManager.getState());
       Shell.toast(`Project "${name}" loaded!`, 'success');
     } catch (error) {
       pending.remove();
@@ -285,7 +903,7 @@
   async function openExportModal() {
     const modules = await fetchModuleSources();
     const slidesJSON = JSON.stringify(slideManager.slides.map((s) => ({ ...s })));
-    const navStyleJSON = JSON.stringify(navStyle);
+    const canvasSettingsJSON = JSON.stringify(slideManager.canvasSettings);
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -298,14 +916,14 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; font-family: 'IBM Plex Sans', sans-serif; }
   #player-root { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
-  #canvas-wrapper { position: relative; flex: 1; min-height: 0; background: white; }
+  #canvas-wrapper { position: relative; flex: 1; min-height: 0; }
   #canvas-wrapper svg { width: 100%; height: 100%; display: block; }
 </style>
 </head>
 <body>
 <div id="player-root">
   <div id="canvas-wrapper">
-    <svg id="canvas-svg" viewBox="0 0 1920 1080"><g id="elements-layer"></g></svg>
+    <svg id="canvas-svg"><g id="elements-layer"></g></svg>
   </div>
   <div id="player-nav-bar"></div>
 </div>
@@ -313,15 +931,22 @@
 ${modules}
 
 const slides = ${slidesJSON};
-const navStyle = ${navStyleJSON};
+const canvasSettings = ${canvasSettingsJSON};
 const svg = document.getElementById('canvas-svg');
 const layer = document.getElementById('elements-layer');
-const slideManager = new SlideManager({ svg, layer, slides });
+const canvasWrapperEl = document.getElementById('canvas-wrapper');
+svg.setAttribute('viewBox', \`0 0 \${canvasSettings.width} \${canvasSettings.height}\`);
+canvasWrapperEl.style.background = canvasSettings.backgroundColor;
+
+const slideManager = new SlideManager({ svg, layer, slides, canvasSettings });
 const navBarEl = document.getElementById('player-nav-bar');
-if (navStyle.navPosition === 'top') {
-  document.getElementById('player-root').insertBefore(navBarEl, document.getElementById('canvas-wrapper'));
+const playerRootEl = document.getElementById('player-root');
+if (canvasSettings.nav.navPosition === 'top') {
+  playerRootEl.insertBefore(navBarEl, canvasWrapperEl);
+} else {
+  playerRootEl.appendChild(navBarEl);
 }
-const navBar = setupNavBar(navBarEl, navStyle, (i) => slideManager.goToSlide(i));
+const navBar = setupNavBar(navBarEl, canvasSettings.nav, (i) => slideManager.goToSlide(i));
 slideManager.onSlideChange = () => navBar.refresh(slideManager.slides, slideManager.activeIndex);
 navBar.refresh(slideManager.slides, slideManager.activeIndex);
 <\/script>
@@ -347,7 +972,9 @@ navBar.refresh(slideManager.slides, slideManager.activeIndex);
   Shell.init({ toolName: 'Animated Slides v2' });
   Shell.bindOverlayDismiss();
   Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
+  renderAddElementButtons();
   refreshUI();
+  lastSavedStateJSON = JSON.stringify(slideManager.getState());
 </script>
 </body>
 </html>

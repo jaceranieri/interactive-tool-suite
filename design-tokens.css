@@ -1,0 +1,102 @@
+/* ==========================================================================
+   Authoring Tools — Shared Design Tokens
+   Single source of truth for the authoring shell AND exported players.
+   Exported (offline) players should inline this file's contents at build
+   time rather than link to it, since they can't rely on external requests.
+   ========================================================================== */
+
+:root {
+  /* ---- Color: ink & surfaces ---- */
+  --ink: #1C2321;          /* primary text */
+  --ink-soft: #4A5453;     /* secondary text, captions */
+  --ink-faint: #8A9291;    /* disabled / placeholder text */
+  --paper: #FAFAF8;        /* app background */
+  --surface: #FFFFFF;      /* panels, cards, modals */
+  --surface-sunken: #F1F0EB; /* recessed areas, e.g. canvas well */
+  --border: #E3E1DA;       /* hairline borders */
+  --border-strong: #CBC8BE;
+
+  /* ---- Color: accent (blue-green, blue-leaning) ---- */
+  --accent: #0C5E82;
+  --accent-hover: #094A68;
+  --accent-soft: #DCEBF2;   /* tint background for selected/active */
+  --accent-ink: #073048;    /* accent text on light backgrounds */
+
+  /* ---- Color: buttons ---- */
+  --button-bg: #14181A;     /* near-black — primary actions */
+  --button-bg-hover: #2A302E;
+
+  /* ---- Color: state ---- */
+  --warn: #C98A2E;
+  --warn-soft: #FBF0DD;
+  --danger: #C1502E;
+  --danger-soft: #FBE8E2;
+  --success: #4F8A5B;
+  --success-soft: #E9F3EA;
+
+  /* ---- Type ---- */
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --text-xs: 0.75rem;    /* 12px — meta, title-block labels */
+  --text-sm: 0.8125rem;  /* 13px — UI body, buttons */
+  --text-base: 0.9375rem;/* 15px — default body */
+  --text-lg: 1.125rem;   /* 18px — panel titles */
+  --text-xl: 1.5rem;     /* 24px — tool/hub titles */
+  --text-2xl: 2rem;      /* 32px — hub hero */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- Spacing (4px base) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+
+  /* ---- Radius ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  /* ---- Shadow (warm-tinted, not pure black) ---- */
+  --shadow-sm: 0 1px 2px rgba(28, 35, 33, 0.06);
+  --shadow-md: 0 4px 12px rgba(28, 35, 33, 0.08);
+  --shadow-lg: 0 12px 32px rgba(28, 35, 33, 0.12);
+
+  /* ---- Motion ---- */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+  /* Content animation (element transitions on canvas) intentionally slower
+     — this stays a per-tool concern, not a shared token, since it should
+     match each interactive's pacing rather than UI chrome. */
+}
+
+/* ---- Signature element: the "title block" label ----
+   Use on hub tiles, panel headers, and each tool's top bar so every
+   screen in the suite is legible as part of the same family. */
+.title-block {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.title-block::before {
+  content: "";
+  display: inline-block;
+  width: var(--space-3);
+  height: 2px;
+  background: var(--accent);
+}

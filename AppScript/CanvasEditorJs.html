@@ -402,14 +402,24 @@ class CanvasEditor {
       this.drag.narrowCandidate = null;
     }
 
+    // Shift while moving locks the drag to whichever axis has moved
+    // further from the drag's start point — horizontal-only or
+    // vertical-only, decided fresh each frame so crossing the diagonal
+    // partway through a drag can still flip which axis is locked.
+    let moveDx = dx, moveDy = dy;
+    if (this.drag.type === 'move' && e.shiftKey) {
+      if (Math.abs(dx) >= Math.abs(dy)) moveDy = 0;
+      else moveDx = 0;
+    }
+
     if (this.drag.type === 'move' && this.drag.multiStart) {
       // Snap the grabbed element's new position, derive the actual delta
       // that resulted, then apply that SAME delta to everything else
       // selected — keeps the group's relative layout intact rather than
       // snapping each element to the grid independently.
       const anchor = this.drag.multiStart.find((m) => m.id === this.drag.id);
-      const snappedX = this._snap(anchor.x + dx);
-      const snappedY = this._snap(anchor.y + dy);
+      const snappedX = this._snap(anchor.x + moveDx);
+      const snappedY = this._snap(anchor.y + moveDy);
       const appliedDx = snappedX - anchor.x;
       const appliedDy = snappedY - anchor.y;
       this.drag.multiStart.forEach((m) => {
@@ -425,8 +435,8 @@ class CanvasEditor {
     }
 
     if (this.drag.type === 'move') {
-      data.x = this._snap(this.drag.startData.x + dx);
-      data.y = this._snap(this.drag.startData.y + dy);
+      data.x = this._snap(this.drag.startData.x + moveDx);
+      data.y = this._snap(this.drag.startData.y + moveDy);
     } else if (this.drag.type === 'resize') {
       this._applyResize(data, dx, dy, this.drag.corner);
     } else if (this.drag.type === 'arrow-tip') {

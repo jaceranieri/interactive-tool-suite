@@ -125,7 +125,20 @@ class SlideManager {
     });
 
     this.activeIndex = newIndex;
-    this._activeOrder = null; // stacking order is specific to whichever slide is active — starts fresh for the newly active one
+    // Seed with the destination slide's REAL stored order, not null. This
+    // used to be null ("starts fresh for the newly active one"), but the
+    // _currentOrder() fallback for a null _activeOrder is
+    // Object.keys(this.elements) — and this.elements is patched
+    // incrementally above, not rebuilt, so persisted (linked) elements
+    // keep whatever key position they had on the PREVIOUS slide while
+    // newly-appearing elements land at the end. That silently diverged
+    // from this slide's actual stored order (even though the canvas
+    // itself still rendered correctly, since the loop above walks
+    // newSlide.elements directly) — any drag-reorder done from the layer
+    // panel right after arriving on a slide was then computed against
+    // that wrong baseline and got committed back, making reorders look
+    // like they randomly didn't stick or reverted after navigating.
+    this._activeOrder = newSlide.elements.map((e) => e.id);
     this.onSlideChange();
   }
 

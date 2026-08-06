@@ -197,7 +197,14 @@ class SlideManager {
   reorderLayer(id, direction) {
     const order = this._currentOrder();
     const i = order.indexOf(id);
-    const j = i + direction;
+    // Array order is bottom-to-top (index 0 = furthest back — see class
+    // comment), so moving to a LATER index is moving UP the stack. direction
+    // -1 ("up") therefore needs to INCREASE the index, hence `i - direction`
+    // rather than `i + direction`, which had this exactly backwards: passing
+    // -1 moved the element to an earlier (lower) index, i.e. further back,
+    // the opposite of what the doc comment above and the layer panel's
+    // "up"/"down" buttons intended.
+    const j = i - direction;
     if (i === -1 || j < 0 || j >= order.length) return;
     [order[i], order[j]] = [order[j], order[i]];
     this._activeOrder = order;

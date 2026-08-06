@@ -160,6 +160,14 @@
   .switch input:checked + .switch-slider { background: var(--accent); }
   .switch input:checked + .switch-slider::before { transform: translateX(16px); }
   .switch input:focus-visible + .switch-slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Button colors: each state (active/inactive) is its own subgroup — a
+     toggle-labeled heading, then that state's 3 swatches side by side
+     rather than stacked as separate full-width fields. */
+  .color-subgroup { margin-bottom: var(--space-5); }
+  .color-subgroup:last-child { margin-bottom: 0; }
+  .swatch-row { display: flex; gap: var(--space-4); }
+  .swatch-field { display: flex; flex-direction: column; gap: 6px; }
+  .swatch-field label { font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; margin: 0; }
   .popup-fields + .popup-more-toggle { margin-top: var(--space-3); }
   .popup-more-toggle + .popup-fields { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
 </style>
@@ -718,14 +726,29 @@
     { group: 'Navigation', key: 'buttonPaddingX', label: 'Padding X', type: 'number' },
     { group: 'Navigation', key: 'buttonPaddingY', label: 'Padding Y', type: 'number' },
     { group: 'Navigation', key: 'buttonRadius', label: 'Corner radius', type: 'number' },
-    { group: 'Button colors', key: 'buttonBackgroundEnabled', label: 'Show active background', type: 'toggle' },
-    { group: 'Button colors', key: 'buttonColor', label: 'Active background', type: 'color' },
-    { group: 'Button colors', key: 'buttonTextColor', label: 'Active text', type: 'color' },
-    { group: 'Button colors', key: 'buttonBottomColor', label: 'Active border', type: 'color' },
-    { group: 'Button colors', key: 'buttonInactiveBackgroundEnabled', label: 'Show inactive background', type: 'toggle' },
-    { group: 'Button colors', key: 'buttonInactiveColor', label: 'Inactive background', type: 'color' },
-    { group: 'Button colors', key: 'buttonInactiveTextColor', label: 'Inactive text', type: 'color' },
-    { group: 'Button colors', key: 'buttonInactiveBottomColor', label: 'Inactive border', type: 'color' },
+  ];
+
+  // "Button colors" isn't driven by the generic field loop below — it
+  // needs a bespoke layout (a toggle-labeled subheading per button state,
+  // that state's 3 swatches in a row beneath it) rather than one full-width
+  // field per row.
+  const NAV_BUTTON_COLOR_GROUPS = [
+    {
+      label: 'Active', toggleKey: 'buttonBackgroundEnabled',
+      swatches: [
+        { key: 'buttonColor', label: 'Background' },
+        { key: 'buttonTextColor', label: 'Text' },
+        { key: 'buttonBottomColor', label: 'Border' },
+      ],
+    },
+    {
+      label: 'Inactive', toggleKey: 'buttonInactiveBackgroundEnabled',
+      swatches: [
+        { key: 'buttonInactiveColor', label: 'Background' },
+        { key: 'buttonInactiveTextColor', label: 'Text' },
+        { key: 'buttonInactiveBottomColor', label: 'Border' },
+      ],
+    },
   ];
 
   function getSettingValue(field) {
@@ -734,6 +757,69 @@
   function setSettingValue(field, value) {
     if (field.root) slideManager.canvasSettings[field.key] = value;
     else slideManager.canvasSettings.nav[field.key] = value;
+  }
+  function bindSettingInput(input, field, type) {
+    input.addEventListener('focus', () => { if (history) history.beginAction(); });
+    input.addEventListener('input', () => {
+      let val = type === 'toggle' ? input.checked : input.value;
+      if (type === 'number') val = parseFloat(val) || 0;
+      setSettingValue(field, val);
+      refreshUI();
+    });
+    input.addEventListener('change', () => { if (history) history.commitAction(); });
+  }
+
+  function renderButtonColorsSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    const h3 = document.createElement('h3');
+    h3.textContent = 'Button colors';
+    section.appendChild(h3);
+
+    NAV_BUTTON_COLOR_GROUPS.forEach((group) => {
+      const subgroup = document.createElement('div');
+      subgroup.className = 'color-subgroup';
+
+      const header = document.createElement('div');
+      header.className = 'popup-field toggle-field';
+      const headerLabel = document.createElement('label');
+      headerLabel.textContent = group.label;
+      header.appendChild(headerLabel);
+
+      const toggleInput = document.createElement('input');
+      toggleInput.type = 'checkbox';
+      toggleInput.checked = !!slideManager.canvasSettings.nav[group.toggleKey];
+      const switchLabel = document.createElement('label');
+      switchLabel.className = 'switch';
+      const slider = document.createElement('span');
+      slider.className = 'switch-slider';
+      switchLabel.appendChild(toggleInput);
+      switchLabel.appendChild(slider);
+      header.appendChild(switchLabel);
+      bindSettingInput(toggleInput, { key: group.toggleKey }, 'toggle');
+      subgroup.appendChild(header);
+
+      const row = document.createElement('div');
+      row.className = 'swatch-row';
+      group.swatches.forEach((swatch) => {
+        const field = document.createElement('div');
+        field.className = 'swatch-field';
+        const label = document.createElement('label');
+        label.textContent = swatch.label;
+        field.appendChild(label);
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.value = slideManager.canvasSettings.nav[swatch.key];
+        bindSettingInput(colorInput, { key: swatch.key }, 'color');
+        field.appendChild(colorInput);
+        row.appendChild(field);
+      });
+      subgroup.appendChild(row);
+
+      section.appendChild(subgroup);
+    });
+
+    return section;
   }
 
   function renderSettingsModal() {
@@ -798,14 +884,7 @@
           appendEl = input;
         }
 
-        input.addEventListener('focus', () => { if (history) history.beginAction(); });
-        input.addEventListener('input', () => {
-          let val = field.type === 'toggle' ? input.checked : input.value;
-          if (field.type === 'number') val = parseFloat(val) || 0;
-          setSettingValue(field, val);
-          refreshUI();
-        });
-        input.addEventListener('change', () => { if (history) history.commitAction(); });
+        bindSettingInput(input, field, field.type);
 
         wrap.appendChild(appendEl);
         section.appendChild(wrap);
@@ -813,6 +892,8 @@
 
       container.appendChild(section);
     });
+
+    container.appendChild(renderButtonColorsSection());
   }
 
   // Both drawers dock to the same right edge, so only one makes sense open

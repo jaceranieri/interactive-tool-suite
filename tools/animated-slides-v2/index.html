@@ -134,12 +134,31 @@
   .popup-name { display: block; width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 700; color: var(--ink); border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 var(--space-2); margin-bottom: var(--space-3); outline: none; background: transparent; }
   .popup-name:focus { border-bottom-color: var(--accent); }
   .popup-fields .popup-field { margin-bottom: var(--space-3); }
+  .settings-section .popup-field { margin-bottom: var(--space-5); }
   .popup-field:last-child { margin-bottom: 0; }
   .popup-field label { display: block; font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
   .popup-field input, .popup-field select, .popup-field textarea { width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
   .popup-field textarea { resize: vertical; max-width: 100%; }
-  .popup-field input[type=color] { height: 28px; padding: 2px; }
+  /* Rounded-corner square swatch instead of the browser's default
+     full-width color bar. */
+  .popup-field input[type=color] { width: 40px; height: 40px; padding: 0; border-radius: var(--radius-sm); cursor: pointer; overflow: hidden; }
+  .popup-field input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  .popup-field input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
+  .popup-field input[type=color]::-moz-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
   .popup-more-toggle { width: 100%; margin-top: 4px; padding: 6px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
+  /* Slide switch, used wherever a plain on/off setting is needed instead
+     of a native checkbox (see CLAUDE.md's "no native dialogs" convention —
+     same reasoning: a styled control that actually looks like the rest of
+     the UI, rather than raw browser chrome). */
+  .popup-field.toggle-field { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .popup-field.toggle-field label { margin-bottom: 0; }
+  .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch-slider { position: absolute; inset: 0; background: var(--border-strong); border-radius: 999px; cursor: pointer; transition: background var(--duration-fast) var(--ease-standard); }
+  .switch-slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; box-shadow: var(--shadow-sm); transition: transform var(--duration-fast) var(--ease-standard); }
+  .switch input:checked + .switch-slider { background: var(--accent); }
+  .switch input:checked + .switch-slider::before { transform: translateX(16px); }
+  .switch input:focus-visible + .switch-slider { outline: 2px solid var(--accent); outline-offset: 2px; }
   .popup-fields + .popup-more-toggle { margin-top: var(--space-3); }
   .popup-more-toggle + .popup-fields { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
 </style>
@@ -688,17 +707,21 @@
     { group: 'Artboard', key: 'width', label: 'Width', type: 'number', root: true },
     { group: 'Artboard', key: 'height', label: 'Height', type: 'number', root: true },
     { group: 'Artboard', key: 'backgroundColor', label: 'Background', type: 'color', root: true },
-    { group: 'Artboard', key: 'snapToGrid', label: 'Snap to grid', type: 'checkbox', root: true },
+    { group: 'Artboard', key: 'snapToGrid', label: 'Snap to grid', type: 'toggle', root: true },
     { group: 'Artboard', key: 'gridSize', label: 'Grid size', type: 'number', root: true },
     { group: 'Navigation', key: 'navPosition', label: 'Position', type: 'select', options: [['bottom', 'Bottom'], ['top', 'Top']] },
     { group: 'Navigation', key: 'navGap', label: 'Gap', type: 'number' },
     { group: 'Navigation', key: 'buttonFontSize', label: 'Font size', type: 'number' },
+    { group: 'Navigation', key: 'buttonFontWeight', label: 'Font weight', type: 'select',
+      options: [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extra bold']] },
     { group: 'Navigation', key: 'buttonPaddingX', label: 'Padding X', type: 'number' },
     { group: 'Navigation', key: 'buttonPaddingY', label: 'Padding Y', type: 'number' },
     { group: 'Navigation', key: 'buttonRadius', label: 'Corner radius', type: 'number' },
+    { group: 'Button colors', key: 'buttonBackgroundEnabled', label: 'Show active background', type: 'toggle' },
     { group: 'Button colors', key: 'buttonColor', label: 'Active background', type: 'color' },
     { group: 'Button colors', key: 'buttonTextColor', label: 'Active text', type: 'color' },
     { group: 'Button colors', key: 'buttonBottomColor', label: 'Active border', type: 'color' },
+    { group: 'Button colors', key: 'buttonInactiveBackgroundEnabled', label: 'Show inactive background', type: 'toggle' },
     { group: 'Button colors', key: 'buttonInactiveColor', label: 'Inactive background', type: 'color' },
     { group: 'Button colors', key: 'buttonInactiveTextColor', label: 'Inactive text', type: 'color' },
     { group: 'Button colors', key: 'buttonInactiveBottomColor', label: 'Inactive border', type: 'color' },
@@ -713,6 +736,17 @@
   }
 
   function renderSettingsModal() {
+    // Backfill any nav keys missing from an older saved project (e.g. a
+    // toggle added after that project was last saved) with their
+    // defaults, so the field reflects its actual effective value instead
+    // of reading as unset/off — nav-bar.js's own fallbacks already
+    // default these safely at render time, this just keeps the settings
+    // UI in sync with that.
+    const navDefaults = defaultNavStyle();
+    Object.keys(navDefaults).forEach((k) => {
+      if (slideManager.canvasSettings.nav[k] === undefined) slideManager.canvasSettings.nav[k] = navDefaults[k];
+    });
+
     const container = document.getElementById('settings-fields');
     container.innerHTML = '';
     const groups = {};
@@ -732,7 +766,7 @@
         label.textContent = field.label;
         wrap.appendChild(label);
 
-        let input;
+        let input, appendEl;
         if (field.type === 'select') {
           input = document.createElement('select');
           field.options.forEach(([val, text]) => {
@@ -741,27 +775,38 @@
             if (val === getSettingValue(field)) opt.selected = true;
             input.appendChild(opt);
           });
-        } else if (field.type === 'checkbox') {
+          appendEl = input;
+        } else if (field.type === 'toggle') {
+          // Styled slide switch instead of a native checkbox — same
+          // "no raw browser chrome" reasoning as Shell.confirm/prompt.
+          wrap.classList.add('toggle-field');
           input = document.createElement('input');
           input.type = 'checkbox';
-          input.style.width = 'auto';
           input.checked = !!getSettingValue(field);
+          const switchLabel = document.createElement('label');
+          switchLabel.className = 'switch';
+          const slider = document.createElement('span');
+          slider.className = 'switch-slider';
+          switchLabel.appendChild(input);
+          switchLabel.appendChild(slider);
+          appendEl = switchLabel;
         } else {
           input = document.createElement('input');
           input.type = field.type;
           input.value = getSettingValue(field);
+          appendEl = input;
         }
 
         input.addEventListener('focus', () => { if (history) history.beginAction(); });
         input.addEventListener('input', () => {
-          let val = field.type === 'checkbox' ? input.checked : input.value;
+          let val = field.type === 'toggle' ? input.checked : input.value;
           if (field.type === 'number') val = parseFloat(val) || 0;
           setSettingValue(field, val);
           refreshUI();
         });
         input.addEventListener('change', () => { if (history) history.commitAction(); });
 
-        wrap.appendChild(input);
+        wrap.appendChild(appendEl);
         section.appendChild(wrap);
       });
 

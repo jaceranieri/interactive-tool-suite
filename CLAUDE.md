@@ -329,13 +329,18 @@ diffing, which is fine at this scale.
   "embed `tab-types.js` + `block-renderer.js` + saved tab data + minimal
   tab-switching JS," same shape as v2's Export, just without an SVG
   renderer/GSAP to carry along.
-- **Apps Script deployment** — no `AppScript/TabbedPanels.html` or
-  `AppScript/*Js.html` module wrappers exist yet, and its `PAGES` entry
-  in `Code.gs` is commented out. Needs the same 5-substitution pass
-  described in "The Apps Script deployment pipeline" above before it's
-  reachable through the hosted hub. Untested against `google.script.run`
-  entirely — Save/Open/New only verified in local preview so far (see
-  HANDOFF.md).
+- **Apps Script deployment exists but is unverified for real** —
+  `AppScript/TabbedPanels.html` (+ `TabTypesJs.html`,
+  `RichtextEditorJs.html`, `BlockRendererJs.html`, `TabManagerJs.html`)
+  went through the 5-substitution pass and the `PAGES` entry in
+  `Code.gs` is uncommented, so it's reachable from the hub once
+  redeployed. Its `history.js` reuses the **existing** `AppScript/
+  HistoryJs.html` rather than a duplicate copy — the file is byte-for-
+  byte identical generic code (only header comments differ), so there
+  was nothing tool-specific to wrap separately. None of this has
+  actually been pasted into a live Apps Script project yet — untested
+  against real `google.script.run` end to end. Do a real Save/Load
+  round-trip before treating this as done (see HANDOFF.md).
 - **Touch/tablet drag-and-drop** — tab and block reordering use native
   HTML5 drag-and-drop (copied from v2's layer/slide reordering), which
   has the same known touchscreen gap v2 does.

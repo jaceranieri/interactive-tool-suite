@@ -359,28 +359,52 @@ Styles drawer: `h2`/`h3`/`h4`/`subtitle` each have `{ size, color }`;
 than `primary`/`secondary` — "plain" just sets `border` to the card's
 own white, so the grid lines read as absent with no separate rendering
 branch needed). Same split v2 uses for nav Active/Inactive colours, and
-rendered with the same "Colours" table pattern — `renderVariantColourTable()`
-takes an optional `variants` param (`[[key, label], ...]`, defaulting to
-primary/secondary) so Badges/Buttons/Tables all share one function
-despite different variant names, rather than three near-duplicate
-render functions. Every swatch in the Styles drawer (typography colours
-included) shares one CSS rule and gets a `title` attribute naming
-exactly what it recolours (e.g. "Background — Bordered") — these two
-were both real fixes: the colour-table swatches had originally been
-added without the sizing/rounding rule the typography swatches already
-had (an inconsistency caught during a review pass, not something a
-mockup called for), and tooltips were a subsequent explicit request. If
-another block type ever needs a colour-table section, reuse
-`renderVariantColourTable()` rather than writing a fourth copy.
-`block-renderer.js` takes `styles` as a parameter rather than reading a
-global, so it stays a pure function of its inputs — this is also what
-lets Export embed it unmodified.
+rendered with the same general shape via `renderVariantColourTable()`,
+which takes an optional `variants` param (`[[key, label], ...]`,
+defaulting to primary/secondary) so Badges/Buttons/Tables all share one
+function despite different variant names, rather than three
+near-duplicate render functions.
 
-**Backlog, not yet done**: Animated Slides v2's own Canvas Settings
-drawer has the same swatch-consistency question worth auditing — raised
-by the person while reviewing Tabbed Panels' Styles drawer, explicitly
-deferred as a separate future pass on `tools/animated-slides-v2/
-index.html`, not bundled into this work.
+**Colour-group presentation** (settled after a design-review pass
+against a supplied reference screenshot): each property (Background/
+Text/Border) renders as its own labeled `.colour-group` — a persistent
+label above, then that property's swatches side by side (2 per group;
+2 groups per row in the 340px drawer). No variant name (Primary/
+Bordered/etc.) is ever shown as a persistent label on the swatch itself
+— it only appears as a custom hover tooltip (`.colour-swatch-tooltip`:
+black background, white text, rounded, positioned directly under the
+swatch), never the native `title` attribute (that was tried first, then
+explicitly replaced once a styled reference was supplied — native
+tooltips can't be styled). Swatches themselves have no border at all
+(`border: none` explicitly, since the browser's UA-stylesheet default
+border was the original inconsistency people were reacting to, not the
+grid layout). Every swatch in the Styles drawer — Headings/Subtitle's
+standalone fields included — shares the same sizing/rounding rule; the
+Headings ones don't get a hover tooltip since they already have a
+permanent field label, unlike the grouped ones. If another block type
+ever needs a colour-table section, reuse `renderVariantColourTable()`
+rather than writing a fourth copy. `block-renderer.js` takes `styles`
+as a parameter rather than reading a global, so it stays a pure
+function of its inputs — this is also what lets Export embed it
+unmodified.
+
+**Backlog, not yet done** (both raised by the person while reviewing
+Tabbed Panels' Styles drawer and bottom tab bar, explicitly deferred as
+future passes on `tools/animated-slides-v2/index.html`, not bundled
+into Tabbed Panels' work):
+- Apply the same colour-group presentation (labeled groups, no
+  persistent variant labels, styled hover tooltips, borderless
+  swatches) to v2's own Canvas Settings drawer, which currently uses
+  the older single-grid-table layout Tabbed Panels itself started with.
+- v2's slide bar has the identical rename-input size-mismatch bug
+  Tabbed Panels' bottom tab bar just had fixed: `.slide-tab-name` (a
+  plain `<div>`) and `.slide-tab-rename-input` (an `<input>` with
+  padding + a coloured border) don't share a box model, so double-
+  clicking to rename a slide visibly jumps the whole slide bar's size.
+  Fix by giving both the same `box-sizing`, width, height, padding, and
+  a border that's transparent on the label and accent-coloured on the
+  input — exactly the fix applied to `.tab-thumb-name`/
+  `.tab-thumb-rename-input` here.
 
 Two more keys cover layout rather than a per-block variant:
 `blockSpacing` (a single number, the gap in px between stacked blocks —

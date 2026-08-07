@@ -144,19 +144,61 @@ and asked how to add Table styling without overloading the panel.
   applied to Animated Slides v2's Canvas Settings drawer — explicitly
   deferred as separate future work, not bundled into this session.
 
+**Session 6** (this one — swatch layout redo + tab-bar sizing, still PR
+#7): the person supplied a reference screenshot showing a different
+(and, per them, correct) swatch presentation than what session 5 built,
+plus flagged the bottom tab bar as too small with a rename-jump bug.
+
+- **Swatch presentation reworked to match the reference**: replaced the
+  single grid-table (row=property, column=variant) with per-property
+  `.colour-group`s (Background/Text/Border), each a labeled cluster of
+  that property's swatches side by side, 2 groups per row. The native
+  `title` tooltip added in session 5 is gone, replaced by a custom
+  hover-only tooltip (black bg, white text, rounded, positioned under
+  the swatch) — the reference screenshot showed a styled tooltip native
+  `title` can't produce. Swatches also lost their border entirely (`border:
+  none` explicit) — the browser's default UA-stylesheet border on
+  `<input type=color>` was still showing through even after session 5's
+  sizing fix, since that fix never touched `border`.
+- **Bottom tab bar enlarged and rename-jump fixed**: thumbnails grew
+  from 96×64 to 128×84 (`THUMB_W`/`THUMB_H` in `renderTabThumbnail()`,
+  kept in sync with `.tab-thumb`'s CSS), and `.tab-thumb-name`/
+  `.tab-thumb-rename-input` were rewritten to share one box model
+  (`box-sizing: border-box`, identical width/height/padding, and a
+  border that's transparent on the label vs. accent-coloured on the
+  input) — same box, different border colour, so swapping div↔input on
+  double-click causes zero layout shift.
+- **Two more backlog items logged for v2, not started**: (1) the same
+  colour-group/tooltip/borderless-swatch treatment for v2's Canvas
+  Settings drawer (extending session 5's backlog item with the now-
+  corrected design), and (2) v2's slide bar has the identical rename-
+  input box-model mismatch just fixed here — `.slide-tab-name`/
+  `.slide-tab-rename-input` in `tools/animated-slides-v2/index.html`
+  need the same box-sizing/dimension unification.
+- **Verified via an 8-point Playwright smoke test, passed clean on the
+  first round** — colour groups confirmed 2-per-row via actual bounding-
+  box measurement (not just DOM order), no persistent variant labels,
+  zero swatch border, tooltip confirmed as a real hovered DOM element
+  (not the native `title` attribute, which was confirmed absent),
+  thumbnail measured at exactly 128×84px, and the rename `<input>`'s
+  bounding box measured pixel-identical to the `<div>` it replaced
+  (same x/y/width/height) — zero layout jump.
+
 ## What's next
 
 1. **Do the real Apps Script round-trip** described above — still the
    single most important unverified thing.
-2. **v2 Canvas Settings swatch consistency audit** — the backlog item
-   from this session. Not started; needs its own look at
-   `tools/animated-slides-v2/index.html`'s settings-panel CSS/JS.
+2. **v2 backlog, not started**: (a) apply the corrected colour-group/
+   tooltip/borderless-swatch presentation to v2's Canvas Settings
+   drawer, (b) fix the identical rename-input box-model jump in v2's
+   slide bar. Both fixes exist in Tabbed Panels already and are meant
+   to be ported over, not re-designed from scratch.
 3. Everything under "What's NOT built yet" in CLAUDE.md's Tabbed Panels
    section: touch/tablet drag-and-drop, accessibility pass, narrow-window
    layout — standing gaps carried over from v2, not yet looked at here.
 4. Nothing else is currently flagged as missing from the reviewed scope
    — the next likely direction is either the Apps Script verification
-   above, the v2 audit, or new feature requests from the person.
+   above, the v2 backlog, or new feature requests from the person.
 
 ## Older, still-outstanding items from earlier in the project
 

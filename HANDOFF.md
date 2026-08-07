@@ -82,6 +82,38 @@ targeted re-test of the exact bug-repro sequence after the fix) — see
 this session's conversation for the full checklist; both passed clean
 on the second round.
 
+**Session 4** (this one — follow-up request, still PR #7): replaced the
+Tabs drawer with a persistent bottom tab bar, and extended the Styles
+drawer with layout controls.
+
+- **Bottom tab bar** (`#editor-tab-bar`) replaces the side "Tabs"
+  drawer entirely — same role and layout as v2's `#editor-slide-bar`:
+  one live-content thumbnail per tab (`renderTabThumbnail()` reuses the
+  same `renderBlock()` the canvas uses, scaled down via CSS `transform`,
+  mirroring v2's `renderSlideThumbnailSVG()` trick), hover-revealed
+  duplicate/delete buttons, double-click-to-rename, native HTML5
+  drag-to-reorder, and a "+ Tab" button. The left rail's "Manage tabs"
+  icon is gone; the top tab-nav strip inside the player card now only
+  ever switches tabs.
+- **Styles drawer gained two sections**: "Layout" (a single "Spacing
+  between blocks" field — `styles.blockSpacing`, applied by setting
+  `#block-list`'s `style.gap` directly) and "Tab label" (font size +
+  vertical/horizontal padding — `styles.tabLabel`, passed to
+  `tab-nav.js`'s `renderTabNav()` as an optional `tabLabelStyle` param
+  and applied as inline styles on each `.tp-tabnav-tab` button).
+- Regenerated `AppScript/TabbedPanels.html`, `TabManagerJs.html`,
+  `TabNavJs.html` to match (including the `MODULE_SOURCES` Export
+  embedding, which needed the updated `tab-nav.js` re-baked in).
+- **Verified via a 10-point Playwright smoke test, passed clean on the
+  first round** — no bugs found this time (unlike session 3, which
+  found two real ones). Covered: left-rail button count, bottom bar
+  existence/thumbnails, add/switch-tab, thumbnail content reflecting
+  live edits, hover-reveal duplicate/delete, duplicate producing a
+  correctly-named copy, rename propagating to both the thumbnail label
+  and the active tab-nav strip, drag-reorder actually reordering the
+  DOM, and both new Styles fields (spacing, tab label font size) driving
+  real computed-style changes on `#block-list` and `.tp-tabnav-tab`.
+
 ## What's next
 
 1. **Do the real Apps Script round-trip** described above — still the

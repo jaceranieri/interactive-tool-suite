@@ -27,29 +27,19 @@ function defaultNavStyle() {
     navGap: 12,
     buttonColor: '#0C5E82', buttonTextColor: '#ffffff', buttonBottomColor: '#094A68',
     buttonInactiveColor: '#DCEBF2', buttonInactiveTextColor: '#073048', buttonInactiveBottomColor: '#B8D4DF',
-    buttonBackgroundEnabled: true, buttonInactiveBackgroundEnabled: true,
     buttonFontSize: 14, buttonFontWeight: '700', buttonPaddingX: 20, buttonPaddingY: 8, buttonRadius: 8,
   };
 }
 
 function styleNavButton(btn, isActive, navStyle) {
-  // Background/border-bottom can be switched off per state (active vs
-  // inactive) — defaults to true so existing projects render identically
-  // to before this was added. Border-bottom stays present but transparent
-  // rather than removed outright, so turning the background off doesn't
-  // shift the button's height/layout.
-  const bgEnabled = isActive
-    ? navStyle.buttonBackgroundEnabled !== false
-    : navStyle.buttonInactiveBackgroundEnabled !== false;
-
   btn.style.fontFamily = 'inherit';
   btn.style.fontWeight = navStyle.buttonFontWeight || '700';
   btn.style.fontSize = navStyle.buttonFontSize + 'px';
   btn.style.padding = navStyle.buttonPaddingY + 'px ' + navStyle.buttonPaddingX + 'px';
   btn.style.borderRadius = navStyle.buttonRadius + 'px';
   btn.style.border = 'none';
-  btn.style.borderBottom = '4px solid ' + (bgEnabled ? (isActive ? navStyle.buttonBottomColor : navStyle.buttonInactiveBottomColor) : 'transparent');
-  btn.style.background = bgEnabled ? (isActive ? navStyle.buttonColor : navStyle.buttonInactiveColor) : 'transparent';
+  btn.style.borderBottom = '4px solid ' + (isActive ? navStyle.buttonBottomColor : navStyle.buttonInactiveBottomColor);
+  btn.style.background = isActive ? navStyle.buttonColor : navStyle.buttonInactiveColor;
   btn.style.color = isActive ? navStyle.buttonTextColor : navStyle.buttonInactiveTextColor;
   btn.style.cursor = 'pointer';
   btn.style.whiteSpace = 'nowrap';

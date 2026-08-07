@@ -121,7 +121,14 @@
   .side-panel-body { flex: 1; overflow-y: auto; padding: var(--space-5); }
   #settings-fields { display: flex; flex-direction: column; gap: var(--space-5); }
   .top-bar-divider { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
-  .settings-section h3 { font-size: var(--text-sm); font-weight: 600; margin: 0 0 var(--space-3); color: var(--ink); }
+  .settings-section h3 { font-size: var(--text-sm); font-weight: 600; margin: 0 0 var(--space-4); color: var(--ink); }
+  /* Divider line between sections (not before the first one). */
+  .settings-section + .settings-section { border-top: 1px solid var(--border); padding-top: var(--space-5); }
+  /* Two equal-width columns; fields wrap into new rows automatically, and
+     a field left alone in a row (e.g. Background under Width/Height)
+     just sits in the first column, matching the reference layout. */
+  .settings-section .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .settings-section .field-grid .popup-field { margin-bottom: 0; }
 
   .cross-slide-group { margin-bottom: var(--space-4); }
   .cross-slide-group h4 { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); margin: 0 0 var(--space-2); }
@@ -141,11 +148,12 @@
   .popup-field input, .popup-field select, .popup-field textarea { width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
   .popup-field textarea { resize: vertical; max-width: 100%; }
   /* Rounded-corner square swatch instead of the browser's default
-     full-width color bar. */
-  .popup-field input[type=color] { width: 40px; height: 40px; padding: 0; border-radius: var(--radius-sm); cursor: pointer; overflow: hidden; }
-  .popup-field input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
-  .popup-field input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
-  .popup-field input[type=color]::-moz-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
+     full-width color bar — shared by every color input, including the
+     Colours table's swatches, which aren't wrapped in a .popup-field. */
+  .popup-field input[type=color], .colour-table input[type=color] { width: 40px; height: 40px; padding: 0; border-radius: var(--radius-sm); cursor: pointer; overflow: hidden; }
+  .popup-field input[type=color]::-webkit-color-swatch-wrapper, .colour-table input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  .popup-field input[type=color]::-webkit-color-swatch, .colour-table input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
+  .popup-field input[type=color]::-moz-color-swatch, .colour-table input[type=color]::-moz-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
   .popup-more-toggle { width: 100%; margin-top: 4px; padding: 6px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
   /* Slide switch, used wherever a plain on/off setting is needed instead
      of a native checkbox (see CLAUDE.md's "no native dialogs" convention —
@@ -160,14 +168,12 @@
   .switch input:checked + .switch-slider { background: var(--accent); }
   .switch input:checked + .switch-slider::before { transform: translateX(16px); }
   .switch input:focus-visible + .switch-slider { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* Button colors: each state (active/inactive) is its own subgroup — a
-     toggle-labeled heading, then that state's 3 swatches side by side
-     rather than stacked as separate full-width fields. */
-  .color-subgroup { margin-bottom: var(--space-5); }
-  .color-subgroup:last-child { margin-bottom: 0; }
-  .swatch-row { display: flex; gap: var(--space-4); }
-  .swatch-field { display: flex; flex-direction: column; gap: 6px; }
-  .swatch-field label { font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; margin: 0; }
+  /* Colours: a table — rows are Background/Text/Border, columns are
+     Active/Inactive, each cell just a swatch. Blank corner cell above the
+     row labels, column headers above the swatches. */
+  .colour-table { display: grid; grid-template-columns: auto 1fr 1fr; column-gap: var(--space-4); row-gap: var(--space-3); align-items: center; }
+  .colour-table-head { font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; text-align: left; }
+  .colour-table-row-label { font-size: var(--text-sm); color: var(--ink); margin: 0; white-space: nowrap; }
   .popup-fields + .popup-more-toggle { margin-top: var(--space-3); }
   .popup-more-toggle + .popup-fields { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
 </style>
@@ -716,39 +722,23 @@
     { group: 'Artboard', key: 'width', label: 'Width', type: 'number', root: true },
     { group: 'Artboard', key: 'height', label: 'Height', type: 'number', root: true },
     { group: 'Artboard', key: 'backgroundColor', label: 'Background', type: 'color', root: true },
-    { group: 'Artboard', key: 'snapToGrid', label: 'Snap to grid', type: 'toggle', root: true },
-    { group: 'Artboard', key: 'gridSize', label: 'Grid size', type: 'number', root: true },
+    { group: 'Grid', key: 'gridSize', label: 'Size', type: 'number', root: true },
+    { group: 'Grid', key: 'snapToGrid', label: 'Snap to Grid', type: 'boolean-select', root: true },
     { group: 'Navigation', key: 'navPosition', label: 'Position', type: 'select', options: [['bottom', 'Bottom'], ['top', 'Top']] },
-    { group: 'Navigation', key: 'navGap', label: 'Gap', type: 'number' },
-    { group: 'Navigation', key: 'buttonFontSize', label: 'Font size', type: 'number' },
-    { group: 'Navigation', key: 'buttonFontWeight', label: 'Font weight', type: 'select',
+    { group: 'Navigation', key: 'buttonRadius', label: 'Corner Radius', type: 'number' },
+    { group: 'Navigation', key: 'buttonFontSize', label: 'Size', type: 'number' },
+    { group: 'Navigation', key: 'buttonFontWeight', label: 'Weight', type: 'select',
       options: [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extra bold']] },
     { group: 'Navigation', key: 'buttonPaddingX', label: 'Padding X', type: 'number' },
     { group: 'Navigation', key: 'buttonPaddingY', label: 'Padding Y', type: 'number' },
-    { group: 'Navigation', key: 'buttonRadius', label: 'Corner radius', type: 'number' },
   ];
 
-  // "Button colors" isn't driven by the generic field loop below — it
-  // needs a bespoke layout (a toggle-labeled subheading per button state,
-  // that state's 3 swatches in a row beneath it) rather than one full-width
-  // field per row.
-  const NAV_BUTTON_COLOR_GROUPS = [
-    {
-      label: 'Active', toggleKey: 'buttonBackgroundEnabled',
-      swatches: [
-        { key: 'buttonColor', label: 'Background' },
-        { key: 'buttonTextColor', label: 'Text' },
-        { key: 'buttonBottomColor', label: 'Border' },
-      ],
-    },
-    {
-      label: 'Inactive', toggleKey: 'buttonInactiveBackgroundEnabled',
-      swatches: [
-        { key: 'buttonInactiveColor', label: 'Background' },
-        { key: 'buttonInactiveTextColor', label: 'Text' },
-        { key: 'buttonInactiveBottomColor', label: 'Border' },
-      ],
-    },
+  // Colours: rows are the 3 style properties, columns are Active/Inactive —
+  // a table, not the generic one-field-per-row loop below.
+  const NAV_COLOUR_ROWS = [
+    { label: 'Background', activeKey: 'buttonColor', inactiveKey: 'buttonInactiveColor' },
+    { label: 'Text', activeKey: 'buttonTextColor', inactiveKey: 'buttonInactiveTextColor' },
+    { label: 'Border', activeKey: 'buttonBottomColor', inactiveKey: 'buttonInactiveBottomColor' },
   ];
 
   function getSettingValue(field) {
@@ -762,73 +752,58 @@
     input.addEventListener('focus', () => { if (history) history.beginAction(); });
     input.addEventListener('input', () => {
       let val = type === 'toggle' ? input.checked : input.value;
-      if (type === 'number') val = parseFloat(val) || 0;
+      if (type === 'boolean-select') val = val === 'true';
+      else if (type === 'number') val = parseFloat(val) || 0;
       setSettingValue(field, val);
       refreshUI();
     });
     input.addEventListener('change', () => { if (history) history.commitAction(); });
   }
 
-  function renderButtonColorsSection() {
+  function renderColoursSection() {
     const section = document.createElement('div');
     section.className = 'settings-section';
     const h3 = document.createElement('h3');
-    h3.textContent = 'Button colors';
+    h3.textContent = 'Colours';
     section.appendChild(h3);
 
-    NAV_BUTTON_COLOR_GROUPS.forEach((group) => {
-      const subgroup = document.createElement('div');
-      subgroup.className = 'color-subgroup';
+    const table = document.createElement('div');
+    table.className = 'colour-table';
 
-      const header = document.createElement('div');
-      header.className = 'popup-field toggle-field';
-      const headerLabel = document.createElement('label');
-      headerLabel.textContent = group.label;
-      header.appendChild(headerLabel);
-
-      const toggleInput = document.createElement('input');
-      toggleInput.type = 'checkbox';
-      toggleInput.checked = !!slideManager.canvasSettings.nav[group.toggleKey];
-      const switchLabel = document.createElement('label');
-      switchLabel.className = 'switch';
-      const slider = document.createElement('span');
-      slider.className = 'switch-slider';
-      switchLabel.appendChild(toggleInput);
-      switchLabel.appendChild(slider);
-      header.appendChild(switchLabel);
-      bindSettingInput(toggleInput, { key: group.toggleKey }, 'toggle');
-      subgroup.appendChild(header);
-
-      const row = document.createElement('div');
-      row.className = 'swatch-row';
-      group.swatches.forEach((swatch) => {
-        const field = document.createElement('div');
-        field.className = 'swatch-field';
-        const label = document.createElement('label');
-        label.textContent = swatch.label;
-        field.appendChild(label);
-        const colorInput = document.createElement('input');
-        colorInput.type = 'color';
-        colorInput.value = slideManager.canvasSettings.nav[swatch.key];
-        bindSettingInput(colorInput, { key: swatch.key }, 'color');
-        field.appendChild(colorInput);
-        row.appendChild(field);
-      });
-      subgroup.appendChild(row);
-
-      section.appendChild(subgroup);
+    table.appendChild(document.createElement('span')); // blank corner cell
+    ['Active', 'Inactive'].forEach((text) => {
+      const head = document.createElement('span');
+      head.className = 'colour-table-head';
+      head.textContent = text;
+      table.appendChild(head);
     });
 
+    NAV_COLOUR_ROWS.forEach((row) => {
+      const rowLabel = document.createElement('label');
+      rowLabel.className = 'colour-table-row-label';
+      rowLabel.textContent = row.label;
+      table.appendChild(rowLabel);
+
+      [row.activeKey, row.inactiveKey].forEach((key) => {
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.value = slideManager.canvasSettings.nav[key];
+        bindSettingInput(colorInput, { key }, 'color');
+        table.appendChild(colorInput);
+      });
+    });
+
+    section.appendChild(table);
     return section;
   }
 
   function renderSettingsModal() {
     // Backfill any nav keys missing from an older saved project (e.g. a
-    // toggle added after that project was last saved) with their
-    // defaults, so the field reflects its actual effective value instead
-    // of reading as unset/off — nav-bar.js's own fallbacks already
-    // default these safely at render time, this just keeps the settings
-    // UI in sync with that.
+    // field added after that project was last saved) with their
+    // defaults, so it reflects its actual effective value instead of
+    // reading as unset — nav-bar.js's own fallbacks already default
+    // these safely at render time, this just keeps the settings UI in
+    // sync with that.
     const navDefaults = defaultNavStyle();
     Object.keys(navDefaults).forEach((k) => {
       if (slideManager.canvasSettings.nav[k] === undefined) slideManager.canvasSettings.nav[k] = navDefaults[k];
@@ -845,6 +820,9 @@
       const h3 = document.createElement('h3');
       h3.textContent = groupName;
       section.appendChild(h3);
+
+      const grid = document.createElement('div');
+      grid.className = 'field-grid';
 
       fields.forEach((field) => {
         const wrap = document.createElement('div');
@@ -863,9 +841,20 @@
             input.appendChild(opt);
           });
           appendEl = input;
+        } else if (field.type === 'boolean-select') {
+          input = document.createElement('select');
+          [[true, 'On'], [false, 'Off']].forEach(([val, text]) => {
+            const opt = document.createElement('option');
+            opt.value = String(val); opt.textContent = text;
+            if (val === !!getSettingValue(field)) opt.selected = true;
+            input.appendChild(opt);
+          });
+          appendEl = input;
         } else if (field.type === 'toggle') {
           // Styled slide switch instead of a native checkbox — same
           // "no raw browser chrome" reasoning as Shell.confirm/prompt.
+          // (Not currently used by any field, kept for future settings
+          // that genuinely are a plain on/off rather than a labeled choice.)
           wrap.classList.add('toggle-field');
           input = document.createElement('input');
           input.type = 'checkbox';
@@ -887,13 +876,14 @@
         bindSettingInput(input, field, field.type);
 
         wrap.appendChild(appendEl);
-        section.appendChild(wrap);
+        grid.appendChild(wrap);
       });
 
+      section.appendChild(grid);
       container.appendChild(section);
     });
 
-    container.appendChild(renderButtonColorsSection());
+    container.appendChild(renderColoursSection());
   }
 
   // Both drawers dock to the same right edge, so only one makes sense open

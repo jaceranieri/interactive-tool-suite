@@ -93,6 +93,7 @@ function renderBlock(data, styles) {
       break;
     }
     case 'table': {
+      const variant = styles.table[data.style] || styles.table.bordered;
       const table = document.createElement('table');
       table.className = 'tp-table';
       const rows = data.rows || [];
@@ -102,6 +103,8 @@ function renderBlock(data, styles) {
         row.forEach((cellText) => {
           const cell = document.createElement(isHeaderRow ? 'th' : 'td');
           cell.textContent = cellText || '';
+          cell.style.borderColor = variant.border;
+          if (isHeaderRow) { cell.style.background = variant.bg; cell.style.color = variant.text; }
           tr.appendChild(cell);
         });
         table.appendChild(tr);

@@ -349,18 +349,38 @@ diffing, which is fine at this scale.
 
 ### Project-wide styles (`defaultStyles()` in `tab-manager.js`)
 
-A block only ever picks a *variant* — heading level (h2/h3/h4), badge or
-button style (primary/secondary) — never a literal size/colour. The
-`styles` object on project state defines what each variant actually
-looks like, edited via the Styles drawer: `h2`/`h3`/`h4`/`subtitle` each
-have `{ size, color }`; `badge` and `button` each have
-`{ primary: {bg,text,border}, secondary: {bg,text,border} }`. Same split
-v2 uses for nav Active/Inactive colours, and rendered with the same
-"Colours" table pattern (`renderVariantColourTable()`, shared by both
-the Badges and Buttons sections since they're structurally identical).
+A block only ever picks a *variant* — heading level (h2/h3/h4), badge,
+button, or table style (primary/secondary, or bordered/plain for
+tables) — never a literal size/colour. The `styles` object on project
+state defines what each variant actually looks like, edited via the
+Styles drawer: `h2`/`h3`/`h4`/`subtitle` each have `{ size, color }`;
+`badge`, `button`, and `table` each have a named-variant map of
+`{ bg, text, border }` (`table`'s variants are `bordered`/`plain` rather
+than `primary`/`secondary` — "plain" just sets `border` to the card's
+own white, so the grid lines read as absent with no separate rendering
+branch needed). Same split v2 uses for nav Active/Inactive colours, and
+rendered with the same "Colours" table pattern — `renderVariantColourTable()`
+takes an optional `variants` param (`[[key, label], ...]`, defaulting to
+primary/secondary) so Badges/Buttons/Tables all share one function
+despite different variant names, rather than three near-duplicate
+render functions. Every swatch in the Styles drawer (typography colours
+included) shares one CSS rule and gets a `title` attribute naming
+exactly what it recolours (e.g. "Background — Bordered") — these two
+were both real fixes: the colour-table swatches had originally been
+added without the sizing/rounding rule the typography swatches already
+had (an inconsistency caught during a review pass, not something a
+mockup called for), and tooltips were a subsequent explicit request. If
+another block type ever needs a colour-table section, reuse
+`renderVariantColourTable()` rather than writing a fourth copy.
 `block-renderer.js` takes `styles` as a parameter rather than reading a
 global, so it stays a pure function of its inputs — this is also what
 lets Export embed it unmodified.
+
+**Backlog, not yet done**: Animated Slides v2's own Canvas Settings
+drawer has the same swatch-consistency question worth auditing — raised
+by the person while reviewing Tabbed Panels' Styles drawer, explicitly
+deferred as a separate future pass on `tools/animated-slides-v2/
+index.html`, not bundled into this work.
 
 Two more keys cover layout rather than a per-block variant:
 `blockSpacing` (a single number, the gap in px between stacked blocks —
@@ -379,9 +399,9 @@ same "parameter, not a global" reasoning as `block-renderer.js`).
   type), `paragraph` (richtext + text-align), `list` (bullet/numbered,
   flat array of richtext items — **no nesting**), `button`
   (label/url/newTab/style — a standalone CTA), `badge` (label + style),
-  `table` (add/remove rows and columns in the property panel, **plain-
-  text cells, no richtext** — kept simple for a dense grid), `separator`
-  (no fields, just a rule).
+  `table` (style variant + add/remove rows and columns in the property
+  panel, **plain-text cells, no richtext** — kept simple for a dense
+  grid), `separator` (no fields, just a rule).
 - **Inline link vs. button block are deliberately two different things**
   — a link embedded mid-sentence (richtext's `link` mark) and a
   standalone CTA (the `button` block) read differently to a learner, so

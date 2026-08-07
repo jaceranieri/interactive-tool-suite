@@ -98,9 +98,15 @@
   .popup-field input, .popup-field select, .popup-field textarea { width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
   .popup-field.toggle-field { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .popup-field.toggle-field label { margin-bottom: 0; }
-  .popup-field input[type=color] { width: 40px; height: 32px; padding: 0; border-radius: var(--radius-sm); cursor: pointer; overflow: hidden; }
-  .popup-field input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
-  .popup-field input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
+  /* Every colour swatch in this panel — Headings/Subtitle, and every
+     colour-table cell (Badges/Buttons/Tables) — shares this one rule so
+     they're visually identical wherever they appear. Previously only
+     `.popup-field` swatches had this styling and `.colour-table` ones
+     fell back to the unstyled native colour input; this was the actual
+     inconsistency, not the layout. */
+  .popup-field input[type=color], .colour-table input[type=color] { width: 40px; height: 40px; padding: 0; border-radius: var(--radius-sm); cursor: pointer; overflow: hidden; }
+  .popup-field input[type=color]::-webkit-color-swatch-wrapper, .colour-table input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  .popup-field input[type=color]::-webkit-color-swatch, .colour-table input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
   .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
   .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
   .switch-slider { position: absolute; inset: 0; background: var(--border-strong); border-radius: 999px; cursor: pointer; transition: background var(--duration-fast) var(--ease-standard); }
@@ -822,6 +828,7 @@
       colorWrap.innerHTML = `<label>${label} colour</label>`;
       const colorInput = document.createElement('input');
       colorInput.type = 'color';
+      colorInput.title = `${label} colour`; // hover tooltip — which aspect this swatch recolours
       colorInput.value = tabManager.styles[key].color;
       colorInput.addEventListener('input', () => {
         history.beginAction();
@@ -842,11 +849,9 @@
 
     body.appendChild(renderVariantColourTable('Badges', 'badge'));
     body.appendChild(renderVariantColourTable('Buttons', 'button'));
+    body.appendChild(renderVariantColourTable('Tables', 'table', [['bordered', 'Bordered'], ['plain', 'Plain']]));
   }
 
-  /** Badge and Button styles share the exact same shape (primary/secondary
-   *  × background/text/border), so one function renders both — same
-   *  "Colours" table pattern v2 uses for nav Active/Inactive. */
   /** A single labeled number input bound via getValue/setValue callbacks,
    *  wrapped as its own history step — shared by the Layout and Tab
    *  label sections below instead of repeating the same boilerplate. */
@@ -908,7 +913,16 @@
     return section;
   }
 
-  function renderVariantColourTable(heading, groupKey) {
+  /** Badge, Button, and Table styles all share the exact same shape
+   *  (a set of named variants × background/text/border), so one function
+   *  renders all three — same "Colours" table pattern v2 uses for nav
+   *  Active/Inactive, generalized to whatever variant keys/labels a
+   *  caller passes rather than hardcoding "Primary"/"Secondary". Always
+   *   2 swatches wide (one column per variant) regardless of caller, and
+   *  every swatch gets a hover tooltip naming exactly what it recolours
+   *  — e.g. "Background — Bordered" — since a bare colour square alone
+   *  doesn't say which aspect of the block it controls. */
+  function renderVariantColourTable(heading, groupKey, variants = [['primary', 'Primary'], ['secondary', 'Secondary']]) {
     const section = document.createElement('div');
     section.className = 'settings-section';
     const h3 = document.createElement('h3');
@@ -917,20 +931,24 @@
 
     const table = document.createElement('div');
     table.className = 'colour-table';
-    table.innerHTML = `
-      <div></div>
-      <div class="colour-table-head">Primary</div>
-      <div class="colour-table-head">Secondary</div>
-    `;
+    table.appendChild(document.createElement('div')); // blank corner cell
+    variants.forEach(([, variantLabel]) => {
+      const head = document.createElement('div');
+      head.className = 'colour-table-head';
+      head.textContent = variantLabel;
+      table.appendChild(head);
+    });
+
     [['bg', 'Background'], ['text', 'Text'], ['border', 'Border']].forEach(([prop, label]) => {
       const rowLabel = document.createElement('p');
       rowLabel.className = 'colour-table-row-label';
       rowLabel.textContent = label;
       table.appendChild(rowLabel);
 
-      ['primary', 'secondary'].forEach((variant) => {
+      variants.forEach(([variant, variantLabel]) => {
         const input = document.createElement('input');
         input.type = 'color';
+        input.title = `${label} — ${variantLabel}`;
         input.value = tabManager.styles[groupKey][variant][prop];
         input.addEventListener('input', () => {
           history.beginAction();

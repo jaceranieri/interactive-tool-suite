@@ -21,11 +21,11 @@
    a deliberate scope decision, kept simple for a dense grid.
 
    `heading`'s `level` (h2/h3/h4) and `subtitle` text, `badge`'s `style`,
-   and `button`'s `style` all read their actual size/colour from the
-   project-wide STYLES object (see tab-manager.js's defaultStyles()) rather
-   than storing it per-block — the same "instance picks a variant, a
-   project-level settings panel defines what that variant looks like"
-   split v2 uses for nav Active/Inactive colours.
+   `button`'s `style`, and `table`'s `style` all read their actual
+   size/colour from the project-wide STYLES object (see tab-manager.js's
+   defaultStyles()) rather than storing it per-block — the same "instance
+   picks a variant, a project-level settings panel defines what that
+   variant looks like" split v2 uses for nav Active/Inactive colours.
 
    Deliberate scope boundaries (see HANDOFF.md if reconsidering these):
    - No nested blocks — `list.items` is a flat array of richtext strings,
@@ -95,6 +95,7 @@ const BLOCK_TYPES = {
     label: 'Table',
     icon: 'fa-table',
     fields: {
+      style:        { type: 'select',  label: 'Style', default: 'bordered', options: [['bordered', 'Bordered'], ['plain', 'Plain']] },
       hasHeaderRow: { type: 'boolean', label: 'First row is a header', default: true },
       rows: {
         type: 'table', label: 'Cells',

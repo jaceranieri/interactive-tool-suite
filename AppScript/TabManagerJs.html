@@ -43,6 +43,15 @@ function defaultStyles() {
       primary: { bg: '#2563eb', text: '#ffffff', border: '#2563eb' },
       secondary: { bg: '#ffffff', text: '#111827', border: '#d1d5db' },
     },
+    // "Plain"'s border matches the card's white background, so the grid
+    // lines read as absent rather than needing separate rendering logic
+    // for "no border" — same bg/text/border shape as badge/button, so it
+    // reuses the exact same colour-table UI, just with different variant
+    // labels ("Bordered"/"Plain" instead of "Primary"/"Secondary").
+    table: {
+      bordered: { bg: '#fafaf8', text: '#111827', border: '#cbc8be' },
+      plain: { bg: '#ffffff', text: '#111827', border: '#ffffff' },
+    },
     blockSpacing: 12, // gap between stacked blocks in the player body, px
     tabLabel: { fontSize: 15, paddingX: 24, paddingY: 16 }, // tab-nav.js's .tp-tabnav-tab
   };

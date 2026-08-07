@@ -291,16 +291,28 @@
 
   /* ---- Panel management: property / tabs / styles drawers, one at a time ---- */
 
-  function closePanel() {
+  // Hides every panel's DOM state without touching selectedBlockId — the
+  // shared first step of both closePanel() and openPanel(). Keeping this
+  // separate from closePanel() is the whole fix for a real bug found
+  // during smoke testing: openPanel() used to call closePanel() itself,
+  // and closePanel()'s "deselect if we were on the property panel" check
+  // ran against the STALE activePanel from before the switch — so
+  // selecting any block after the first one in a session immediately
+  // wiped selectedBlockId back to null and left the panel blank.
+  function hidePanels() {
     ['property-panel', 'tabs-panel', 'styles-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
     ['tabs-toggle-btn', 'styles-toggle-btn'].forEach((id) => document.getElementById(id)?.classList.remove('btn-active'));
-    if (activePanel === 'property') selectedBlockId = null;
+  }
+
+  function closePanel() {
+    hidePanels();
+    selectedBlockId = null;
     activePanel = null;
     renderBlockList();
   }
 
   function openPanel(name) {
-    closePanel();
+    hidePanels();
     activePanel = name;
     if (name === 'tabs') {
       document.getElementById('tabs-panel').classList.add('active');

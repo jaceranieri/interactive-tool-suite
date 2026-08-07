@@ -251,17 +251,24 @@ There's no automated test suite. What exists:
 ## Tabbed Panels
 
 An author builds a series of tabs; learners navigate between them. Each
-tab's content is an ordered list of blocks — heading, paragraph, list,
-button (external hyperlink), separator. Genuinely different content
-model from Animated Slides — that tool's SVG canvas + `x`/`y`/`width`/
-`height` element schema doesn't fit flowed content, so it does **not**
-reuse `element-types.js` / `element-renderer.js` / `canvas-editor.js`.
-What it does share: `shared/design-tokens.css`, `shared/app-shell.css` +
-`app-shell.js` (top bar, modals, toasts, `Shell.confirm`/`Shell.prompt`,
-project list rendering), `shared/storage-connector.js`, and the same
-`Code.gs` `PAGES` + `apiSaveProject`/`apiListProjects`/etc. pattern —
-same persistence plumbing as Animated Slides, just a different `content`
+tab's content is an ordered list of blocks — heading (with optional
+subtitle), paragraph, list, button (external hyperlink), badge, table,
+separator. Genuinely different content model from Animated Slides —
+that tool's SVG canvas + `x`/`y`/`width`/`height` element schema doesn't
+fit flowed content, so it does **not** reuse `element-types.js` /
+`element-renderer.js` / `canvas-editor.js`. What it does share:
+`shared/design-tokens.css`, `shared/app-shell.css` + `app-shell.js` (top
+bar, modals, toasts, `Shell.confirm`/`Shell.prompt`, project list
+rendering), `shared/storage-connector.js`, and the same `Code.gs`
+`PAGES` + `apiSaveProject`/`apiListProjects`/etc. pattern — same
+persistence plumbing as Animated Slides, just a different `content`
 shape.
+
+The authoring canvas is intentionally WYSIWYG: it renders as a white
+"player card" on a gray stage with the exact tab-nav markup/CSS the
+exported player uses, so editing genuinely previews the learner-facing
+result rather than approximating it (see "Internal architecture" below
+for how that's structured to stay true).
 
 ### Internal architecture (`tools/tabbed-panels/`)
 
@@ -274,15 +281,26 @@ slides) just don't apply here. Tabs and blocks are plain data;
 diffing, which is fine at this scale.
 
 - `tab-types.js` — the `BLOCK_TYPES` schema (field definitions per block
-  type: heading/paragraph/list/button/separator), same "packing list"
-  role as v2's `ELEMENT_TYPES` — the property panel is generated from
-  these field lists, not hand-written per type. `makeDefaultBlock()`
-  builds a new block's data from schema defaults.
+  type: heading/paragraph/list/button/badge/table/separator), same
+  "packing list" role as v2's `ELEMENT_TYPES` — the property panel is
+  generated from these field lists, not hand-written per type.
+  `makeDefaultBlock()` builds a new block's data from schema defaults,
+  deep-cloning array/object defaults (`table.rows` is an array of
+  arrays, so a shallow copy isn't enough).
 - `block-renderer.js` — the one rendering path (`renderBlock()` /
   `renderTabContent()`), used **unmodified** by both the authoring
-  content area and (once built) the exported player — same
-  authoring-unawareness rule as `element-renderer.js`: reads plain block
-  `data`, returns real DOM, no concept of selection or editing.
+  content area and the exported player — same authoring-unawareness
+  rule as `element-renderer.js`: reads plain block `data` plus the
+  project's `styles` object (see below), returns real DOM, no concept of
+  selection or editing.
+- `tab-nav.js` — the learner-facing tab strip (underline on the active
+  tab, left/right chevrons that scroll the strip when tabs overflow).
+  Same role as v2's `nav-bar.js`: one rendering + click-handling path,
+  reused **unmodified** by both the authoring canvas and Export. All
+  tab CRUD (add/rename/delete/reorder) lives *outside* this file, in
+  index.html's Tabs drawer — this module only ever renders tabs and
+  reports which one was clicked, which is what keeps the canvas
+  genuinely WYSIWYG instead of an editor-only approximation.
 - `richtext-editor.js` — the hand-rolled rich-text field (chosen over a
   third-party lib during scaffolding review): a contenteditable div +
   toolbar toggling bold/italic/underline/link via `execCommand`.
@@ -290,59 +308,93 @@ diffing, which is fine at this scale.
   (`<b> <i> <u> <a href>`) on every input event, so a value handed to
   `onChange` — and therefore whatever ends up in a saved project — is
   never something a browser paste or a stray `execCommand` call could
-  have snuck an unexpected tag/attribute into.
-- `tab-manager.js` — `TabManager` owns `tabs` (mutated in place, per the
-  usual reference-identity rule) and the active tab. Tabs and blocks are
-  tracked by stable `id`, never index — same reasoning as v2's slides/
-  elements. `getState()`/`setState()` feed `history.js` directly.
+  have snuck an unexpected tag/attribute into. Table cells are plain
+  text, not richtext, so they don't go through this module.
+- `tab-manager.js` — `TabManager` owns `tabs` and `styles` (both mutated
+  in place, per the usual reference-identity rule) and the active tab.
+  `defaultStyles()` is the project-wide typography/colour object (see
+  below). Tabs and blocks are tracked by stable `id`, never index — same
+  reasoning as v2's slides/elements. `getState()`/`setState()` feed
+  `history.js` directly, deep-cloning every block (`cloneBlock()`) so
+  undo/redo snapshots never share a nested array (list items, table
+  rows) with the live block — a real bug hit and fixed this round: a
+  shallow `{...block}` copy still shares nested-array references, so
+  editing the live block was silently corrupting entries already pushed
+  onto the undo stack.
 - `history.js` — copied verbatim from `animated-slides-v2/history.js`;
   it's fully generic (works off any `getState`/`setState` pair), so
   there was nothing tool-specific to change.
-- `index.html` — page shell + all the UI glue (tab strip with
-  add/rename/reorder/delete, left rail of "add block" buttons, the block
-  list as the actual editable/previewable surface, a schema-driven
-  property drawer for the selected block — same `.side-panel` pattern as
-  v2's layers/settings drawers). Project lifecycle (New/Save/Open/
-  rename/delete) is copy-adapted from v2's `index.html`, same `Shell` /
-  `Storage` calls, different `TOOL_ID` (`'tabbed-panels'`) and content
-  shape.
+- `index.html` — page shell + all the UI glue: left rail of "add block"
+  buttons plus Tabs/Styles drawer openers, the player-card canvas
+  (`tab-nav.js` for the strip, `block-renderer.js` for content, both
+  fed live state on every change), three `.side-panel` drawers (block
+  property panel, Tabs management, global Styles — same pattern as v2's
+  layers/settings drawers, **only one open at a time** via
+  `openPanel()`/`closePanel()`), and Export. Project lifecycle
+  (New/Save/Open/rename/delete) is copy-adapted from v2's `index.html`,
+  same `Shell`/`Storage` calls, different `TOOL_ID` (`'tabbed-panels'`)
+  and content shape.
 
-### Content model, settled during scaffolding review
+### Project-wide styles (`defaultStyles()` in `tab-manager.js`)
 
-- **Block types**: `heading` (h2/h3, plain text — no inline marks, a
-  bold-in-the-middle heading wasn't judged worth the complexity),
-  `paragraph` (richtext), `list` (bullet/numbered, flat array of
-  richtext items — **no nesting**), `button` (label/url/newTab/style —
-  a standalone CTA), `separator` (no fields, just a rule).
+A block only ever picks a *variant* — heading level (h2/h3/h4), badge or
+button style (primary/secondary) — never a literal size/colour. The
+`styles` object on project state defines what each variant actually
+looks like, edited via the Styles drawer: `h2`/`h3`/`h4`/`subtitle` each
+have `{ size, color }`; `badge` and `button` each have
+`{ primary: {bg,text,border}, secondary: {bg,text,border} }`. Same split
+v2 uses for nav Active/Inactive colours, and rendered with the same
+"Colours" table pattern (`renderVariantColourTable()`, shared by both
+the Badges and Buttons sections since they're structurally identical).
+`block-renderer.js` takes `styles` as a parameter rather than reading a
+global, so it stays a pure function of its inputs — this is also what
+lets Export embed it unmodified.
+
+### Content model, settled across two scaffolding/design-review rounds
+
+- **Block types**: `heading` (h2/h3/h4, plain text — no inline marks on
+  the main text; an optional `subtitle` field renders a second,
+  separately-styled line beneath it rather than being its own block
+  type), `paragraph` (richtext + text-align), `list` (bullet/numbered,
+  flat array of richtext items — **no nesting**), `button`
+  (label/url/newTab/style — a standalone CTA), `badge` (label + style),
+  `table` (add/remove rows and columns in the property panel, **plain-
+  text cells, no richtext** — kept simple for a dense grid), `separator`
+  (no fields, just a rule).
 - **Inline link vs. button block are deliberately two different things**
   — a link embedded mid-sentence (richtext's `link` mark) and a
   standalone CTA (the `button` block) read differently to a learner, so
   neither collapses into the other.
 - **Rich text storage**: sanitized HTML string, not a custom run-based
   model — see `richtext-editor.js` above.
+- **Tab strip is WYSIWYG, tab CRUD is not** — the canvas only ever
+  shows the real underline+chevron tab-nav (click to switch, nothing
+  else); add/rename/delete/reorder are a deliberately separate concern
+  handled entirely in the Tabs drawer, not exposed on the canvas itself.
 
 ### What's NOT built yet
 
-- **Export** — no self-contained HTML bundle for Articulate yet (v2's
-  equivalent: the Export modal + `MODULE_SOURCES` embedding). Given the
-  authoring-unaware `block-renderer.js` already exists, export is mostly
-  "embed `tab-types.js` + `block-renderer.js` + saved tab data + minimal
-  tab-switching JS," same shape as v2's Export, just without an SVG
-  renderer/GSAP to carry along.
 - **Apps Script deployment exists but is unverified for real** —
   `AppScript/TabbedPanels.html` (+ `TabTypesJs.html`,
-  `RichtextEditorJs.html`, `BlockRendererJs.html`, `TabManagerJs.html`)
-  went through the 5-substitution pass and the `PAGES` entry in
-  `Code.gs` is uncommented, so it's reachable from the hub once
-  redeployed. Its `history.js` reuses the **existing** `AppScript/
-  HistoryJs.html` rather than a duplicate copy — the file is byte-for-
-  byte identical generic code (only header comments differ), so there
-  was nothing tool-specific to wrap separately. None of this has
-  actually been pasted into a live Apps Script project yet — untested
-  against real `google.script.run` end to end. Do a real Save/Load
-  round-trip before treating this as done (see HANDOFF.md).
-- **Touch/tablet drag-and-drop** — tab and block reordering use native
-  HTML5 drag-and-drop (copied from v2's layer/slide reordering), which
-  has the same known touchscreen gap v2 does.
+  `RichtextEditorJs.html`, `BlockRendererJs.html`, `TabNavJs.html`,
+  `TabManagerJs.html`) went through the 5-substitution pass and the
+  `PAGES` entry in `Code.gs` is uncommented, so it's reachable from the
+  hub once redeployed. Export's module-fetching code was swapped for an
+  embedded `MODULE_SOURCES` object (substitution 2) in the deployed
+  copy, generated programmatically from the real source files rather
+  than hand-typed, to avoid escaping mistakes. Its `history.js` reuses
+  the **existing** `AppScript/HistoryJs.html` rather than a duplicate
+  copy — byte-for-byte identical generic code, nothing tool-specific to
+  wrap separately. None of this has actually been pasted into a live
+  Apps Script project yet — untested against real `google.script.run`
+  end to end. Do a real Save/Load round-trip before treating this as
+  done (see HANDOFF.md).
+- **Touch/tablet drag-and-drop** — the Tabs drawer's reorder and the
+  block list's reorder both use native HTML5 drag-and-drop (copied from
+  v2's layer/slide reordering), which has the same known touchscreen gap
+  v2 does.
 - No accessibility pass, no narrow-window layout testing — same
   standing gaps as v2, not yet even looked at here.
+- Table cells are plain text only (a deliberate scope decision, not an
+  oversight — see "Content model" above); revisit only if an author
+  specifically asks for rich text inside table cells.

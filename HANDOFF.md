@@ -114,18 +114,49 @@ drawer with layout controls.
   DOM, and both new Styles fields (spacing, tab label font size) driving
   real computed-style changes on `#block-list` and `.tp-tabnav-tab`.
 
+**Session 5** (this one — swatch consistency + Table styling, still PR
+#7): the person flagged, from a screenshot of v2's Canvas Settings
+drawer, that colour swatches across the Styles drawer weren't visually
+consistent, asked for hover tooltips naming what each swatch recolours,
+and asked how to add Table styling without overloading the panel.
+
+- **Real bug found and fixed**: Badge/Button colour-table swatches had
+  never gotten the same sizing/rounding CSS rule the Headings/Subtitle
+  swatches had — they rendered as the unstyled native browser colour
+  input. Not a mockup mismatch, a genuine gap from when the colour-table
+  section was first built. Fixed by extending the shared selector.
+- **Hover tooltips added**: every swatch now has a `title` attribute
+  naming exactly what it recolours (e.g. "Background — Bordered").
+- **Table styling**: added as a global variant (`style`: bordered/plain
+  on the Table block, same pattern as Badge/Button) rather than raw
+  per-instance colour pickers — the person explicitly chose this option
+  when asked, specifically to avoid the property panel growing without
+  bound as more block types gain styling. `renderVariantColourTable()`
+  was generalized to take a `variants` param so Badges/Buttons/Tables
+  all share one function.
+- **Verified via an 8-point Playwright smoke test, passed clean on the
+  first round** — swatch sizing/tooltips confirmed identical across all
+  three sections, the new Tables colour-table structurally matches
+  Badges/Buttons, and changing a Tables swatch colour live-updated an
+  actual rendered table's header in the canvas.
+- **Backlog item logged, not started**: the person wants the same
+  swatch-consistency treatment (and likely the same tooltip pattern)
+  applied to Animated Slides v2's Canvas Settings drawer — explicitly
+  deferred as separate future work, not bundled into this session.
+
 ## What's next
 
 1. **Do the real Apps Script round-trip** described above — still the
    single most important unverified thing.
-2. Everything under "What's NOT built yet" in CLAUDE.md's Tabbed Panels
+2. **v2 Canvas Settings swatch consistency audit** — the backlog item
+   from this session. Not started; needs its own look at
+   `tools/animated-slides-v2/index.html`'s settings-panel CSS/JS.
+3. Everything under "What's NOT built yet" in CLAUDE.md's Tabbed Panels
    section: touch/tablet drag-and-drop, accessibility pass, narrow-window
    layout — standing gaps carried over from v2, not yet looked at here.
-3. Nothing else is currently flagged as missing from the reviewed scope
-   (mockup parity, Badge/Table blocks, global Styles, Export) — the next
-   likely direction is either the Apps Script verification above, or new
-   feature requests from the person once they've tried the redesigned
-   canvas.
+4. Nothing else is currently flagged as missing from the reviewed scope
+   — the next likely direction is either the Apps Script verification
+   above, the v2 audit, or new feature requests from the person.
 
 ## Older, still-outstanding items from earlier in the project
 

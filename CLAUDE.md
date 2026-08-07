@@ -325,15 +325,27 @@ diffing, which is fine at this scale.
   it's fully generic (works off any `getState`/`setState` pair), so
   there was nothing tool-specific to change.
 - `index.html` — page shell + all the UI glue: left rail of "add block"
-  buttons plus Tabs/Styles drawer openers, the player-card canvas
+  buttons plus a Styles drawer opener, the player-card canvas
   (`tab-nav.js` for the strip, `block-renderer.js` for content, both
-  fed live state on every change), three `.side-panel` drawers (block
-  property panel, Tabs management, global Styles — same pattern as v2's
-  layers/settings drawers, **only one open at a time** via
-  `openPanel()`/`closePanel()`), and Export. Project lifecycle
-  (New/Save/Open/rename/delete) is copy-adapted from v2's `index.html`,
-  same `Shell`/`Storage` calls, different `TOOL_ID` (`'tabbed-panels'`)
-  and content shape.
+  fed live state on every change), two `.side-panel` drawers (block
+  property panel, global Styles — same pattern as v2's layers/settings
+  drawers, **only one open at a time** via `openPanel()`/`closePanel()`),
+  a persistent bottom tab bar (`#editor-tab-bar`), and Export. Project
+  lifecycle (New/Save/Open/rename/delete) is copy-adapted from v2's
+  `index.html`, same `Shell`/`Storage` calls, different `TOOL_ID`
+  (`'tabbed-panels'`) and content shape.
+- **Tab management lives in the bottom bar, not a drawer** — same role
+  and layout as v2's `#editor-slide-bar`: one thumbnail per tab
+  (`renderTabThumbnail()` renders the SAME `renderBlock()` the real
+  canvas uses, at a fixed content width, then scales the whole thing
+  down via CSS `transform` — no separate "how do I draw a thumbnail"
+  logic to keep in sync, same trick v2's `renderSlideThumbnailSVG()`
+  uses), with hover-revealed duplicate/delete buttons, double-click-to-
+  rename, and native HTML5 drag-to-reorder. This replaced an earlier
+  side-panel "Tabs" drawer once the canvas redesign made the top tab-nav
+  strip purely WYSIWYG (click-to-switch only) — tab CRUD needed a home
+  outside that strip, and the bottom bar with live-content thumbnails is
+  strictly more useful than a plain list ever was.
 
 ### Project-wide styles (`defaultStyles()` in `tab-manager.js`)
 
@@ -349,6 +361,15 @@ the Badges and Buttons sections since they're structurally identical).
 `block-renderer.js` takes `styles` as a parameter rather than reading a
 global, so it stays a pure function of its inputs — this is also what
 lets Export embed it unmodified.
+
+Two more keys cover layout rather than a per-block variant:
+`blockSpacing` (a single number, the gap in px between stacked blocks —
+applied by setting `#block-list`'s `style.gap` directly, not read by
+`block-renderer.js` itself since it's a property of the *container*, not
+any individual block) and `tabLabel` (`{ fontSize, paddingX, paddingY }`
+for `tab-nav.js`'s `.tp-tabnav-tab` buttons — `renderTabNav()` takes this
+as an optional `tabLabelStyle` param and applies it as inline styles,
+same "parameter, not a global" reasoning as `block-renderer.js`).
 
 ### Content model, settled across two scaffolding/design-review rounds
 
@@ -369,8 +390,9 @@ lets Export embed it unmodified.
   model — see `richtext-editor.js` above.
 - **Tab strip is WYSIWYG, tab CRUD is not** — the canvas only ever
   shows the real underline+chevron tab-nav (click to switch, nothing
-  else); add/rename/delete/reorder are a deliberately separate concern
-  handled entirely in the Tabs drawer, not exposed on the canvas itself.
+  else); add/rename/duplicate/delete/reorder are a deliberately separate
+  concern handled entirely in the bottom tab bar, not exposed on the
+  canvas itself.
 
 ### What's NOT built yet
 

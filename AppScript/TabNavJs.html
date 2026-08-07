@@ -8,18 +8,21 @@
    exported player, so the canvas is genuinely WYSIWYG rather than an
    editor-only approximation of what learners will see.
 
-   Authoring-only concerns (add/rename/delete/reorder tabs) live entirely
-   outside this file, in index.html's Tabs drawer — this module only ever
-   renders tabs + reports which one was clicked.
+   Authoring-only concerns (add/rename/delete/reorder/duplicate tabs) live
+   entirely outside this file, in index.html's bottom tab bar — this
+   module only ever renders tabs + reports which one was clicked.
    ========================================================================== */
 
 /**
- * @param container  element to render into (its children are replaced).
- * @param tabs       [{ id, title }, ...] — extra keys (e.g. `blocks`) are ignored.
+ * @param container      element to render into (its children are replaced).
+ * @param tabs           [{ id, title }, ...] — extra keys (e.g. `blocks`) are ignored.
  * @param activeTabId
- * @param onSelect   called with a tab's id when clicked.
+ * @param onSelect       called with a tab's id when clicked.
+ * @param tabLabelStyle  optional { fontSize, paddingX, paddingY } — see
+ *                       tab-manager.js's defaultStyles().tabLabel. Falls
+ *                       back to the CSS defaults when omitted.
  */
-function renderTabNav(container, { tabs, activeTabId, onSelect }) {
+function renderTabNav(container, { tabs, activeTabId, onSelect, tabLabelStyle }) {
   container.innerHTML = '';
   container.className = 'tp-tabnav';
 
@@ -43,6 +46,10 @@ function renderTabNav(container, { tabs, activeTabId, onSelect }) {
     btn.type = 'button';
     btn.className = 'tp-tabnav-tab' + (tab.id === activeTabId ? ' active' : '');
     btn.textContent = tab.title;
+    if (tabLabelStyle) {
+      btn.style.fontSize = tabLabelStyle.fontSize + 'px';
+      btn.style.padding = `${tabLabelStyle.paddingY}px ${tabLabelStyle.paddingX}px`;
+    }
     btn.addEventListener('click', () => onSelect(tab.id));
     strip.appendChild(btn);
   });

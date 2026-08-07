@@ -131,17 +131,45 @@
   .table-field-col-controls span { width: 90px; flex-shrink: 0; }
   .table-field-add-col { border: 1px dashed var(--border-strong); background: var(--surface); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); width: 24px; flex-shrink: 0; }
 
-  /* Tabs drawer */
-  .tab-row { display: flex; align-items: center; gap: var(--space-2); padding: 8px; border-radius: var(--radius-sm); border-top: 2px solid transparent; cursor: default; }
-  .tab-row:hover { background: var(--paper); }
-  .tab-row.dragging { opacity: 0.4; }
-  .tab-row.drag-over { border-top-color: var(--accent); }
-  .tab-row .drag-handle { color: var(--ink-faint); cursor: grab; flex-shrink: 0; }
-  .tab-row input[type=text] { flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; font-family: var(--font-ui); font-size: var(--text-sm); }
-  .tab-row button { border: none; background: none; color: var(--ink-faint); cursor: pointer; flex-shrink: 0; }
-  .tab-row button:hover { color: var(--danger); }
-  #add-tab-btn { width: 100%; margin-top: var(--space-3); padding: 8px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; color: var(--ink-soft); }
-  #add-tab-btn:hover { border-color: var(--accent); color: var(--accent); }
+  /* Bottom tab bar — authoring-only tab management (add/duplicate/
+     rename/delete/reorder), separate from the WYSIWYG tab-nav shown
+     inside the player card. Same role and layout as v2's
+     #editor-slide-bar / .slide-tab-wrap. */
+  #editor-tab-bar { flex-shrink: 0; padding: var(--space-3) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-3); }
+  #editor-tab-bar .title-block { margin-right: var(--space-2); }
+  #tab-thumbs { display: flex; gap: var(--space-2); flex: 1; overflow-x: auto; padding: 8px 10px 6px 10px; margin: -8px -10px -6px -10px; }
+  .tab-thumb-wrap { position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .tab-thumb-container { position: relative; }
+  .tab-thumb {
+    width: 96px; height: 64px; border-radius: 4px; border: 2px solid var(--border);
+    overflow: hidden; background: white; cursor: pointer;
+  }
+  .tab-thumb.active { border-color: var(--ink); }
+  .tab-thumb-container.dragging { opacity: 0.4; }
+  .tab-thumb-container.drag-over .tab-thumb { border-color: var(--accent); }
+  .tab-thumb-name {
+    font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); max-width: 96px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-align: center;
+  }
+  .tab-thumb-name.active { color: var(--ink); font-weight: 600; }
+  .tab-thumb-rename-input {
+    font-family: var(--font-mono); font-size: var(--text-xs); padding: 2px 6px;
+    border-radius: var(--radius-sm); border: 1px solid var(--accent); outline: none; width: 90px; text-align: center;
+  }
+  .tab-thumb-delete {
+    display: none; position: absolute; top: -6px; right: -6px; width: 16px; height: 16px;
+    border-radius: 50%; border: 1px solid var(--border); background: white; color: var(--ink-soft);
+    font-size: 10px; line-height: 1; cursor: pointer; align-items: center; justify-content: center;
+  }
+  .tab-thumb-container:hover .tab-thumb-delete { display: flex; }
+  .tab-thumb-delete:hover { background: var(--danger); color: white; border-color: var(--danger); }
+  .tab-thumb-duplicate {
+    display: none; position: absolute; top: -6px; left: -6px; width: 16px; height: 16px;
+    border-radius: 50%; border: 1px solid var(--border); background: white; color: var(--ink-soft);
+    font-size: 9px; line-height: 1; cursor: pointer; align-items: center; justify-content: center;
+  }
+  .tab-thumb-container:hover .tab-thumb-duplicate { display: flex; }
+  .tab-thumb-duplicate:hover { background: var(--accent); color: white; border-color: var(--accent); }
 
   /* Styles drawer */
   .settings-section { margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--border); }
@@ -200,14 +228,6 @@
           <div class="side-panel-body" id="property-panel-body"></div>
         </div>
 
-        <div class="side-panel" id="tabs-panel">
-          <div class="side-panel-header">
-            <h2>Tabs</h2>
-            <button class="modal-close" onclick="closePanel()">&times;</button>
-          </div>
-          <div class="side-panel-body" id="tabs-panel-body"></div>
-        </div>
-
         <div class="side-panel" id="styles-panel">
           <div class="side-panel-header">
             <h2>Styles</h2>
@@ -215,6 +235,12 @@
           </div>
           <div class="side-panel-body" id="styles-panel-body"></div>
         </div>
+      </div>
+
+      <div id="editor-tab-bar">
+        <div class="title-block">Tabs (editor)</div>
+        <div id="tab-thumbs"></div>
+        <button class="btn btn-secondary" onclick="addTabWithHistory()">+ Tab</button>
       </div>
     </div>
   </div>
@@ -266,7 +292,7 @@
   let currentProjectName = null;
   let hasUnsavedChanges = false;
   let selectedBlockId = null;
-  let activePanel = null; // 'property' | 'tabs' | 'styles' | null
+  let activePanel = null; // 'property' | 'styles' | null
 
   const tabManager = new TabManager({ tabs: null, styles: null });
   const history = new History({
@@ -289,7 +315,7 @@
     document.getElementById('unsaved-dot').style.display = 'none';
   }
 
-  /* ---- Panel management: property / tabs / styles drawers, one at a time ---- */
+  /* ---- Panel management: property / styles drawers, one at a time ---- */
 
   // Hides every panel's DOM state without touching selectedBlockId — the
   // shared first step of both closePanel() and openPanel(). Keeping this
@@ -300,8 +326,8 @@
   // selecting any block after the first one in a session immediately
   // wiped selectedBlockId back to null and left the panel blank.
   function hidePanels() {
-    ['property-panel', 'tabs-panel', 'styles-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
-    ['tabs-toggle-btn', 'styles-toggle-btn'].forEach((id) => document.getElementById(id)?.classList.remove('btn-active'));
+    ['property-panel', 'styles-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
+    document.getElementById('styles-toggle-btn')?.classList.remove('btn-active');
   }
 
   function closePanel() {
@@ -314,11 +340,7 @@
   function openPanel(name) {
     hidePanels();
     activePanel = name;
-    if (name === 'tabs') {
-      document.getElementById('tabs-panel').classList.add('active');
-      document.getElementById('tabs-toggle-btn').classList.add('btn-active');
-      renderTabsPanel();
-    } else if (name === 'styles') {
+    if (name === 'styles') {
       document.getElementById('styles-panel').classList.add('active');
       document.getElementById('styles-toggle-btn').classList.add('btn-active');
       renderStylesPanel();
@@ -328,7 +350,7 @@
     }
   }
 
-  /* ---- Left rail: one "add block" button per BLOCK_TYPES entry, then Tabs/Styles ---- */
+  /* ---- Left rail: one "add block" button per BLOCK_TYPES entry, then Styles ---- */
 
   function renderLeftRail() {
     const rail = document.getElementById('left-rail');
@@ -352,15 +374,6 @@
     divider.className = 'rail-divider';
     rail.appendChild(divider);
 
-    const tabsBtn = document.createElement('button');
-    tabsBtn.className = 'add-block-btn';
-    tabsBtn.id = 'tabs-toggle-btn';
-    tabsBtn.title = 'Manage tabs';
-    tabsBtn.setAttribute('aria-label', 'Manage tabs');
-    tabsBtn.innerHTML = '<i class="fa-solid fa-table-list"></i>';
-    tabsBtn.addEventListener('click', () => activePanel === 'tabs' ? closePanel() : openPanel('tabs'));
-    rail.appendChild(tabsBtn);
-
     const stylesBtn = document.createElement('button');
     stylesBtn.className = 'add-block-btn';
     stylesBtn.id = 'styles-toggle-btn';
@@ -378,76 +391,146 @@
       tabs: tabManager.tabs,
       activeTabId: tabManager.activeTabId,
       onSelect: (id) => { closePanel(); tabManager.setActiveTab(id); },
+      tabLabelStyle: tabManager.styles.tabLabel,
     });
   }
 
-  /* ---- Tabs drawer: add/rename/delete/reorder — kept out of the WYSIWYG canvas ---- */
+  /* ---- Bottom tab bar: thumbnails + add/duplicate/rename/delete/reorder —
+     kept out of the WYSIWYG canvas, same role as v2's slide bar. ---- */
 
-  function renderTabsPanel() {
-    const body = document.getElementById('tabs-panel-body');
-    body.innerHTML = '';
+  function renderTabThumbnail(tab) {
+    // Renders the SAME renderBlock() the real canvas uses, at a fixed
+    // content width, then scales the whole thing down via CSS transform —
+    // no separate "how do I draw a thumbnail" logic to keep in sync with
+    // the real canvas. Purely visual (pointer-events: none), cropped from
+    // the top like a browser tab preview when content overflows the box.
+    const THUMB_W = 96, THUMB_H = 64, CONTENT_W = 400;
+    const scale = THUMB_W / CONTENT_W;
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `width:${THUMB_W}px; height:${THUMB_H}px; overflow:hidden; position:relative; background:#fff;`;
+
+    const inner = document.createElement('div');
+    inner.style.cssText = `width:${CONTENT_W}px; transform:scale(${scale}); transform-origin:top left; padding:12px; pointer-events:none; display:flex; flex-direction:column; gap:${tabManager.styles.blockSpacing}px;`;
+    tab.blocks.forEach((data) => {
+      try { inner.appendChild(renderBlock(data, tabManager.styles)); } catch (err) { /* a malformed block shouldn't break the whole thumbnail row */ }
+    });
+    wrapper.appendChild(inner);
+    return wrapper;
+  }
+
+  function renderTabBar() {
+    const container = document.getElementById('tab-thumbs');
+    container.innerHTML = '';
+    let draggedId = null;
 
     tabManager.tabs.forEach((tab) => {
-      const row = document.createElement('div');
-      row.className = 'tab-row';
-      row.draggable = true;
-      row.dataset.tabId = tab.id;
+      const wrap = document.createElement('div');
+      wrap.className = 'tab-thumb-wrap';
 
-      const handle = document.createElement('i');
-      handle.className = 'fa-solid fa-grip-vertical drag-handle';
-      row.appendChild(handle);
+      const thumbContainer = document.createElement('div');
+      thumbContainer.className = 'tab-thumb-container';
+      thumbContainer.draggable = true;
+      thumbContainer.dataset.tabId = tab.id;
 
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.value = tab.title;
-      input.addEventListener('focus', () => history.beginAction());
-      input.addEventListener('input', () => tabManager.renameTab(tab.id, input.value));
-      input.addEventListener('blur', () => { tabManager.renameTab(tab.id, input.value.trim() || tab.title); history.commitAction(); renderTabsPanel(); });
-      row.appendChild(input);
+      const thumb = document.createElement('div');
+      thumb.className = 'tab-thumb' + (tab.id === tabManager.activeTabId ? ' active' : '');
+      thumb.appendChild(renderTabThumbnail(tab));
+      thumb.addEventListener('click', () => { closePanel(); tabManager.setActiveTab(tab.id); });
 
+      const dup = document.createElement('button');
+      dup.className = 'tab-thumb-duplicate';
+      dup.innerHTML = '<i class="fa-regular fa-copy"></i>';
+      dup.title = 'Duplicate tab';
+      dup.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        tabManager.duplicateTab(tab.id);
+        history.commitAction();
+      });
+      thumbContainer.appendChild(thumb);
+      thumbContainer.appendChild(dup);
+
+      // Only offer delete when there's more than one tab — TabManager
+      // itself already refuses to delete the last one, but hiding the
+      // button here is clearer than letting someone click it and have
+      // nothing happen.
       if (tabManager.tabs.length > 1) {
-        const delBtn = document.createElement('button');
-        delBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
-        delBtn.title = 'Delete tab';
-        delBtn.addEventListener('click', async () => {
+        const del = document.createElement('button');
+        del.className = 'tab-thumb-delete';
+        del.innerHTML = '&times;';
+        del.title = 'Delete tab';
+        del.addEventListener('click', async (e) => {
+          e.stopPropagation();
           const ok = await Shell.confirm(`Delete "${tab.title}"?`, { heading: 'Delete tab', okLabel: 'Delete', danger: true });
           if (!ok) return;
           history.beginAction();
           tabManager.deleteTab(tab.id);
           history.commitAction();
-          renderTabsPanel();
         });
-        row.appendChild(delBtn);
+        thumbContainer.appendChild(del);
       }
 
-      row.addEventListener('dragstart', () => row.classList.add('dragging'));
-      row.addEventListener('dragend', () => row.classList.remove('dragging'));
-      row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
-      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
-      row.addEventListener('drop', (e) => {
+      thumbContainer.addEventListener('dragstart', () => { draggedId = tab.id; thumbContainer.classList.add('dragging'); });
+      thumbContainer.addEventListener('dragend', () => {
+        thumbContainer.classList.remove('dragging');
+        container.querySelectorAll('.tab-thumb-container').forEach((c) => c.classList.remove('drag-over'));
+      });
+      thumbContainer.addEventListener('dragover', (e) => {
         e.preventDefault();
-        row.classList.remove('drag-over');
-        const draggedId = body.querySelector('.dragging')?.dataset.tabId;
-        if (!draggedId) return;
+        if (draggedId !== null && draggedId !== tab.id) thumbContainer.classList.add('drag-over');
+      });
+      thumbContainer.addEventListener('dragleave', () => thumbContainer.classList.remove('drag-over'));
+      thumbContainer.addEventListener('drop', (e) => {
+        e.preventDefault();
+        thumbContainer.classList.remove('drag-over');
+        if (draggedId === null || draggedId === tab.id) return;
         history.beginAction();
         tabManager.moveTabAfter(draggedId, tab.id);
         history.commitAction();
-        renderTabsPanel();
       });
 
-      body.appendChild(row);
-    });
+      const nameEl = document.createElement('div');
+      nameEl.className = 'tab-thumb-name' + (tab.id === tabManager.activeTabId ? ' active' : '');
+      nameEl.textContent = tab.title;
+      nameEl.addEventListener('click', () => { closePanel(); tabManager.setActiveTab(tab.id); });
+      nameEl.addEventListener('dblclick', () => startRenameTab(wrap, nameEl, tab.id));
 
-    const addBtn = document.createElement('button');
-    addBtn.id = 'add-tab-btn';
-    addBtn.textContent = '+ Add tab';
-    addBtn.addEventListener('click', () => {
-      history.beginAction();
-      tabManager.addTab();
-      history.commitAction();
-      renderTabsPanel();
+      wrap.appendChild(thumbContainer);
+      wrap.appendChild(nameEl);
+      container.appendChild(wrap);
     });
-    body.appendChild(addBtn);
+  }
+
+  function startRenameTab(wrap, nameEl, tabId) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'tab-thumb-rename-input';
+    input.value = tabManager.tabs.find((t) => t.id === tabId).title;
+    wrap.replaceChild(input, nameEl);
+    input.focus();
+    input.select();
+
+    let committed = false;
+    function commit() {
+      if (committed) return;
+      committed = true;
+      const newName = input.value.trim();
+      history.beginAction();
+      tabManager.renameTab(tabId, newName || tabManager.tabs.find((t) => t.id === tabId).title);
+      history.commitAction();
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+      if (e.key === 'Escape') { committed = true; renderTabBar(); }
+    });
+  }
+
+  function addTabWithHistory() {
+    history.beginAction();
+    tabManager.addTab();
+    history.commitAction();
   }
 
   /* ---- Block list (content area) ---- */
@@ -456,6 +539,7 @@
     const tab = tabManager.getActiveTab();
     const container = document.getElementById('block-list');
     container.innerHTML = '';
+    container.style.gap = tabManager.styles.blockSpacing + 'px';
 
     if (tab.blocks.length === 0) {
       const empty = document.createElement('div');
@@ -753,6 +837,9 @@
     });
     body.appendChild(typeSection);
 
+    body.appendChild(renderLayoutSection());
+    body.appendChild(renderTabLabelSection());
+
     body.appendChild(renderVariantColourTable('Badges', 'badge'));
     body.appendChild(renderVariantColourTable('Buttons', 'button'));
   }
@@ -760,6 +847,67 @@
   /** Badge and Button styles share the exact same shape (primary/secondary
    *  × background/text/border), so one function renders both — same
    *  "Colours" table pattern v2 uses for nav Active/Inactive. */
+  /** A single labeled number input bound via getValue/setValue callbacks,
+   *  wrapped as its own history step — shared by the Layout and Tab
+   *  label sections below instead of repeating the same boilerplate. */
+  function renderStyleNumberField(label, getValue, setValue, { min = 0, max = 200 } = {}) {
+    const wrap = document.createElement('div');
+    wrap.className = 'popup-field';
+    const labelEl = document.createElement('label');
+    labelEl.textContent = label;
+    wrap.appendChild(labelEl);
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = min; input.max = max;
+    input.value = getValue();
+    input.addEventListener('focus', () => history.beginAction());
+    input.addEventListener('input', () => { setValue(Number(input.value) || getValue()); markUnsaved(); renderBlockList(); renderTabStrip(); });
+    input.addEventListener('blur', () => history.commitAction());
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  function renderLayoutSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    section.innerHTML = '<h3>Layout</h3>';
+    section.appendChild(renderStyleNumberField(
+      'Spacing between blocks',
+      () => tabManager.styles.blockSpacing,
+      (v) => { tabManager.styles.blockSpacing = v; },
+      { min: 0, max: 80 },
+    ));
+    return section;
+  }
+
+  function renderTabLabelSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    section.innerHTML = '<h3>Tab label</h3>';
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
+    grid.appendChild(renderStyleNumberField(
+      'Font size',
+      () => tabManager.styles.tabLabel.fontSize,
+      (v) => { tabManager.styles.tabLabel.fontSize = v; },
+      { min: 10, max: 32 },
+    ));
+    grid.appendChild(renderStyleNumberField(
+      'Vertical padding',
+      () => tabManager.styles.tabLabel.paddingY,
+      (v) => { tabManager.styles.tabLabel.paddingY = v; },
+      { min: 0, max: 40 },
+    ));
+    grid.appendChild(renderStyleNumberField(
+      'Horizontal padding',
+      () => tabManager.styles.tabLabel.paddingX,
+      (v) => { tabManager.styles.tabLabel.paddingX = v; },
+      { min: 0, max: 60 },
+    ));
+    section.appendChild(grid);
+    return section;
+  }
+
   function renderVariantColourTable(heading, groupKey) {
     const section = document.createElement('div');
     section.className = 'settings-section';
@@ -800,8 +948,8 @@
 
   function renderAll() {
     renderTabStrip();
+    renderTabBar();
     renderBlockList();
-    if (activePanel === 'tabs') renderTabsPanel();
     if (activePanel === 'styles') renderStylesPanel();
     if (selectedBlockId && !tabManager.getActiveTab().blocks.some((b) => b.id === selectedBlockId)) closePanel();
   }
@@ -982,9 +1130,12 @@ function render() {
   renderTabNav(document.getElementById('tabnav-host'), {
     tabs, activeTabId,
     onSelect: (id) => { activeTabId = id; render(); },
+    tabLabelStyle: styles.tabLabel,
   });
   const tab = tabs.find((t) => t.id === activeTabId);
-  renderTabContent(tab, document.getElementById('block-list'), styles);
+  const blockList = document.getElementById('block-list');
+  blockList.style.gap = styles.blockSpacing + 'px';
+  renderTabContent(tab, blockList, styles);
 }
 render();
 <\/script>

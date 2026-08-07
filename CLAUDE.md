@@ -54,8 +54,12 @@ database.
     schema-driven element system, undo/redo, cross-slide element linking,
     multi-select. As of this writing, considered feature-complete enough
     that active development has paused (see "Current status").
-  - No other tools exist in this repo yet. **Tabbed Panels** is the next
-    tool planned — see "Starting a new tool" below.
+  - `tabbed-panels/` — new tool, scaffolding stage: authoring UI works in
+    local preview (add/edit/delete/reorder tabs and blocks, undo/redo,
+    Save/Open/New wired to Storage), but not yet deployed to Apps Script
+    (no `AppScript/TabbedPanels*.html` files exist yet, and its `Code.gs`
+    `PAGES` entry is still commented out) and has no Export yet. See
+    "Tabbed Panels" below for its architecture and what's left.
 
 ## Animated Slides v2's internal architecture
 
@@ -244,37 +248,96 @@ There's no automated test suite. What exists:
 - **Not yet migrated / not yet built**: nothing is currently being
   migrated from a legacy tool — see "Starting a new tool" below instead.
 
-## Starting a new tool: Tabbed Panels
+## Tabbed Panels
 
-The next tool planned for this repo (not started yet as of this
-writing): **Tabbed Panels**. An author builds a series of tabs; learners
-navigate between them. Each tab's content can include formatted text,
-lists, and buttons that hyperlink out to external webpages.
+An author builds a series of tabs; learners navigate between them. Each
+tab's content is an ordered list of blocks — heading, paragraph, list,
+button (external hyperlink), separator. Genuinely different content
+model from Animated Slides — that tool's SVG canvas + `x`/`y`/`width`/
+`height` element schema doesn't fit flowed content, so it does **not**
+reuse `element-types.js` / `element-renderer.js` / `canvas-editor.js`.
+What it does share: `shared/design-tokens.css`, `shared/app-shell.css` +
+`app-shell.js` (top bar, modals, toasts, `Shell.confirm`/`Shell.prompt`,
+project list rendering), `shared/storage-connector.js`, and the same
+`Code.gs` `PAGES` + `apiSaveProject`/`apiListProjects`/etc. pattern —
+same persistence plumbing as Animated Slides, just a different `content`
+shape.
 
-This is a genuinely different content model from Animated Slides —
-that tool's SVG canvas + `x`/`y`/`width`/`height` element schema doesn't
-fit rich text/lists/links, so **don't try to reuse `element-types.js` /
-`element-renderer.js` / `canvas-editor.js` for this.** What should carry
-over is the shared foundation everything else uses:
-`shared/design-tokens.css`, `shared/app-shell.css` + `app-shell.js` (top
-bar, modals, toasts, `Shell.confirm`/`Shell.prompt`, project list
-rendering), `shared/storage-connector.js`, and the same `Code.gs` `PAGES`
-+ `apiSaveProject`/`apiListProjects`/etc. pattern for persistence.
+### Internal architecture (`tools/tabbed-panels/`)
 
-Open design questions the next session should resolve early, before
-writing much code:
-- **Tab content model** — a plain rich-text editor per tab (simplest,
-  but "formatted text, lists, buttons with hyperlinks" starts to sound
-  like you want more structure than one contenteditable blob), or a
-  small block schema (a handful of block types: paragraph, list, button)
-  similar in spirit to v2's `ELEMENT_TYPES` but for flowed content
-  instead of positioned canvas elements. This decision drives everything
-  else, so it's worth settling before building UI around it.
-- **How many tabs, and can they be reordered/renamed/deleted** — v2's
-  slide model (stable `id`s, never index-based) is a reasonable pattern
-  to copy for tabs specifically, independent of whichever content model
-  is chosen for what's inside each tab.
-- **Export shape** — same idea as v2's Export (a self-contained HTML
-  blob for Articulate), but the exported bundle will be simpler since
-  there's no SVG renderer/GSAP animation engine to embed — mostly
-  markup + minimal tab-switching JS.
+Deliberately mirrors v2's file-per-concern split, but simpler where the
+underlying problem is simpler — there's no SVG canvas, no GSAP
+transitions, no cross-tab element linking, so several v2 concepts
+(nodes vs. data, incremental DOM patching, animated diffing between
+slides) just don't apply here. Tabs and blocks are plain data;
+`renderTabContent()` does a full rebuild on every change rather than
+diffing, which is fine at this scale.
+
+- `tab-types.js` — the `BLOCK_TYPES` schema (field definitions per block
+  type: heading/paragraph/list/button/separator), same "packing list"
+  role as v2's `ELEMENT_TYPES` — the property panel is generated from
+  these field lists, not hand-written per type. `makeDefaultBlock()`
+  builds a new block's data from schema defaults.
+- `block-renderer.js` — the one rendering path (`renderBlock()` /
+  `renderTabContent()`), used **unmodified** by both the authoring
+  content area and (once built) the exported player — same
+  authoring-unawareness rule as `element-renderer.js`: reads plain block
+  `data`, returns real DOM, no concept of selection or editing.
+- `richtext-editor.js` — the hand-rolled rich-text field (chosen over a
+  third-party lib during scaffolding review): a contenteditable div +
+  toolbar toggling bold/italic/underline/link via `execCommand`.
+  `sanitizeRichHtml()` strips everything outside an explicit allowlist
+  (`<b> <i> <u> <a href>`) on every input event, so a value handed to
+  `onChange` — and therefore whatever ends up in a saved project — is
+  never something a browser paste or a stray `execCommand` call could
+  have snuck an unexpected tag/attribute into.
+- `tab-manager.js` — `TabManager` owns `tabs` (mutated in place, per the
+  usual reference-identity rule) and the active tab. Tabs and blocks are
+  tracked by stable `id`, never index — same reasoning as v2's slides/
+  elements. `getState()`/`setState()` feed `history.js` directly.
+- `history.js` — copied verbatim from `animated-slides-v2/history.js`;
+  it's fully generic (works off any `getState`/`setState` pair), so
+  there was nothing tool-specific to change.
+- `index.html` — page shell + all the UI glue (tab strip with
+  add/rename/reorder/delete, left rail of "add block" buttons, the block
+  list as the actual editable/previewable surface, a schema-driven
+  property drawer for the selected block — same `.side-panel` pattern as
+  v2's layers/settings drawers). Project lifecycle (New/Save/Open/
+  rename/delete) is copy-adapted from v2's `index.html`, same `Shell` /
+  `Storage` calls, different `TOOL_ID` (`'tabbed-panels'`) and content
+  shape.
+
+### Content model, settled during scaffolding review
+
+- **Block types**: `heading` (h2/h3, plain text — no inline marks, a
+  bold-in-the-middle heading wasn't judged worth the complexity),
+  `paragraph` (richtext), `list` (bullet/numbered, flat array of
+  richtext items — **no nesting**), `button` (label/url/newTab/style —
+  a standalone CTA), `separator` (no fields, just a rule).
+- **Inline link vs. button block are deliberately two different things**
+  — a link embedded mid-sentence (richtext's `link` mark) and a
+  standalone CTA (the `button` block) read differently to a learner, so
+  neither collapses into the other.
+- **Rich text storage**: sanitized HTML string, not a custom run-based
+  model — see `richtext-editor.js` above.
+
+### What's NOT built yet
+
+- **Export** — no self-contained HTML bundle for Articulate yet (v2's
+  equivalent: the Export modal + `MODULE_SOURCES` embedding). Given the
+  authoring-unaware `block-renderer.js` already exists, export is mostly
+  "embed `tab-types.js` + `block-renderer.js` + saved tab data + minimal
+  tab-switching JS," same shape as v2's Export, just without an SVG
+  renderer/GSAP to carry along.
+- **Apps Script deployment** — no `AppScript/TabbedPanels.html` or
+  `AppScript/*Js.html` module wrappers exist yet, and its `PAGES` entry
+  in `Code.gs` is commented out. Needs the same 5-substitution pass
+  described in "The Apps Script deployment pipeline" above before it's
+  reachable through the hosted hub. Untested against `google.script.run`
+  entirely — Save/Open/New only verified in local preview so far (see
+  HANDOFF.md).
+- **Touch/tablet drag-and-drop** — tab and block reordering use native
+  HTML5 drag-and-drop (copied from v2's layer/slide reordering), which
+  has the same known touchscreen gap v2 does.
+- No accessibility pass, no narrow-window layout testing — same
+  standing gaps as v2, not yet even looked at here.

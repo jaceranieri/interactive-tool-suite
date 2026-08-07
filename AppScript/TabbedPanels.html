@@ -11,13 +11,15 @@
 <style>
   #shell-main { min-height: 0; }
 
-  /* Left rail: one icon button per block type — same "icon-only vertical
-     stack" pattern as Animated Slides v2's left rail. */
+  /* Left rail: one icon button per block type, then a divider, then the
+     Tabs/Styles drawer openers — same icon-only vertical stack pattern
+     as Animated Slides v2's left rail. */
   #left-rail {
     width: 64px; background: var(--surface); border-right: 1px solid var(--border);
     padding: var(--space-4) var(--space-2); overflow-y: auto; flex-shrink: 0;
     display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
   }
+  .rail-divider { width: 28px; height: 1px; background: var(--border); margin: var(--space-1) 0; flex-shrink: 0; }
   .add-block-btn {
     display: flex; align-items: center; justify-content: center;
     width: 40px; height: 40px; flex-shrink: 0;
@@ -26,25 +28,31 @@
     transition: border-color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
   }
   .add-block-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .add-block-btn.btn-active { border-color: var(--accent); background: var(--accent-soft); }
   .add-block-btn i { font-size: 16px; color: var(--accent); }
 
   #content-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
-  /* Tab strip */
-  #tab-strip { flex-shrink: 0; padding: var(--space-3) var(--space-5); background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-2); overflow-x: auto; }
-  .tab-chip { position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--paper); cursor: pointer; font-size: var(--text-sm); }
-  .tab-chip.active { border-color: var(--ink); background: var(--accent-soft); font-weight: 600; }
-  .tab-chip.dragging { opacity: 0.4; }
-  .tab-chip.drag-over { border-color: var(--accent); }
-  .tab-chip .tab-name-input { font-family: var(--font-ui); font-size: var(--text-sm); border: none; background: transparent; outline: none; width: 90px; }
-  .tab-chip-close { border: none; background: none; color: var(--ink-faint); cursor: pointer; padding: 0 2px; font-size: 11px; }
-  .tab-chip-close:hover { color: var(--danger); }
-  #add-tab-btn { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; border: 1px dashed var(--border-strong); background: var(--surface); cursor: pointer; color: var(--ink-soft); }
-  #add-tab-btn:hover { border-color: var(--accent); color: var(--accent); }
+  /* Stage: gray well the "player card" sits in — matches the supplied
+     mockup rather than the flat white canvas the first scaffold had. */
+  #stage { flex: 1; overflow-y: auto; padding: var(--space-6); background: var(--surface-sunken); display: flex; justify-content: center; }
+  #player-card { width: 100%; max-width: 860px; height: fit-content; background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); overflow: hidden; display: flex; flex-direction: column; }
+
+  /* Tab nav (tab-nav.js) — WYSIWYG: this exact markup/CSS is what the
+     exported player renders too, so editing IS previewing. */
+  .tp-tabnav { display: flex; align-items: stretch; background: var(--paper); border-bottom: 1px solid var(--border); }
+  .tp-tabnav-chevron { flex-shrink: 0; width: 40px; border: none; background: transparent; color: var(--ink-faint); cursor: pointer; font-size: 13px; }
+  .tp-tabnav-chevron:hover:not(:disabled) { color: var(--accent); }
+  .tp-tabnav-chevron:disabled { opacity: 0.3; cursor: default; }
+  .tp-tabnav-strip { flex: 1; display: flex; overflow-x: auto; scrollbar-width: none; }
+  .tp-tabnav-strip::-webkit-scrollbar { display: none; }
+  .tp-tabnav-tab { flex-shrink: 0; padding: var(--space-4) var(--space-5) var(--space-3); border: none; background: transparent; cursor: pointer; font-family: var(--font-ui); font-size: var(--text-base); color: var(--ink-soft); border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tp-tabnav-tab:hover { color: var(--ink); }
+  .tp-tabnav-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
   /* Block list (the learner-facing preview surface, editable in place) */
-  #stage { flex: 1; overflow-y: auto; padding: var(--space-6); }
-  #block-list { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-3); }
+  #player-body { padding: var(--space-6); overflow-y: auto; }
+  #block-list { display: flex; flex-direction: column; gap: var(--space-3); }
   #block-list-empty { text-align: center; color: var(--ink-faint); padding: var(--space-8) 0; }
   .tp-block { position: relative; border: 2px solid transparent; border-radius: var(--radius-sm); padding: var(--space-2); cursor: pointer; }
   .tp-block:hover { border-color: var(--border); }
@@ -56,19 +64,26 @@
   .tp-block-controls button { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); width: 24px; height: 24px; cursor: pointer; font-size: 10px; color: var(--ink-soft); }
   .tp-block-controls button:hover { color: var(--danger); border-color: var(--danger); }
 
-  /* Learner-facing block appearance (mirrors what Export will ship) */
+  /* Learner-facing block appearance (mirrors what Export ships).
+     Colour/size for headings/badges/buttons come from the project's
+     STYLES object and are applied as inline styles by block-renderer.js —
+     these rules are layout/shape only. */
   .tp-heading { margin: 0; }
+  .tp-subtitle { margin: 4px 0 0; }
   .tp-paragraph { line-height: 1.5; }
   .tp-paragraph:empty::before { content: 'Empty text block'; color: var(--ink-faint); font-style: italic; }
   .tp-list { margin: 0; padding-left: 1.4em; line-height: 1.5; }
-  .tp-button { display: inline-block; padding: 10px 20px; border-radius: var(--radius-sm); text-decoration: none; font-weight: 600; font-size: var(--text-sm); }
-  .tp-button-primary { background: var(--accent); color: #fff; }
-  .tp-button-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--border-strong); }
+  .tp-button { display: inline-block; padding: 10px 20px; border-radius: var(--radius-sm); border: 1px solid transparent; text-decoration: none; font-weight: 600; font-size: var(--text-sm); }
+  .tp-badge { display: inline-block; padding: 3px 12px; border-radius: 999px; border: 1px solid transparent; font-size: var(--text-xs); font-weight: 600; }
+  .tp-table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
+  .tp-table th, .tp-table td { border: 1px solid var(--border-strong); padding: 8px 10px; text-align: left; }
+  .tp-table th { background: var(--paper); font-weight: 600; }
   .tp-block-separator hr { border: none; border-top: 1px solid var(--border); margin: var(--space-2) 0; }
 
-  /* Property drawer — same .side-panel pattern as v2's layers/settings drawers */
+  /* Property / Tabs / Styles drawers — same .side-panel pattern as v2's
+     layers/settings drawers. Only one open at a time (openPanel()). */
   .side-panel {
-    position: absolute; top: 0; right: 0; bottom: 0; width: 320px; background: var(--surface);
+    position: absolute; top: 0; right: 0; bottom: 0; width: 340px; background: var(--surface);
     border-left: 1px solid var(--border); box-shadow: var(--shadow-lg); transform: translateX(100%);
     transition: transform var(--duration-base) var(--ease-standard); display: flex; flex-direction: column; z-index: 5; pointer-events: none;
   }
@@ -84,6 +99,9 @@
   .popup-field input, .popup-field select, .popup-field textarea { width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
   .popup-field.toggle-field { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .popup-field.toggle-field label { margin-bottom: 0; }
+  .popup-field input[type=color] { width: 40px; height: 32px; padding: 0; border-radius: var(--radius-sm); cursor: pointer; overflow: hidden; }
+  .popup-field input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  .popup-field input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
   .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
   .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
   .switch-slider { position: absolute; inset: 0; background: var(--border-strong); border-radius: 999px; cursor: pointer; transition: background var(--duration-fast) var(--ease-standard); }
@@ -91,8 +109,7 @@
   .switch input:checked + .switch-slider { background: var(--accent); }
   .switch input:checked + .switch-slider::before { transform: translateX(16px); }
 
-  /* Richtext toolbar/editable — used both inline in block property panels
-     and for list-item fields. */
+  /* Richtext toolbar/editable */
   .tp-richtext-field { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
   .tp-richtext-toolbar { display: flex; gap: 2px; padding: 4px; background: var(--paper); border-bottom: 1px solid var(--border); }
   .tp-richtext-btn { width: 26px; height: 26px; border: none; background: transparent; border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
@@ -103,8 +120,38 @@
   .array-field-item .tp-richtext-field { flex: 1; }
   .array-field-remove { border: none; background: none; color: var(--ink-faint); cursor: pointer; padding: 4px; flex-shrink: 0; }
   .array-field-remove:hover { color: var(--danger); }
-  .array-field-add { width: 100%; padding: 6px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); margin-top: 4px; }
-  .no-selection-hint { color: var(--ink-faint); font-size: var(--text-sm); text-align: center; padding: var(--space-6) 0; }
+  .array-field-add, .table-field-add-row { width: 100%; padding: 6px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); margin-top: 4px; }
+
+  /* Property panel's table-grid editor — add/remove row and column */
+  .table-field-grid { display: flex; flex-direction: column; gap: 4px; overflow-x: auto; }
+  .table-field-row { display: flex; gap: 4px; align-items: center; }
+  .table-field-row input[type=text] { width: 90px; flex-shrink: 0; }
+  .table-field-remove-row, .table-field-remove-col { border: none; background: none; color: var(--ink-faint); cursor: pointer; flex-shrink: 0; width: 20px; }
+  .table-field-remove-row:hover, .table-field-remove-col:hover { color: var(--danger); }
+  .table-field-col-controls { display: flex; gap: 4px; margin-left: 24px; }
+  .table-field-col-controls span { width: 90px; flex-shrink: 0; }
+  .table-field-add-col { border: 1px dashed var(--border-strong); background: var(--surface); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); width: 24px; flex-shrink: 0; }
+
+  /* Tabs drawer */
+  .tab-row { display: flex; align-items: center; gap: var(--space-2); padding: 8px; border-radius: var(--radius-sm); border-top: 2px solid transparent; cursor: default; }
+  .tab-row:hover { background: var(--paper); }
+  .tab-row.dragging { opacity: 0.4; }
+  .tab-row.drag-over { border-top-color: var(--accent); }
+  .tab-row .drag-handle { color: var(--ink-faint); cursor: grab; flex-shrink: 0; }
+  .tab-row input[type=text] { flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; font-family: var(--font-ui); font-size: var(--text-sm); }
+  .tab-row button { border: none; background: none; color: var(--ink-faint); cursor: pointer; flex-shrink: 0; }
+  .tab-row button:hover { color: var(--danger); }
+  #add-tab-btn { width: 100%; margin-top: var(--space-3); padding: 8px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; color: var(--ink-soft); }
+  #add-tab-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Styles drawer */
+  .settings-section { margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--border); }
+  .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .settings-section h3 { margin: 0 0 var(--space-3); font-size: var(--text-sm); font-weight: 600; }
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .colour-table { display: grid; grid-template-columns: auto 1fr 1fr; column-gap: var(--space-4); row-gap: var(--space-3); align-items: center; margin-top: var(--space-3); }
+  .colour-table-head { font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; text-align: left; }
+  .colour-table-row-label { font-size: var(--text-sm); color: var(--ink); margin: 0; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -125,6 +172,8 @@
       <button class="btn btn-secondary" onclick="newProject()">New</button>
       <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); refreshProjectList();">Open</button>
       <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
+      <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" id="undo-btn" onclick="history.undo()">Undo</button>
       <button class="btn btn-secondary" id="redo-btn" onclick="history.redo()">Redo</button>
       <div class="top-bar-divider"></div>
@@ -136,19 +185,36 @@
     <div id="left-rail"></div>
 
     <div id="content-col">
-      <div id="tab-strip"></div>
-
       <div id="canvas-wrapper">
         <div id="stage">
-          <div id="block-list"></div>
+          <div id="player-card">
+            <div id="tabnav-host"></div>
+            <div id="player-body"><div id="block-list"></div></div>
+          </div>
         </div>
 
         <div class="side-panel" id="property-panel">
           <div class="side-panel-header">
             <h2>Block settings</h2>
-            <button class="modal-close" onclick="deselectBlock()">&times;</button>
+            <button class="modal-close" onclick="closePanel()">&times;</button>
           </div>
           <div class="side-panel-body" id="property-panel-body"></div>
+        </div>
+
+        <div class="side-panel" id="tabs-panel">
+          <div class="side-panel-header">
+            <h2>Tabs</h2>
+            <button class="modal-close" onclick="closePanel()">&times;</button>
+          </div>
+          <div class="side-panel-body" id="tabs-panel-body"></div>
+        </div>
+
+        <div class="side-panel" id="styles-panel">
+          <div class="side-panel-header">
+            <h2>Styles</h2>
+            <button class="modal-close" onclick="closePanel()">&times;</button>
+          </div>
+          <div class="side-panel-body" id="styles-panel-body"></div>
         </div>
       </div>
     </div>
@@ -166,11 +232,29 @@
   </div>
 </div>
 
+<!-- Export modal -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Export</div><h2>Self-contained HTML</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('export-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--ink-soft); margin-top:0;">Paste this into an Articulate 360 web object (or any HTML embed).</p>
+      <textarea id="export-textarea" readonly style="width:100%; height:320px; font-family:var(--font-mono); font-size:11px; box-sizing:border-box; border:1px solid var(--border); border-radius:var(--radius-sm); padding:var(--space-3);"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="copyExportCode()">Copy code</button>
+    </div>
+  </div>
+</div>
+
 <?!= include('AppShellJs'); ?>
 <?!= include('StorageConnectorJs'); ?>
 <?!= include('TabTypesJs'); ?>
 <?!= include('RichtextEditorJs'); ?>
 <?!= include('BlockRendererJs'); ?>
+<?!= include('TabNavJs'); ?>
 <?!= include('TabManagerJs'); ?>
 <?!= include('HistoryJs'); ?>
 <script>
@@ -188,8 +272,9 @@
   let currentProjectName = null;
   let hasUnsavedChanges = false;
   let selectedBlockId = null;
+  let activePanel = null; // 'property' | 'tabs' | 'styles' | null
 
-  const tabManager = new TabManager({ tabs: null });
+  const tabManager = new TabManager({ tabs: null, styles: null });
   const history = new History({
     getState: () => tabManager.getState(),
     setState: (s) => tabManager.setState(s),
@@ -210,7 +295,34 @@
     document.getElementById('unsaved-dot').style.display = 'none';
   }
 
-  /* ---- Left rail: one "add block" button per BLOCK_TYPES entry ---- */
+  /* ---- Panel management: property / tabs / styles drawers, one at a time ---- */
+
+  function closePanel() {
+    ['property-panel', 'tabs-panel', 'styles-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
+    ['tabs-toggle-btn', 'styles-toggle-btn'].forEach((id) => document.getElementById(id)?.classList.remove('btn-active'));
+    if (activePanel === 'property') selectedBlockId = null;
+    activePanel = null;
+    renderBlockList();
+  }
+
+  function openPanel(name) {
+    closePanel();
+    activePanel = name;
+    if (name === 'tabs') {
+      document.getElementById('tabs-panel').classList.add('active');
+      document.getElementById('tabs-toggle-btn').classList.add('btn-active');
+      renderTabsPanel();
+    } else if (name === 'styles') {
+      document.getElementById('styles-panel').classList.add('active');
+      document.getElementById('styles-toggle-btn').classList.add('btn-active');
+      renderStylesPanel();
+    } else if (name === 'property') {
+      document.getElementById('property-panel').classList.add('active');
+      renderPropertyPanel();
+    }
+  }
+
+  /* ---- Left rail: one "add block" button per BLOCK_TYPES entry, then Tabs/Styles ---- */
 
   function renderLeftRail() {
     const rail = document.getElementById('left-rail');
@@ -229,92 +341,107 @@
       });
       rail.appendChild(btn);
     });
+
+    const divider = document.createElement('div');
+    divider.className = 'rail-divider';
+    rail.appendChild(divider);
+
+    const tabsBtn = document.createElement('button');
+    tabsBtn.className = 'add-block-btn';
+    tabsBtn.id = 'tabs-toggle-btn';
+    tabsBtn.title = 'Manage tabs';
+    tabsBtn.setAttribute('aria-label', 'Manage tabs');
+    tabsBtn.innerHTML = '<i class="fa-solid fa-table-list"></i>';
+    tabsBtn.addEventListener('click', () => activePanel === 'tabs' ? closePanel() : openPanel('tabs'));
+    rail.appendChild(tabsBtn);
+
+    const stylesBtn = document.createElement('button');
+    stylesBtn.className = 'add-block-btn';
+    stylesBtn.id = 'styles-toggle-btn';
+    stylesBtn.title = 'Styles';
+    stylesBtn.setAttribute('aria-label', 'Global styles');
+    stylesBtn.innerHTML = '<i class="fa-solid fa-palette"></i>';
+    stylesBtn.addEventListener('click', () => activePanel === 'styles' ? closePanel() : openPanel('styles'));
+    rail.appendChild(stylesBtn);
   }
 
-  /* ---- Tab strip ---- */
+  /* ---- Tab nav (WYSIWYG, tab-nav.js) ---- */
 
   function renderTabStrip() {
-    const strip = document.getElementById('tab-strip');
-    strip.innerHTML = '';
-    tabManager.tabs.forEach((tab) => {
-      const chip = document.createElement('div');
-      chip.className = 'tab-chip' + (tab.id === tabManager.activeTabId ? ' active' : '');
-      chip.draggable = true;
-      chip.dataset.tabId = tab.id;
+    renderTabNav(document.getElementById('tabnav-host'), {
+      tabs: tabManager.tabs,
+      activeTabId: tabManager.activeTabId,
+      onSelect: (id) => { closePanel(); tabManager.setActiveTab(id); },
+    });
+  }
 
-      const name = document.createElement('span');
-      name.textContent = tab.title;
-      name.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        startRenameTab(chip, tab);
-      });
-      chip.appendChild(name);
+  /* ---- Tabs drawer: add/rename/delete/reorder — kept out of the WYSIWYG canvas ---- */
+
+  function renderTabsPanel() {
+    const body = document.getElementById('tabs-panel-body');
+    body.innerHTML = '';
+
+    tabManager.tabs.forEach((tab) => {
+      const row = document.createElement('div');
+      row.className = 'tab-row';
+      row.draggable = true;
+      row.dataset.tabId = tab.id;
+
+      const handle = document.createElement('i');
+      handle.className = 'fa-solid fa-grip-vertical drag-handle';
+      row.appendChild(handle);
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = tab.title;
+      input.addEventListener('focus', () => history.beginAction());
+      input.addEventListener('input', () => tabManager.renameTab(tab.id, input.value));
+      input.addEventListener('blur', () => { tabManager.renameTab(tab.id, input.value.trim() || tab.title); history.commitAction(); renderTabsPanel(); });
+      row.appendChild(input);
 
       if (tabManager.tabs.length > 1) {
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'tab-chip-close';
-        closeBtn.innerHTML = '&times;';
-        closeBtn.title = 'Delete tab';
-        closeBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const ok = await Shell.confirm(`Delete "${tab.title}"? This can't be undone with Undo across a reload.`, { heading: 'Delete tab', okLabel: 'Delete', danger: true });
+        const delBtn = document.createElement('button');
+        delBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        delBtn.title = 'Delete tab';
+        delBtn.addEventListener('click', async () => {
+          const ok = await Shell.confirm(`Delete "${tab.title}"?`, { heading: 'Delete tab', okLabel: 'Delete', danger: true });
           if (!ok) return;
           history.beginAction();
           tabManager.deleteTab(tab.id);
           history.commitAction();
+          renderTabsPanel();
         });
-        chip.appendChild(closeBtn);
+        row.appendChild(delBtn);
       }
 
-      chip.addEventListener('click', () => { deselectBlock(); tabManager.setActiveTab(tab.id); });
-
-      chip.addEventListener('dragstart', () => chip.classList.add('dragging'));
-      chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
-      chip.addEventListener('dragover', (e) => { e.preventDefault(); chip.classList.add('drag-over'); });
-      chip.addEventListener('dragleave', () => chip.classList.remove('drag-over'));
-      chip.addEventListener('drop', (e) => {
+      row.addEventListener('dragstart', () => row.classList.add('dragging'));
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+      row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drag-over'); });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', (e) => {
         e.preventDefault();
-        chip.classList.remove('drag-over');
-        const draggedId = strip.querySelector('.dragging')?.dataset.tabId;
+        row.classList.remove('drag-over');
+        const draggedId = body.querySelector('.dragging')?.dataset.tabId;
         if (!draggedId) return;
         history.beginAction();
         tabManager.moveTabAfter(draggedId, tab.id);
         history.commitAction();
+        renderTabsPanel();
       });
 
-      strip.appendChild(chip);
+      body.appendChild(row);
     });
 
     const addBtn = document.createElement('button');
     addBtn.id = 'add-tab-btn';
-    addBtn.title = 'Add tab';
-    addBtn.setAttribute('aria-label', 'Add tab');
-    addBtn.innerHTML = '<i class="fa-solid fa-plus"></i>';
+    addBtn.textContent = '+ Add tab';
     addBtn.addEventListener('click', () => {
       history.beginAction();
       tabManager.addTab();
       history.commitAction();
+      renderTabsPanel();
     });
-    strip.appendChild(addBtn);
-  }
-
-  function startRenameTab(chip, tab) {
-    const input = document.createElement('input');
-    input.className = 'tab-name-input';
-    input.value = tab.title;
-    chip.replaceChildren(input);
-    input.focus();
-    input.select();
-    const commit = () => {
-      history.beginAction();
-      tabManager.renameTab(tab.id, input.value.trim() || tab.title);
-      history.commitAction();
-    };
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') input.blur();
-      if (e.key === 'Escape') { input.value = tab.title; input.blur(); }
-    });
+    body.appendChild(addBtn);
   }
 
   /* ---- Block list (content area) ---- */
@@ -333,7 +460,7 @@
     }
 
     tab.blocks.forEach((data) => {
-      const el = renderBlock(data); // block-renderer.js — authoring-unaware
+      const el = renderBlock(data, tabManager.styles); // block-renderer.js — authoring-unaware
       el.classList.toggle('selected', data.id === selectedBlockId);
       el.draggable = true;
 
@@ -347,7 +474,7 @@
         history.beginAction();
         tabManager.deleteBlock(data.id);
         history.commitAction();
-        if (selectedBlockId === data.id) deselectBlock();
+        if (selectedBlockId === data.id) closePanel();
       });
       controls.appendChild(delBtn);
       el.appendChild(controls);
@@ -375,13 +502,7 @@
 
   function selectBlock(id) {
     selectedBlockId = id;
-    renderBlockList();
-    renderPropertyPanel();
-    document.getElementById('property-panel').classList.add('active');
-  }
-  function deselectBlock() {
-    selectedBlockId = null;
-    document.getElementById('property-panel').classList.remove('active');
+    openPanel('property');
     renderBlockList();
   }
 
@@ -440,45 +561,9 @@
         switchLabel.appendChild(slider);
         wrap.appendChild(switchLabel);
       } else if (field.type === 'array') {
-        const listHolder = document.createElement('div');
-        const items = data[key];
-        items.forEach((itemVal, i) => {
-          const row = document.createElement('div');
-          row.className = 'array-field-item';
-          const itemHolder = document.createElement('div');
-          attachRichTextField(itemHolder, {
-            value: itemVal,
-            inline: field.of.inline,
-            onChange: (html) => { begin(); items[i] = html; commit({ [key]: items }); commitEnd(); },
-          });
-          row.appendChild(itemHolder);
-          const removeBtn = document.createElement('button');
-          removeBtn.className = 'array-field-remove';
-          removeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-          removeBtn.title = 'Remove item';
-          removeBtn.addEventListener('click', () => {
-            if (items.length <= 1) return; // keep at least one item
-            history.beginAction();
-            items.splice(i, 1);
-            commit({ [key]: items });
-            history.commitAction();
-            renderPropertyPanel();
-          });
-          row.appendChild(removeBtn);
-          listHolder.appendChild(row);
-        });
-        const addBtn = document.createElement('button');
-        addBtn.className = 'array-field-add';
-        addBtn.textContent = '+ Add item';
-        addBtn.addEventListener('click', () => {
-          history.beginAction();
-          items.push('');
-          commit({ [key]: items });
-          history.commitAction();
-          renderPropertyPanel();
-        });
-        listHolder.appendChild(addBtn);
-        wrap.appendChild(listHolder);
+        wrap.appendChild(renderArrayField(data, key, field, begin, commit, commitEnd));
+      } else if (field.type === 'table') {
+        wrap.appendChild(renderTableField(data, key, begin, commit, commitEnd));
       } else {
         // text / url
         const input = document.createElement('input');
@@ -494,10 +579,225 @@
     });
   }
 
+  function renderArrayField(data, key, field, begin, commit, commitEnd) {
+    const listHolder = document.createElement('div');
+    const items = data[key];
+    items.forEach((itemVal, i) => {
+      const row = document.createElement('div');
+      row.className = 'array-field-item';
+      const itemHolder = document.createElement('div');
+      attachRichTextField(itemHolder, {
+        value: itemVal,
+        inline: field.of.inline,
+        onChange: (html) => { begin(); items[i] = html; commit({ [key]: items }); commitEnd(); },
+      });
+      row.appendChild(itemHolder);
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'array-field-remove';
+      removeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+      removeBtn.title = 'Remove item';
+      removeBtn.addEventListener('click', () => {
+        if (items.length <= 1) return; // keep at least one item
+        history.beginAction();
+        items.splice(i, 1);
+        commit({ [key]: items });
+        history.commitAction();
+        renderPropertyPanel();
+      });
+      row.appendChild(removeBtn);
+      listHolder.appendChild(row);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.className = 'array-field-add';
+    addBtn.textContent = '+ Add item';
+    addBtn.addEventListener('click', () => {
+      history.beginAction();
+      items.push('');
+      commit({ [key]: items });
+      history.commitAction();
+      renderPropertyPanel();
+    });
+    listHolder.appendChild(addBtn);
+    return listHolder;
+  }
+
+  /** The Table block's `rows` field: a 2D array of plain-text cells.
+   *  Renders an editable grid with per-row remove buttons, per-column
+   *  remove buttons (a small control row above the grid), and add-row /
+   *  add-column controls. Every mutation replaces the whole `rows` array
+   *  in one history step, rather than tracking cell-level undo — simplest
+   *  correct behavior at this scale. */
+  function renderTableField(data, key, begin, commit, commitEnd) {
+    const holder = document.createElement('div');
+    const rows = data[key];
+    const colCount = rows[0] ? rows[0].length : 0;
+
+    function change(mutator) {
+      history.beginAction();
+      mutator();
+      commit({ [key]: rows });
+      history.commitAction();
+      renderPropertyPanel();
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'table-field-grid';
+
+    if (colCount > 0) {
+      const colControls = document.createElement('div');
+      colControls.className = 'table-field-col-controls';
+      for (let c = 0; c < colCount; c++) {
+        const btn = document.createElement('button');
+        btn.className = 'table-field-remove-col';
+        btn.title = 'Remove column';
+        btn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+        btn.disabled = colCount <= 1;
+        const col = c;
+        btn.addEventListener('click', () => change(() => rows.forEach((r) => r.splice(col, 1))));
+        colControls.appendChild(btn);
+      }
+      grid.appendChild(colControls);
+    }
+
+    rows.forEach((row, r) => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'table-field-row';
+      row.forEach((cell, c) => {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = cell;
+        input.addEventListener('focus', begin);
+        input.addEventListener('input', () => { rows[r][c] = input.value; commit({ [key]: rows }); });
+        input.addEventListener('blur', commitEnd);
+        rowEl.appendChild(input);
+      });
+      const rmRow = document.createElement('button');
+      rmRow.className = 'table-field-remove-row';
+      rmRow.title = 'Remove row';
+      rmRow.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+      rmRow.disabled = rows.length <= 1;
+      rmRow.addEventListener('click', () => change(() => rows.splice(r, 1)));
+      rowEl.appendChild(rmRow);
+      grid.appendChild(rowEl);
+    });
+
+    holder.appendChild(grid);
+
+    const addRowBtn = document.createElement('button');
+    addRowBtn.className = 'table-field-add-row';
+    addRowBtn.textContent = '+ Add row';
+    addRowBtn.addEventListener('click', () => change(() => rows.push(new Array(colCount || 1).fill(''))));
+    holder.appendChild(addRowBtn);
+
+    const addColBtn = document.createElement('button');
+    addColBtn.className = 'array-field-add';
+    addColBtn.textContent = '+ Add column';
+    addColBtn.addEventListener('click', () => change(() => rows.forEach((r) => r.push(''))));
+    holder.appendChild(addColBtn);
+
+    return holder;
+  }
+
+  /* ---- Styles drawer (global — headings/subtitle typography, badge/button colours) ---- */
+
+  const STYLE_TYPOGRAPHY_FIELDS = [
+    ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['subtitle', 'Subtitle'],
+  ];
+
+  function renderStylesPanel() {
+    const body = document.getElementById('styles-panel-body');
+    body.innerHTML = '';
+
+    const typeSection = document.createElement('div');
+    typeSection.className = 'settings-section';
+    typeSection.innerHTML = '<h3>Headings &amp; subtitle</h3>';
+    STYLE_TYPOGRAPHY_FIELDS.forEach(([key, label]) => {
+      const grid = document.createElement('div');
+      grid.className = 'field-grid';
+
+      const sizeWrap = document.createElement('div');
+      sizeWrap.className = 'popup-field';
+      sizeWrap.innerHTML = `<label>${label} size</label>`;
+      const sizeInput = document.createElement('input');
+      sizeInput.type = 'number';
+      sizeInput.min = 8; sizeInput.max = 96;
+      sizeInput.value = tabManager.styles[key].size;
+      sizeInput.addEventListener('focus', () => history.beginAction());
+      sizeInput.addEventListener('input', () => { tabManager.styles[key].size = Number(sizeInput.value) || tabManager.styles[key].size; markUnsaved(); renderBlockList(); });
+      sizeInput.addEventListener('blur', () => history.commitAction());
+      sizeWrap.appendChild(sizeInput);
+
+      const colorWrap = document.createElement('div');
+      colorWrap.className = 'popup-field';
+      colorWrap.innerHTML = `<label>${label} colour</label>`;
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.value = tabManager.styles[key].color;
+      colorInput.addEventListener('input', () => {
+        history.beginAction();
+        tabManager.styles[key].color = colorInput.value;
+        history.commitAction();
+        markUnsaved(); renderBlockList();
+      });
+      colorWrap.appendChild(colorInput);
+
+      grid.appendChild(sizeWrap);
+      grid.appendChild(colorWrap);
+      typeSection.appendChild(grid);
+    });
+    body.appendChild(typeSection);
+
+    body.appendChild(renderVariantColourTable('Badges', 'badge'));
+    body.appendChild(renderVariantColourTable('Buttons', 'button'));
+  }
+
+  /** Badge and Button styles share the exact same shape (primary/secondary
+   *  × background/text/border), so one function renders both — same
+   *  "Colours" table pattern v2 uses for nav Active/Inactive. */
+  function renderVariantColourTable(heading, groupKey) {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    const h3 = document.createElement('h3');
+    h3.textContent = heading;
+    section.appendChild(h3);
+
+    const table = document.createElement('div');
+    table.className = 'colour-table';
+    table.innerHTML = `
+      <div></div>
+      <div class="colour-table-head">Primary</div>
+      <div class="colour-table-head">Secondary</div>
+    `;
+    [['bg', 'Background'], ['text', 'Text'], ['border', 'Border']].forEach(([prop, label]) => {
+      const rowLabel = document.createElement('p');
+      rowLabel.className = 'colour-table-row-label';
+      rowLabel.textContent = label;
+      table.appendChild(rowLabel);
+
+      ['primary', 'secondary'].forEach((variant) => {
+        const input = document.createElement('input');
+        input.type = 'color';
+        input.value = tabManager.styles[groupKey][variant][prop];
+        input.addEventListener('input', () => {
+          history.beginAction();
+          tabManager.styles[groupKey][variant][prop] = input.value;
+          history.commitAction();
+          markUnsaved(); renderBlockList();
+        });
+        table.appendChild(input);
+      });
+    });
+
+    section.appendChild(table);
+    return section;
+  }
+
   function renderAll() {
     renderTabStrip();
     renderBlockList();
-    if (selectedBlockId && !tabManager.getActiveTab().blocks.some((b) => b.id === selectedBlockId)) deselectBlock();
+    if (activePanel === 'tabs') renderTabsPanel();
+    if (activePanel === 'styles') renderStylesPanel();
+    if (selectedBlockId && !tabManager.getActiveTab().blocks.some((b) => b.id === selectedBlockId)) closePanel();
   }
 
   /* ---- Project lifecycle (New / Save / Open) — same pattern as v2 ---- */
@@ -507,10 +807,10 @@
       const proceed = await Shell.confirm('Starting a new project will discard them.', { heading: 'Unsaved changes', okLabel: 'Discard and continue', danger: true });
       if (!proceed) return;
     }
-    tabManager.setState({ activeTabId: null, tabs: [defaultTab('Tab 1')] });
+    tabManager.setState({ activeTabId: null, tabs: [defaultTab('Tab 1')], styles: defaultStyles() });
     currentProjectName = null;
     document.getElementById('display-project-name').textContent = 'Untitled project';
-    deselectBlock();
+    closePanel();
     markSaved();
   }
 
@@ -563,7 +863,7 @@
       tabManager.setState(content);
       currentProjectName = name;
       document.getElementById('display-project-name').textContent = name;
-      deselectBlock();
+      closePanel();
       markSaved();
       pending.remove();
       Shell.toast(`Project "${name}" loaded!`, 'success');
@@ -603,6 +903,106 @@
       pending.remove();
       Shell.toast(`Delete failed: ${error.message}`, 'danger');
     }
+  }
+
+  /* ---- Export ----
+     Reuses tab-types.js / block-renderer.js / tab-nav.js VERBATIM inside
+     the exported file — same engine that just rendered the authoring
+     preview renders the exported player, so there's no second copy of
+     any of this logic to drift out of sync. Local/repo-source preview
+     fetches the sibling files directly (a real web server can do this);
+     the Apps-Script-deployed copy embeds them as MODULE_SOURCES string
+     constants instead, since Apps Script has no fetchable sibling-file
+     paths — see CLAUDE.md's deployment pipeline section, substitution 2. */
+
+  // Apps-Script-deployed copy: no fetchable sibling-file paths exist here
+  // (unlike a real web server, which the repo-source version's fetch()
+  // path relies on for local preview) — so the three modules Export
+  // embeds are baked in as string constants instead. See CLAUDE.md's
+  // deployment pipeline section, substitution 2.
+  const MODULE_SOURCES = {
+    tabTypes: "/* ==========================================================================\n   Tabbed Panels — Block Type Schema\n   Same idea as Animated Slides v2's ELEMENT_TYPES: one declaration per\n   block type, field lists drive the property panel and \"add block\" menu\n   instead of hand-written per-type UI. block-renderer.js reads these same\n   field names when drawing/updating a block's DOM node.\n\n   Every block also has `id` and `type`, handled by the engine directly.\n   Only what's specific to a type goes in its `fields`.\n\n   Field type `richtext` is NOT a native input — see richtext-editor.js for\n   the hand-rolled contenteditable + mark-toggling implementation. Its\n   value is always a sanitized HTML string restricted to the tags implied\n   by `inline` (b/i/u/a).\n\n   Field type `table` is also not a native input — its value is a 2D array\n   of plain-text cell strings, `data.rows`; see index.html's property-panel\n   table-grid editor (add/remove row/column) for the only place that reads\n   `field.type === 'table'` specially. Cells are plain text, not richtext —\n   a deliberate scope decision, kept simple for a dense grid.\n\n   `heading`'s `level` (h2/h3/h4) and `subtitle` text, `badge`'s `style`,\n   and `button`'s `style` all read their actual size/colour from the\n   project-wide STYLES object (see tab-manager.js's defaultStyles()) rather\n   than storing it per-block — the same \"instance picks a variant, a\n   project-level settings panel defines what that variant looks like\"\n   split v2 uses for nav Active/Inactive colours.\n\n   Deliberate scope boundaries (see HANDOFF.md if reconsidering these):\n   - No nested blocks — `list.items` is a flat array of richtext strings,\n     not sub-blocks.\n   - `heading` has no inline marks on its main text (plain text only) — a\n     bold-in-the-middle heading was judged not worth the complexity. Its\n     `subtitle` field is a second, separately-styled plain-text line\n     (settled as a field on Heading rather than its own block type).\n   - Inline links (via richtext's `link` mark) and the standalone `button`\n     block are deliberately two different things, not one collapsed onto\n     the other — a link embedded mid-sentence and a standalone CTA read\n     differently to a learner.\n   - `table` cells are plain text, not richtext.\n   ========================================================================== */\n\nconst BLOCK_TYPES = {\n\n  heading: {\n    label: 'Heading',\n    icon: 'fa-heading',\n    fields: {\n      level:    { type: 'select', label: 'Size',     default: 'h2', options: [['h2', 'H2 (large)'], ['h3', 'H3 (medium)'], ['h4', 'H4 (small)']] },\n      text:     { type: 'text',   label: 'Text',      default: 'Heading' },\n      subtitle: { type: 'text',   label: 'Subtitle (optional)', default: '' },\n    },\n  },\n\n  paragraph: {\n    label: 'Text',\n    icon: 'fa-align-left',\n    fields: {\n      content: { type: 'richtext', label: 'Text',  default: '', inline: ['bold', 'italic', 'underline', 'link'] },\n      align:   { type: 'select',   label: 'Align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },\n    },\n  },\n\n  list: {\n    label: 'List',\n    icon: 'fa-list-ul',\n    fields: {\n      style: { type: 'select', label: 'Style', default: 'bullet', options: [['bullet', 'Bulleted'], ['numbered', 'Numbered']] },\n      items: { type: 'array',  label: 'Items',  default: [''], of: { type: 'richtext', inline: ['bold', 'italic', 'link'] } },\n    },\n  },\n\n  button: {\n    label: 'Button',\n    icon: 'fa-link',\n    fields: {\n      label:  { type: 'text',    label: 'Label',        default: 'Learn more' },\n      url:    { type: 'url',     label: 'Link URL',      default: '' },\n      newTab: { type: 'boolean', label: 'Open in new tab', default: true },\n      style:  { type: 'select',  label: 'Style',         default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },\n    },\n  },\n\n  badge: {\n    label: 'Badge',\n    icon: 'fa-certificate',\n    fields: {\n      label: { type: 'text',   label: 'Label', default: 'New' },\n      style: { type: 'select', label: 'Style', default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },\n    },\n  },\n\n  table: {\n    label: 'Table',\n    icon: 'fa-table',\n    fields: {\n      hasHeaderRow: { type: 'boolean', label: 'First row is a header', default: true },\n      rows: {\n        type: 'table', label: 'Cells',\n        default: [['Header 1', 'Header 2'], ['Cell 1', 'Cell 2']],\n      },\n    },\n  },\n\n  separator: {\n    label: 'Separator',\n    icon: 'fa-minus',\n    fields: {},\n  },\n\n};\n\n/**\n * Builds a fresh block's data object from its schema defaults — this is\n * what \"add block\" calls. Keeps default-value logic in one place instead\n * of repeated inline object literals scattered through the editor.\n */\nfunction makeDefaultBlock(type, id) {\n  const schema = BLOCK_TYPES[type];\n  if (!schema) throw new Error(`Unknown block type: ${type}`);\n\n  const data = { id, type };\n  Object.entries(schema.fields).forEach(([key, field]) => {\n    // Deep-clone array/object defaults (JSON round-trip is enough here —\n    // every field default is plain JSON-serializable data) so each block\n    // gets its own copy rather than a shared reference to the schema's\n    // default value. A shallow [...spread] isn't enough for `table.rows`,\n    // which is an array of arrays.\n    data[key] = (typeof field.default === 'object' && field.default !== null)\n      ? JSON.parse(JSON.stringify(field.default))\n      : field.default;\n  });\n  return data;\n}\n",
+    blockRenderer: "/* ==========================================================================\n   Tabbed Panels — Block Renderer\n   Same role as Animated Slides v2's element-renderer.js: the one rendering\n   path, used unmodified by both the authoring content area and the\n   exported player. Never make this authoring-aware — it only reads plain\n   block `data` objects (plus the project-wide `styles` object) and\n   returns real DOM, no concept of selection or editing.\n\n   `styles` (see tab-manager.js's defaultStyles()) supplies the actual\n   size/colour for whichever variant a block picked (heading level,\n   badge/button primary-or-secondary) — passed in as a parameter rather\n   than imported globally so this stays a pure function of its inputs,\n   the same reasoning v2's nav-bar.js takes its style object as a\n   parameter instead of reaching for a global.\n\n   Rich text fields (`content`, list `items`) are stored as sanitized HTML\n   strings (see richtext-editor.js for how they're produced) and rendered\n   via innerHTML — trusted the same way an author-supplied value already is\n   everywhere else in this suite. Table cells are plain text (see\n   tab-types.js) and rendered via textContent.\n   ========================================================================== */\n\nfunction renderBlock(data, styles) {\n  const schema = BLOCK_TYPES[data.type];\n  if (!schema) throw new Error(`Unknown block type: ${data.type}`);\n\n  const el = document.createElement('div');\n  el.className = 'tp-block tp-block-' + data.type;\n  el.dataset.blockId = data.id;\n\n  switch (data.type) {\n    case 'heading': {\n      const level = styles[data.level] || styles.h2;\n      const tag = data.level === 'h4' ? 'h4' : data.level === 'h3' ? 'h3' : 'h2';\n      const h = document.createElement(tag);\n      h.className = 'tp-heading';\n      h.textContent = data.text || '';\n      h.style.fontSize = level.size + 'px';\n      h.style.color = level.color;\n      el.appendChild(h);\n      if (data.subtitle) {\n        const sub = document.createElement('div');\n        sub.className = 'tp-subtitle';\n        sub.textContent = data.subtitle;\n        sub.style.fontSize = styles.subtitle.size + 'px';\n        sub.style.color = styles.subtitle.color;\n        el.appendChild(sub);\n      }\n      break;\n    }\n    case 'paragraph': {\n      const p = document.createElement('div');\n      p.className = 'tp-paragraph';\n      p.innerHTML = data.content || '';\n      p.style.textAlign = data.align || 'left';\n      el.appendChild(p);\n      break;\n    }\n    case 'list': {\n      const listEl = document.createElement(data.style === 'numbered' ? 'ol' : 'ul');\n      listEl.className = 'tp-list';\n      (data.items || []).forEach((item) => {\n        const li = document.createElement('li');\n        li.innerHTML = item || '';\n        listEl.appendChild(li);\n      });\n      el.appendChild(listEl);\n      break;\n    }\n    case 'button': {\n      const variant = styles.button[data.style] || styles.button.primary;\n      const a = document.createElement('a');\n      a.className = 'tp-button';\n      a.textContent = data.label || '';\n      a.href = data.url || '#';\n      if (data.newTab) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }\n      a.style.background = variant.bg;\n      a.style.color = variant.text;\n      a.style.borderColor = variant.border;\n      el.appendChild(a);\n      break;\n    }\n    case 'badge': {\n      const variant = styles.badge[data.style] || styles.badge.primary;\n      const span = document.createElement('span');\n      span.className = 'tp-badge';\n      span.textContent = data.label || '';\n      span.style.background = variant.bg;\n      span.style.color = variant.text;\n      span.style.borderColor = variant.border;\n      el.appendChild(span);\n      break;\n    }\n    case 'table': {\n      const table = document.createElement('table');\n      table.className = 'tp-table';\n      const rows = data.rows || [];\n      rows.forEach((row, r) => {\n        const tr = document.createElement('tr');\n        const isHeaderRow = data.hasHeaderRow && r === 0;\n        row.forEach((cellText) => {\n          const cell = document.createElement(isHeaderRow ? 'th' : 'td');\n          cell.textContent = cellText || '';\n          tr.appendChild(cell);\n        });\n        table.appendChild(tr);\n      });\n      el.appendChild(table);\n      break;\n    }\n    case 'separator': {\n      el.appendChild(document.createElement('hr'));\n      break;\n    }\n  }\n\n  return el;\n}\n\n/** Renders a tab's full block list into a container, replacing whatever\n *  was there. Simple full-rebuild rather than incremental diffing —\n *  there's no animation or drag state riding on individual block DOM\n *  nodes surviving a re-render (unlike v2's element nodes), so this stays\n *  cheap and correct rather than needing SlideManager-style careful\n *  in-place patching. */\nfunction renderTabContent(tab, container, styles) {\n  container.innerHTML = '';\n  tab.blocks.forEach((data) => container.appendChild(renderBlock(data, styles)));\n}\n",
+    tabNav: "/* ==========================================================================\n   Tabbed Panels — Tab Navigation\n   The learner-facing tab strip: an underline under the active tab, and\n   left/right chevrons to scroll the strip when tabs overflow its width.\n   Same role as Animated Slides v2's nav-bar.js — one rendering + click-\n   handling path, used UNMODIFIED by both the authoring canvas and the\n   exported player, so the canvas is genuinely WYSIWYG rather than an\n   editor-only approximation of what learners will see.\n\n   Authoring-only concerns (add/rename/delete/reorder tabs) live entirely\n   outside this file, in index.html's Tabs drawer — this module only ever\n   renders tabs + reports which one was clicked.\n   ========================================================================== */\n\n/**\n * @param container  element to render into (its children are replaced).\n * @param tabs       [{ id, title }, ...] — extra keys (e.g. `blocks`) are ignored.\n * @param activeTabId\n * @param onSelect   called with a tab's id when clicked.\n */\nfunction renderTabNav(container, { tabs, activeTabId, onSelect }) {\n  container.innerHTML = '';\n  container.className = 'tp-tabnav';\n\n  const prevBtn = document.createElement('button');\n  prevBtn.type = 'button';\n  prevBtn.className = 'tp-tabnav-chevron';\n  prevBtn.setAttribute('aria-label', 'Scroll tabs left');\n  prevBtn.innerHTML = '<i class=\"fa-solid fa-chevron-left\"></i>';\n\n  const strip = document.createElement('div');\n  strip.className = 'tp-tabnav-strip';\n\n  const nextBtn = document.createElement('button');\n  nextBtn.type = 'button';\n  nextBtn.className = 'tp-tabnav-chevron';\n  nextBtn.setAttribute('aria-label', 'Scroll tabs right');\n  nextBtn.innerHTML = '<i class=\"fa-solid fa-chevron-right\"></i>';\n\n  tabs.forEach((tab) => {\n    const btn = document.createElement('button');\n    btn.type = 'button';\n    btn.className = 'tp-tabnav-tab' + (tab.id === activeTabId ? ' active' : '');\n    btn.textContent = tab.title;\n    btn.addEventListener('click', () => onSelect(tab.id));\n    strip.appendChild(btn);\n  });\n\n  function updateChevrons() {\n    prevBtn.disabled = strip.scrollLeft <= 0;\n    nextBtn.disabled = strip.scrollLeft >= strip.scrollWidth - strip.clientWidth - 1;\n  }\n  prevBtn.addEventListener('click', () => strip.scrollBy({ left: -strip.clientWidth * 0.8, behavior: 'smooth' }));\n  nextBtn.addEventListener('click', () => strip.scrollBy({ left: strip.clientWidth * 0.8, behavior: 'smooth' }));\n  strip.addEventListener('scroll', updateChevrons);\n\n  container.appendChild(prevBtn);\n  container.appendChild(strip);\n  container.appendChild(nextBtn);\n\n  // Layout isn't final until after this returns and the browser paints —\n  // defer the initial enabled/disabled check one frame so scrollWidth is\n  // accurate instead of always reading as \"no overflow yet\".\n  requestAnimationFrame(updateChevrons);\n}\n"
+  };
+
+  function openExportModal() {
+    const modules = Object.values(MODULE_SOURCES).join('\n\n');
+    const state = tabManager.getState();
+    const tabsJSON = JSON.stringify(state.tabs);
+    const stylesJSON = JSON.stringify(state.styles);
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${currentProjectName || 'Tabbed Panels'}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: #F1F0EB; }
+  #player-card { max-width: 860px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(28,35,33,0.08); overflow: hidden; }
+  .tp-tabnav { display: flex; align-items: stretch; background: #FAFAF8; border-bottom: 1px solid #E3E1DA; }
+  .tp-tabnav-chevron { flex-shrink: 0; width: 40px; border: none; background: transparent; color: #8A9291; cursor: pointer; font-size: 13px; }
+  .tp-tabnav-chevron:hover:not(:disabled) { color: #0C5E82; }
+  .tp-tabnav-chevron:disabled { opacity: 0.3; cursor: default; }
+  .tp-tabnav-strip { flex: 1; display: flex; overflow-x: auto; scrollbar-width: none; }
+  .tp-tabnav-strip::-webkit-scrollbar { display: none; }
+  .tp-tabnav-tab { flex-shrink: 0; padding: 16px 24px 12px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.9375rem; color: #4A5453; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tp-tabnav-tab.active { color: #0C5E82; border-bottom-color: #0C5E82; font-weight: 600; }
+  #player-body { padding: 32px; }
+  #block-list { display: flex; flex-direction: column; gap: 12px; }
+  .tp-heading { margin: 0; }
+  .tp-subtitle { margin: 4px 0 0; }
+  .tp-paragraph { line-height: 1.5; }
+  .tp-list { margin: 0; padding-left: 1.4em; line-height: 1.5; }
+  .tp-button { display: inline-block; padding: 10px 20px; border-radius: 6px; border: 1px solid transparent; text-decoration: none; font-weight: 600; font-size: 0.8125rem; }
+  .tp-badge { display: inline-block; padding: 3px 12px; border-radius: 999px; border: 1px solid transparent; font-size: 0.75rem; font-weight: 600; }
+  .tp-table { border-collapse: collapse; width: 100%; font-size: 0.8125rem; }
+  .tp-table th, .tp-table td { border: 1px solid #CBC8BE; padding: 8px 10px; text-align: left; }
+  .tp-table th { background: #FAFAF8; font-weight: 600; }
+  .tp-block-separator hr { border: none; border-top: 1px solid #E3E1DA; margin: 8px 0; }
+</style>
+</head>
+<body>
+<div id="player-card">
+  <div id="tabnav-host"></div>
+  <div id="player-body"><div id="block-list"></div></div>
+</div>
+<script>
+${modules}
+
+const tabs = ${tabsJSON};
+const styles = ${stylesJSON};
+let activeTabId = tabs[0].id;
+
+function render() {
+  renderTabNav(document.getElementById('tabnav-host'), {
+    tabs, activeTabId,
+    onSelect: (id) => { activeTabId = id; render(); },
+  });
+  const tab = tabs.find((t) => t.id === activeTabId);
+  renderTabContent(tab, document.getElementById('block-list'), styles);
+}
+render();
+<\/script>
+</body>
+</html>`;
+
+    document.getElementById('export-textarea').value = html;
+    Shell.openModal('export-modal');
+  }
+
+  function copyExportCode() {
+    const textarea = document.getElementById('export-textarea');
+    textarea.select();
+    navigator.clipboard.writeText(textarea.value).then(() => {
+      Shell.toast('Code copied to clipboard', 'success');
+    }).catch(() => {
+      document.execCommand('copy');
+      Shell.toast('Code copied to clipboard', 'success');
+    });
   }
 
   /* ---- Boot ---- */

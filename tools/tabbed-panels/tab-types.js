@@ -13,15 +13,31 @@
    value is always a sanitized HTML string restricted to the tags implied
    by `inline` (b/i/u/a).
 
+   Field type `table` is also not a native input — its value is a 2D array
+   of plain-text cell strings, `data.rows`; see index.html's property-panel
+   table-grid editor (add/remove row/column) for the only place that reads
+   `field.type === 'table'` specially. Cells are plain text, not richtext —
+   a deliberate scope decision, kept simple for a dense grid.
+
+   `heading`'s `level` (h2/h3/h4) and `subtitle` text, `badge`'s `style`,
+   and `button`'s `style` all read their actual size/colour from the
+   project-wide STYLES object (see tab-manager.js's defaultStyles()) rather
+   than storing it per-block — the same "instance picks a variant, a
+   project-level settings panel defines what that variant looks like"
+   split v2 uses for nav Active/Inactive colours.
+
    Deliberate scope boundaries (see HANDOFF.md if reconsidering these):
    - No nested blocks — `list.items` is a flat array of richtext strings,
      not sub-blocks.
-   - `heading` has no inline marks (plain text only) — a bold-in-the-middle
-     heading was judged not worth the complexity.
+   - `heading` has no inline marks on its main text (plain text only) — a
+     bold-in-the-middle heading was judged not worth the complexity. Its
+     `subtitle` field is a second, separately-styled plain-text line
+     (settled as a field on Heading rather than its own block type).
    - Inline links (via richtext's `link` mark) and the standalone `button`
      block are deliberately two different things, not one collapsed onto
      the other — a link embedded mid-sentence and a standalone CTA read
      differently to a learner.
+   - `table` cells are plain text, not richtext.
    ========================================================================== */
 
 const BLOCK_TYPES = {
@@ -30,8 +46,9 @@ const BLOCK_TYPES = {
     label: 'Heading',
     icon: 'fa-heading',
     fields: {
-      level: { type: 'select', label: 'Size', default: 'h2', options: [['h2', 'Large'], ['h3', 'Small']] },
-      text:  { type: 'text',   label: 'Text',  default: 'Heading' },
+      level:    { type: 'select', label: 'Size',     default: 'h2', options: [['h2', 'H2 (large)'], ['h3', 'H3 (medium)'], ['h4', 'H4 (small)']] },
+      text:     { type: 'text',   label: 'Text',      default: 'Heading' },
+      subtitle: { type: 'text',   label: 'Subtitle (optional)', default: '' },
     },
   },
 
@@ -39,7 +56,8 @@ const BLOCK_TYPES = {
     label: 'Text',
     icon: 'fa-align-left',
     fields: {
-      content: { type: 'richtext', label: 'Text', default: '', inline: ['bold', 'italic', 'underline', 'link'] },
+      content: { type: 'richtext', label: 'Text',  default: '', inline: ['bold', 'italic', 'underline', 'link'] },
+      align:   { type: 'select',   label: 'Align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },
     },
   },
 
@@ -63,6 +81,27 @@ const BLOCK_TYPES = {
     },
   },
 
+  badge: {
+    label: 'Badge',
+    icon: 'fa-certificate',
+    fields: {
+      label: { type: 'text',   label: 'Label', default: 'New' },
+      style: { type: 'select', label: 'Style', default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },
+    },
+  },
+
+  table: {
+    label: 'Table',
+    icon: 'fa-table',
+    fields: {
+      hasHeaderRow: { type: 'boolean', label: 'First row is a header', default: true },
+      rows: {
+        type: 'table', label: 'Cells',
+        default: [['Header 1', 'Header 2'], ['Cell 1', 'Cell 2']],
+      },
+    },
+  },
+
   separator: {
     label: 'Separator',
     icon: 'fa-minus',
@@ -82,9 +121,14 @@ function makeDefaultBlock(type, id) {
 
   const data = { id, type };
   Object.entries(schema.fields).forEach(([key, field]) => {
-    // Arrays/objects need a fresh copy per block, not a shared reference
-    // to the schema's own default value.
-    data[key] = Array.isArray(field.default) ? [...field.default] : field.default;
+    // Deep-clone array/object defaults (JSON round-trip is enough here —
+    // every field default is plain JSON-serializable data) so each block
+    // gets its own copy rather than a shared reference to the schema's
+    // default value. A shallow [...spread] isn't enough for `table.rows`,
+    // which is an array of arrays.
+    data[key] = (typeof field.default === 'object' && field.default !== null)
+      ? JSON.parse(JSON.stringify(field.default))
+      : field.default;
   });
   return data;
 }

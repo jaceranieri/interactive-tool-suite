@@ -19,11 +19,47 @@ function defaultTab(title) {
   return { id: 'tab-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), title, blocks: [] };
 }
 
+/**
+ * Project-wide styles — heading/subtitle typography and the badge/button
+ * primary+secondary colour pairs. One object for the whole project, not
+ * per-block: a block only ever picks a *variant* (h2/h3/h4, primary/
+ * secondary); this object defines what that variant actually looks like.
+ * Same split as v2's canvasSettings.nav Active/Inactive colours.
+ */
+function defaultStyles() {
+  return {
+    h2: { size: 28, color: '#111827' },
+    h3: { size: 22, color: '#111827' },
+    h4: { size: 18, color: '#111827' },
+    subtitle: { size: 16, color: '#6b7280' },
+    badge: {
+      primary: { bg: '#2563eb', text: '#ffffff', border: '#2563eb' },
+      secondary: { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
+    },
+    button: {
+      primary: { bg: '#2563eb', text: '#ffffff', border: '#2563eb' },
+      secondary: { bg: '#ffffff', text: '#111827', border: '#d1d5db' },
+    },
+  };
+}
+
+/** JSON-clone a block — plain-data-only, but a shallow {...b} isn't
+ *  enough once a block can hold nested data (table.rows is an array of
+ *  arrays; list.items is an array). Without this, undo/redo snapshots and
+ *  the live block would share the same nested array reference, so
+ *  editing one would silently corrupt the "before" snapshot on the undo
+ *  stack. */
+function cloneBlock(b) { return JSON.parse(JSON.stringify(b)); }
+
 class TabManager {
-  /** @param tabs [{ id, title, blocks: [{id, type, ...fields}, ...] }, ...] */
-  constructor({ tabs }) {
+  /**
+   * @param tabs   [{ id, title, blocks: [{id, type, ...fields}, ...] }, ...]
+   * @param styles optional — defaults via defaultStyles()
+   */
+  constructor({ tabs, styles }) {
     this.tabs = tabs && tabs.length ? tabs : [defaultTab('Tab 1')];
     this.activeTabId = this.tabs[0].id;
+    this.styles = styles || defaultStyles(); // mutated in place — see setState
     this.onChange = () => {}; // hook for UI (tab strip, block list, property panel) to refresh
   }
 
@@ -55,7 +91,7 @@ class TabManager {
     const copy = {
       id: 'tab-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       title: original.title + ' copy',
-      blocks: original.blocks.map((b) => ({ ...b })),
+      blocks: original.blocks.map(cloneBlock),
     };
     this.tabs.splice(i + 1, 0, copy);
     this.activeTabId = copy.id;
@@ -142,7 +178,8 @@ class TabManager {
   getState() {
     return {
       activeTabId: this.activeTabId,
-      tabs: this.tabs.map((t) => ({ id: t.id, title: t.title, blocks: t.blocks.map((b) => ({ ...b })) })),
+      tabs: this.tabs.map((t) => ({ id: t.id, title: t.title, blocks: t.blocks.map(cloneBlock) })),
+      styles: JSON.parse(JSON.stringify(this.styles)),
     };
   }
 
@@ -151,8 +188,21 @@ class TabManager {
     // reasoning as slide-manager.js's setState(): anything holding a direct
     // reference to this array needs to see it update in place.
     this.tabs.length = 0;
-    snap.tabs.forEach((t) => this.tabs.push({ id: t.id, title: t.title, blocks: t.blocks.map((b) => ({ ...b })) }));
+    snap.tabs.forEach((t) => this.tabs.push({ id: t.id, title: t.title, blocks: t.blocks.map(cloneBlock) }));
     this.activeTabId = this.tabs.some((t) => t.id === snap.activeTabId) ? snap.activeTabId : this.tabs[0].id;
+
+    // Same in-place-mutation reasoning for `styles`. Backfill any keys
+    // missing from an older saved project (e.g. a group added after that
+    // project was last saved) with their defaults, same pattern as v2's
+    // renderSettingsModal() backfilling nav keys, so the styles panel
+    // reflects the actual effective value instead of reading as unset.
+    const incoming = snap.styles || defaultStyles();
+    const defaults = defaultStyles();
+    Object.keys(this.styles).forEach((k) => delete this.styles[k]);
+    Object.keys(defaults).forEach((k) => {
+      this.styles[k] = incoming[k] !== undefined ? incoming[k] : defaults[k];
+    });
+
     this.onChange();
   }
 }

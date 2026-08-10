@@ -31,13 +31,42 @@ database.
   ever mysteriously fails).
 - **Hub**: `?page=hub` (also the default with no `?page=` at all) lists
   every tool straight from `PAGES`.
-- **Storage**: projects are JSON files at `projects/{tool-id}/{name}.json`
-  in this repo, written via GitHub's Contents API from Apps Script. Rename
-  = create the new file, then delete the old one — GitHub's API has no
-  native rename. `shared/storage-connector.js` is what every tool calls;
-  it auto-detects `google.script.run` (the real, hosted path) vs.
-  `fetch()` (a fallback only exercised by local testing, backed by the
-  separate standalone `storage-backend.gs`).
+- **Storage**: projects are JSON files at
+  `projects/{tool-id}/{folder}/{name}.json` in this repo (folder is
+  optional — omitted or `''` means the tool's root, exactly the old
+  `projects/{tool-id}/{name}.json` layout), written via GitHub's Contents
+  API from Apps Script. Rename = create the new file, then delete the old
+  one — GitHub's API has no native rename; moving a project between
+  folders (`moveProject`/`apiMoveProject`) uses the same create-then-
+  delete pattern, just varying the directory instead of the filename.
+  GitHub has no real empty directories, so a folder only exists once it
+  contains a file — `createFolder`/`apiCreateFolder` writes a placeholder
+  `.gitkeep` so a newly-made folder shows up immediately; deleting a
+  folder (`deleteFolder`/`apiDeleteFolder`) recursively deletes every file
+  under it (including nested subfolders), which is sufficient to make
+  GitHub stop listing the directory at all. `shared/storage-connector.js`
+  is what every tool calls; it auto-detects `google.script.run` (the
+  real, hosted path) vs. `fetch()` (a fallback only exercised by local
+  testing, backed by the separate standalone `storage-backend.gs`, which
+  mirrors the same folder support). `Storage.listProjects(tool, folder)`
+  resolves to `{ projects: [{name}], folders: [{name}] }` — both the
+  files and the subfolders one level under `folder`, so a tool's Open
+  modal can render one browsable listing per level without a second round
+  trip just to find subfolders.
+  `shared/app-shell.js`'s `renderProjectList()` has opt-in folder-
+  browsing support (breadcrumbs, folder rows, a "New folder" button) via
+  extra keys on its existing `actions` param (`folders`, `currentFolder`,
+  `onOpenFolder`, `onNewFolder`, `onDeleteFolder`) — omit all of them and
+  it renders exactly as it did before folders existed, so tools that
+  haven't been wired up for folders yet (v1, Tabbed Panels) need no
+  changes. `animated-slides-v2/index.html` is the reference
+  implementation: it tracks `browseFolder` (where the Open modal is
+  currently browsing) and `currentProjectFolder` (where the open project
+  actually lives) as separate state, resets `browseFolder` to `''`
+  whenever the Open modal is (re)opened, and a brand-new project's first
+  Save lands in whatever folder was last browsed. Wiring this same
+  pattern into v1 and Tabbed Panels is still outstanding — see "Current
+  status" / "What's NOT built yet" below.
 - **Shared foundation** (`shared/`): `design-tokens.css` (colors, spacing,
   type — includes an explicit house style: "Colour," not "Color," in
   labels and anywhere user-facing), `app-shell.css` / `app-shell.js` (top
@@ -237,7 +266,11 @@ There's no automated test suite. What exists:
   a divider, then Link/Layers/Settings, each opening a non-blocking
   slide-out drawer instead of a modal that covers the canvas); and a
   settings drawer rebuilt as a 2-column grid with a proper Active/
-  Inactive colour table, matching a supplied design mockup.
+  Inactive colour table, matching a supplied design mockup; and
+  folder support in Save/Open (see "Storage" above) — the Open modal
+  now browses into folders via breadcrumbs, can create/delete folders,
+  and a new project's first save lands in whichever folder was last
+  browsed.
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7

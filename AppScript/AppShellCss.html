@@ -155,7 +155,29 @@ body {
 .project-row:hover { border-color: var(--accent); }
 .project-row .project-name { font-weight: 500; }
 .project-row .project-meta { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); }
+.project-row-actions { display: flex; gap: var(--space-1); margin-left: var(--space-2); }
+.project-action-btn {
+  border: none; background: none; color: var(--ink-faint); cursor: pointer;
+  padding: 4px 6px; border-radius: var(--radius-sm); font-size: 12px;
+}
+.project-action-btn:hover { background: var(--surface-sunken); color: var(--ink); }
+.project-action-btn.danger:hover { background: var(--danger-soft); color: var(--danger); }
 .project-empty { text-align: center; color: var(--ink-soft); padding: var(--space-8) 0; font-size: var(--text-sm); }
+
+/* ---- Folder browsing (inside the same project browser) ---- */
+.project-folder-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3); margin-bottom: var(--space-3);
+}
+.project-breadcrumb {
+  font-size: var(--text-sm); color: var(--ink-soft);
+  display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap;
+}
+.breadcrumb-link { cursor: pointer; }
+.breadcrumb-link:hover { color: var(--accent-ink); text-decoration: underline; }
+.breadcrumb-sep { color: var(--ink-faint); }
+.btn-small { padding: var(--space-1) var(--space-3); font-size: var(--text-xs); }
+.project-row-folder .project-name i { color: var(--accent-ink); margin-right: var(--space-1); }
 
 /* ---- Export code view ---- */
 .code-view {
@@ -200,5 +222,4 @@ input[type="text"].field-input-text:focus, textarea.field-input-text:focus { bor
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 </style>

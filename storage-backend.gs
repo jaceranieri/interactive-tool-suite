@@ -42,10 +42,13 @@ function doPost(e) {
     } catch (err) {
       return json({ error: 'Content was not valid JSON' });
     }
-    return json(saveProject(p.tool, p.name, content));
+    return json(saveProject(p.tool, p.name, content, p.folder));
   }
-  if (p.action === 'delete') return json(deleteProject(p.tool, p.name));
-  if (p.action === 'rename') return json(renameProject(p.tool, p.name, p.newName));
+  if (p.action === 'delete') return json(deleteProject(p.tool, p.name, p.folder));
+  if (p.action === 'rename') return json(renameProject(p.tool, p.name, p.newName, p.folder));
+  if (p.action === 'move') return json(moveProject(p.tool, p.name, p.folder, p.toFolder));
+  if (p.action === 'createFolder') return json(createFolder(p.tool, p.folder));
+  if (p.action === 'deleteFolder') return json(deleteFolder(p.tool, p.folder));
   return json({ error: 'Unknown action' });
 }
 
@@ -53,8 +56,8 @@ function doGet(e) {
   if (!checkAuth(e.parameter.key)) return json({ error: 'Unauthorized' });
   const action = e.parameter.action;
   const tool = e.parameter.tool;
-  if (action === 'list') return json(listProjects(tool));
-  if (action === 'load') return json(loadProject(tool, e.parameter.name));
+  if (action === 'list') return json(listProjects(tool, e.parameter.folder));
+  if (action === 'load') return json(loadProject(tool, e.parameter.name, e.parameter.folder));
   return json({ error: 'Unknown action' });
 }
 
@@ -63,9 +66,9 @@ function checkAuth(key) {
   return !!expected && key === expected;
 }
 
-function saveProject(tool, name, content) {
+function saveProject(tool, name, content, folder) {
   if (!tool || !name) return { error: 'Missing tool or name' };
-  const path = `projects/${tool}/${sanitize(name)}.json`;
+  const path = `${projectDir(tool, folder)}/${sanitize(name)}.json`;
   const existingSha = ghGetFileSha(path);
 
   const payload = {
@@ -82,23 +85,26 @@ function saveProject(tool, name, content) {
   return { ok: true };
 }
 
-function listProjects(tool) {
+function listProjects(tool, folder) {
   if (!tool) return { error: 'Missing tool' };
-  const resp = ghRequest('GET', `contents/projects/${tool}`);
-  if (resp.getResponseCode() === 404) return { projects: [] }; // folder doesn't exist yet — that's fine
+  const resp = ghRequest('GET', `contents/${projectDir(tool, folder)}`);
+  if (resp.getResponseCode() === 404) return { projects: [], folders: [] }; // folder doesn't exist yet — that's fine
   if (resp.getResponseCode() >= 300) {
     return { error: 'GitHub list failed', detail: resp.getContentText() };
   }
-  const files = JSON.parse(resp.getContentText());
-  const projects = files
-    .filter(f => f.name.endsWith('.json'))
+  const entries = JSON.parse(resp.getContentText());
+  const projects = entries
+    .filter(f => f.type === 'file' && f.name.endsWith('.json'))
     .map(f => ({ name: f.name.replace(/\.json$/, '') }));
-  return { projects };
+  const folders = entries
+    .filter(f => f.type === 'dir')
+    .map(f => ({ name: f.name }));
+  return { projects, folders };
 }
 
-function loadProject(tool, name) {
+function loadProject(tool, name, folder) {
   if (!tool || !name) return { error: 'Missing tool or name' };
-  const path = `projects/${tool}/${sanitize(name)}.json`;
+  const path = `${projectDir(tool, folder)}/${sanitize(name)}.json`;
   const resp = ghRequest('GET', `contents/${path}`);
   if (resp.getResponseCode() >= 300) {
     return { error: 'GitHub load failed', detail: resp.getContentText() };
@@ -108,9 +114,9 @@ function loadProject(tool, name) {
   return { content: JSON.parse(raw) };
 }
 
-function deleteProject(tool, name) {
+function deleteProject(tool, name, folder) {
   if (!tool || !name) return { error: 'Missing tool or name' };
-  const path = `projects/${tool}/${sanitize(name)}.json`;
+  const path = `${projectDir(tool, folder)}/${sanitize(name)}.json`;
   const sha = ghGetFileSha(path);
   if (!sha) return { error: 'Project not found' };
   const resp = ghRequest('DELETE', `contents/${path}`, {
@@ -124,10 +130,11 @@ function deleteProject(tool, name) {
   return { ok: true };
 }
 
-function renameProject(tool, oldName, newName) {
+function renameProject(tool, oldName, newName, folder) {
   if (!tool || !oldName || !newName) return { error: 'Missing tool, name, or newName' };
-  const oldPath = `projects/${tool}/${sanitize(oldName)}.json`;
-  const newPath = `projects/${tool}/${sanitize(newName)}.json`;
+  const dir = projectDir(tool, folder);
+  const oldPath = `${dir}/${sanitize(oldName)}.json`;
+  const newPath = `${dir}/${sanitize(newName)}.json`;
 
   const oldResp = ghRequest('GET', `contents/${oldPath}`);
   if (oldResp.getResponseCode() >= 300) {
@@ -160,6 +167,90 @@ function renameProject(tool, oldName, newName) {
   return { ok: true };
 }
 
+function moveProject(tool, name, fromFolder, toFolder) {
+  if (!tool || !name) return { error: 'Missing tool or name' };
+  const oldPath = `${projectDir(tool, fromFolder)}/${sanitize(name)}.json`;
+  const newPath = `${projectDir(tool, toFolder)}/${sanitize(name)}.json`;
+  if (oldPath === newPath) return { ok: true };
+
+  const oldResp = ghRequest('GET', `contents/${oldPath}`);
+  if (oldResp.getResponseCode() >= 300) {
+    return { error: 'Move failed (could not read original)', detail: oldResp.getContentText() };
+  }
+  const oldFile = JSON.parse(oldResp.getContentText());
+
+  const existingAtNewPath = ghGetFileSha(newPath);
+  const createPayload = {
+    message: `Move "${name}" (${tool}) to "${toFolder || '/'}" — ${new Date().toISOString()}`,
+    content: oldFile.content,
+    branch: GITHUB_BRANCH,
+  };
+  if (existingAtNewPath) createPayload.sha = existingAtNewPath;
+
+  const createResp = ghRequest('PUT', `contents/${newPath}`, createPayload);
+  if (createResp.getResponseCode() >= 300) {
+    return { error: 'Move failed (could not create at destination)', detail: createResp.getContentText() };
+  }
+
+  const deleteResp = ghRequest('DELETE', `contents/${oldPath}`, {
+    message: `Remove original after move (${tool})`,
+    sha: oldFile.sha,
+    branch: GITHUB_BRANCH,
+  });
+  if (deleteResp.getResponseCode() >= 300) {
+    return { error: 'Moved, but could not remove the original', detail: deleteResp.getContentText() };
+  }
+
+  return { ok: true };
+}
+
+function createFolder(tool, folder) {
+  if (!tool || !folder) return { error: 'Missing tool or folder' };
+  const path = `${projectDir(tool, folder)}/.gitkeep`;
+  if (ghGetFileSha(path)) return { ok: true };
+  const resp = ghRequest('PUT', `contents/${path}`, {
+    message: `Create folder "${folder}" (${tool}) — ${new Date().toISOString()}`,
+    content: Utilities.base64Encode(''),
+    branch: GITHUB_BRANCH,
+  });
+  if (resp.getResponseCode() >= 300) {
+    return { error: 'Create folder failed', detail: resp.getContentText() };
+  }
+  return { ok: true };
+}
+
+function deleteFolder(tool, folder) {
+  if (!tool || !folder) return { error: 'Missing tool or folder' };
+  const err = deleteFolderContents(projectDir(tool, folder));
+  if (err) return err;
+  return { ok: true };
+}
+
+function deleteFolderContents(dirPath) {
+  const resp = ghRequest('GET', `contents/${dirPath}`);
+  if (resp.getResponseCode() === 404) return null;
+  if (resp.getResponseCode() >= 300) {
+    return { error: 'Could not read folder to delete', detail: resp.getContentText() };
+  }
+  const entries = JSON.parse(resp.getContentText());
+  for (const entry of entries) {
+    if (entry.type === 'dir') {
+      const err = deleteFolderContents(`${dirPath}/${entry.name}`);
+      if (err) return err;
+    } else {
+      const delResp = ghRequest('DELETE', `contents/${dirPath}/${entry.name}`, {
+        message: `Delete "${entry.name}" as part of folder removal`,
+        sha: entry.sha,
+        branch: GITHUB_BRANCH,
+      });
+      if (delResp.getResponseCode() >= 300) {
+        return { error: `Could not delete ${entry.name}`, detail: delResp.getContentText() };
+      }
+    }
+  }
+  return null;
+}
+
 /* ---- GitHub helpers ---- */
 
 function ghGetFileSha(path) {
@@ -190,6 +281,16 @@ function ghRequest(method, path, body) {
 
 function sanitize(name) {
   return name.trim().replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-');
+}
+
+function sanitizePath(folder) {
+  if (!folder) return '';
+  return String(folder).split('/').map(s => s.trim()).filter(Boolean).map(sanitize).join('/');
+}
+
+function projectDir(tool, folder) {
+  const f = sanitizePath(folder);
+  return f ? `projects/${tool}/${f}` : `projects/${tool}`;
 }
 
 function json(obj) {

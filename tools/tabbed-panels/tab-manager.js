@@ -130,15 +130,20 @@ class TabManager {
     this.onChange();
   }
 
-  /** Moves a tab to sit immediately after `targetId` (drag-and-drop reorder
-   *  in the tab strip). No-op-safe against a vanished target. */
-  moveTabAfter(draggedId, targetId) {
+  /** Moves a tab to sit immediately before or after `targetId` (drag-and-
+   *  drop reorder in the bottom tab bar). `before` should reflect which
+   *  half of the target the pointer was over when dropped — always
+   *  inserting "after" regardless of drop position was the actual bug
+   *  behind reordering feeling inconsistent: the result didn't match
+   *  where the drop visually landed. No-op-safe against a vanished
+   *  target. */
+  moveTabAfter(draggedId, targetId, before = false) {
     const from = this.tabs.findIndex((t) => t.id === draggedId);
     if (from === -1 || draggedId === targetId) return;
     const [moved] = this.tabs.splice(from, 1);
     const targetIndex = this.tabs.findIndex((t) => t.id === targetId);
     if (targetIndex === -1) { this.tabs.splice(from, 0, moved); return; }
-    this.tabs.splice(targetIndex + 1, 0, moved);
+    this.tabs.splice(before ? targetIndex : targetIndex + 1, 0, moved);
     this.onChange();
   }
 
@@ -170,11 +175,11 @@ class TabManager {
     this.onChange();
   }
 
-  /** Moves `draggedId` to sit immediately after `targetId` within the
-   *  active tab's blocks — same drag-and-drop reorder pattern as
-   *  moveTabAfter(), one level down. `targetId === null` moves it to the
-   *  very front. */
-  moveBlockAfter(draggedId, targetId) {
+  /** Moves `draggedId` to sit immediately before or after `targetId`
+   *  within the active tab's blocks — same drag-and-drop reorder pattern
+   *  as moveTabAfter(), one level down, including the same `before` fix.
+   *  `targetId === null` moves it to the very front. */
+  moveBlockAfter(draggedId, targetId, before = false) {
     const tab = this.getActiveTab();
     const from = tab.blocks.findIndex((b) => b.id === draggedId);
     if (from === -1 || draggedId === targetId) return;
@@ -182,7 +187,7 @@ class TabManager {
     if (targetId === null) { tab.blocks.unshift(moved); this.onChange(); return; }
     const targetIndex = tab.blocks.findIndex((b) => b.id === targetId);
     if (targetIndex === -1) { tab.blocks.splice(from, 0, moved); return; }
-    tab.blocks.splice(targetIndex + 1, 0, moved);
+    tab.blocks.splice(before ? targetIndex : targetIndex + 1, 0, moved);
     this.onChange();
   }
 

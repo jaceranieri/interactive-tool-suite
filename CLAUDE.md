@@ -280,6 +280,27 @@ slides) just don't apply here. Tabs and blocks are plain data;
 `renderTabContent()` does a full rebuild on every change rather than
 diffing, which is fine at this scale.
 
+**Drag-and-drop reorder correctness** (both the block list and the
+bottom tab bar use native HTML5 DnD) — three real bugs found from a
+"reordering feels inconsistent" report, worth knowing if touching either
+drag implementation again:
+- `moveBlockAfter()`/`moveTabAfter()` take a `before` boolean, computed
+  in `index.html`'s `dragover`/`drop` handlers from whether the pointer
+  is over the upper/left or lower/right half of the target's bounding
+  rect. The bug this fixes: reordering used to always insert the dragged
+  item immediately *after* the target regardless of where it was
+  actually dropped, so the result frequently didn't match what the drop
+  looked like it should do.
+- `.tp-block` and `.tab-thumb-container` both set `user-select: none` —
+  without it, starting the drag gesture with the pointer on top of text
+  content unreliably competes with the browser's native text-selection
+  drag, so the reorder drag sometimes just wouldn't start.
+- `block-renderer.js`'s button case explicitly sets `a.draggable =
+  false` on the rendered `<a>` — anchors are natively draggable in every
+  browser, and left alone, starting a drag on a Button block's own link
+  gets hijacked into the browser's built-in "drag this link" gesture
+  instead of triggering the block's reorder drag.
+
 - `tab-types.js` — the `BLOCK_TYPES` schema (field definitions per block
   type: heading/paragraph/list/button/badge/table/separator), same
   "packing list" role as v2's `ELEMENT_TYPES` — the property panel is
@@ -405,6 +426,16 @@ into Tabbed Panels' work):
   a border that's transparent on the label and accent-coloured on the
   input — exactly the fix applied to `.tab-thumb-name`/
   `.tab-thumb-rename-input` here.
+- Separately (from a "drag-reorder feels inconsistent" report against
+  Tabbed Panels, not yet checked against v2): `layer-panel.js`'s
+  draggable `.layer-row` elements contain a `.layer-name` text label and
+  have no `user-select: none`, the same gap that made Tabbed Panels'
+  block/tab reordering unreliably fail to start. v2's layer rows don't
+  have anything anchor-like inside them, so only the text-selection fix
+  is likely relevant there, not the `a.draggable = false` one — but this
+  hasn't actually been reproduced against v2, only inferred from the
+  same missing CSS property. Worth a real check before assuming it's
+  the same bug.
 
 Two more keys cover layout rather than a per-block variant:
 `blockSpacing` (a single number, the gap in px between stacked blocks —
@@ -455,7 +486,7 @@ same "parameter, not a global" reasoning as `block-renderer.js`).
   Apps Script project yet — untested against real `google.script.run`
   end to end. Do a real Save/Load round-trip before treating this as
   done (see HANDOFF.md).
-- **Touch/tablet drag-and-drop** — the Tabs drawer's reorder and the
+- **Touch/tablet drag-and-drop** — the bottom tab bar's reorder and the
   block list's reorder both use native HTML5 drag-and-drop (copied from
   v2's layer/slide reordering), which has the same known touchscreen gap
   v2 does.

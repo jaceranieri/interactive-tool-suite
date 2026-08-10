@@ -53,11 +53,23 @@
   #player-body { padding: var(--space-6); overflow-y: auto; }
   #block-list { display: flex; flex-direction: column; gap: var(--space-3); }
   #block-list-empty { text-align: center; color: var(--ink-faint); padding: var(--space-8) 0; }
-  .tp-block { position: relative; border: 2px solid transparent; border-radius: var(--radius-sm); padding: var(--space-2); cursor: pointer; }
+  /* user-select: none is what makes the drag gesture start reliably —
+     without it, starting the drag with the pointer down on top of a
+     block's own text competes with the browser's native text-selection
+     drag, and which one wins is inconsistent between browsers/attempts.
+     Block content is never directly editable in the canvas anyway (that
+     only happens through the property panel), so there's nothing lost
+     by disabling selection here. */
+  .tp-block { position: relative; border: 2px solid transparent; border-radius: var(--radius-sm); padding: var(--space-2); cursor: pointer; user-select: none; -webkit-user-drag: element; }
   .tp-block:hover { border-color: var(--border); }
   .tp-block.selected { border-color: var(--accent); background: var(--accent-soft); }
   .tp-block.dragging { opacity: 0.4; }
-  .tp-block.drag-over { border-top: 2px solid var(--accent); }
+  /* Which edge lights up reflects exactly where the block will land —
+     top border when dropping above the target, bottom when below —
+     rather than a single indicator that doesn't match the actual drop
+     result (see moveBlockAfter()'s `before` param). */
+  .tp-block.drag-over-before { border-top: 2px solid var(--accent); }
+  .tp-block.drag-over-after { border-bottom: 2px solid var(--accent); }
   .tp-block-controls { position: absolute; top: -14px; right: 4px; display: none; gap: 2px; }
   .tp-block:hover .tp-block-controls, .tp-block.selected .tp-block-controls { display: flex; }
   .tp-block-controls button { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); width: 24px; height: 24px; cursor: pointer; font-size: 10px; color: var(--ink-soft); }
@@ -145,14 +157,18 @@
   #editor-tab-bar .title-block { margin-right: var(--space-2); }
   #tab-thumbs { display: flex; gap: var(--space-3); flex: 1; overflow-x: auto; padding: 8px 10px 6px 10px; margin: -8px -10px -6px -10px; }
   .tab-thumb-wrap { position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .tab-thumb-container { position: relative; }
+  .tab-thumb-container { position: relative; user-select: none; -webkit-user-drag: element; }
   .tab-thumb {
     width: 128px; height: 84px; border-radius: 6px; border: 2px solid var(--border);
     overflow: hidden; background: white; cursor: pointer;
   }
   .tab-thumb.active { border-color: var(--ink); }
   .tab-thumb-container.dragging { opacity: 0.4; }
-  .tab-thumb-container.drag-over .tab-thumb { border-color: var(--accent); }
+  /* Same before/after distinction as .tp-block above, horizontal instead
+     of vertical — left edge when dropping before the target, right when
+     after. */
+  .tab-thumb-container.drag-over-before .tab-thumb { box-shadow: inset 2px 0 0 var(--accent); }
+  .tab-thumb-container.drag-over-after .tab-thumb { box-shadow: inset -2px 0 0 var(--accent); }
   /* .tab-thumb-name and .tab-thumb-rename-input swap places on double-
      click (see startRenameTab()) — they share this box model exactly
      (box-sizing, width, height, padding, border) precisely so that swap
@@ -506,19 +522,23 @@
       thumbContainer.addEventListener('dragstart', () => { draggedId = tab.id; thumbContainer.classList.add('dragging'); });
       thumbContainer.addEventListener('dragend', () => {
         thumbContainer.classList.remove('dragging');
-        container.querySelectorAll('.tab-thumb-container').forEach((c) => c.classList.remove('drag-over'));
+        container.querySelectorAll('.tab-thumb-container').forEach((c) => c.classList.remove('drag-over-before', 'drag-over-after'));
       });
       thumbContainer.addEventListener('dragover', (e) => {
         e.preventDefault();
-        if (draggedId !== null && draggedId !== tab.id) thumbContainer.classList.add('drag-over');
+        if (draggedId === null || draggedId === tab.id) return;
+        const before = e.clientX < thumbContainer.getBoundingClientRect().left + thumbContainer.offsetWidth / 2;
+        thumbContainer.classList.toggle('drag-over-before', before);
+        thumbContainer.classList.toggle('drag-over-after', !before);
       });
-      thumbContainer.addEventListener('dragleave', () => thumbContainer.classList.remove('drag-over'));
+      thumbContainer.addEventListener('dragleave', () => thumbContainer.classList.remove('drag-over-before', 'drag-over-after'));
       thumbContainer.addEventListener('drop', (e) => {
         e.preventDefault();
-        thumbContainer.classList.remove('drag-over');
+        const before = thumbContainer.classList.contains('drag-over-before');
+        thumbContainer.classList.remove('drag-over-before', 'drag-over-after');
         if (draggedId === null || draggedId === tab.id) return;
         history.beginAction();
-        tabManager.moveTabAfter(draggedId, tab.id);
+        tabManager.moveTabAfter(draggedId, tab.id, before);
         history.commitAction();
       });
 
@@ -567,6 +587,15 @@
 
   /* ---- Block list (content area) ---- */
 
+  // Belt-and-braces cleanup for dragend: dragleave doesn't reliably fire
+  // for every element a drag passed over if the drag ends abruptly (e.g.
+  // dropped outside any valid target, or the tab switched away
+  // mid-drag), which could otherwise leave a stray drag-over indicator
+  // showing on a block that no longer has an active drag.
+  function clearBlockDragOver() {
+    document.querySelectorAll('#block-list .tp-block').forEach((el) => el.classList.remove('drag-over-before', 'drag-over-after'));
+  }
+
   function renderBlockList() {
     const tab = tabManager.getActiveTab();
     const container = document.getElementById('block-list');
@@ -603,16 +632,22 @@
 
       el.addEventListener('click', () => selectBlock(data.id));
       el.addEventListener('dragstart', () => el.classList.add('dragging'));
-      el.addEventListener('dragend', () => el.classList.remove('dragging'));
-      el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('drag-over'); });
-      el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+      el.addEventListener('dragend', () => { el.classList.remove('dragging'); clearBlockDragOver(); });
+      el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const before = e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2;
+        el.classList.toggle('drag-over-before', before);
+        el.classList.toggle('drag-over-after', !before);
+      });
+      el.addEventListener('dragleave', () => el.classList.remove('drag-over-before', 'drag-over-after'));
       el.addEventListener('drop', (e) => {
         e.preventDefault();
-        el.classList.remove('drag-over');
+        const before = el.classList.contains('drag-over-before');
+        el.classList.remove('drag-over-before', 'drag-over-after');
         const draggedId = container.querySelector('.dragging')?.dataset.blockId;
         if (!draggedId) return;
         history.beginAction();
-        tabManager.moveBlockAfter(draggedId, data.id);
+        tabManager.moveBlockAfter(draggedId, data.id, before);
         history.commitAction();
       });
 

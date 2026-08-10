@@ -184,6 +184,40 @@ plus flagged the bottom tab bar as too small with a rename-jump bug.
   bounding box measured pixel-identical to the `<div>` it replaced
   (same x/y/width/height) — zero layout jump.
 
+**Session 7** (this one — drag-reorder reliability, still PR #7): the
+person reported dragging to reorder blocks/tabs was "inconsistent and
+not working properly." Three separate real bugs, all fixed:
+
+- **Button blocks hijacked the drag**: their rendered `<a>` is natively
+  draggable in every browser; starting a drag on it triggered the
+  browser's own "drag this link" gesture instead of the block's reorder
+  drag. Fixed with `a.draggable = false` in `block-renderer.js`.
+- **Text selection competed with dragging**: `.tp-block` and
+  `.tab-thumb-container` had no `user-select: none`, so starting a drag
+  gesture on top of text content unreliably lost to the browser's native
+  text-selection drag — the actual cause of the reported
+  "inconsistency" (sometimes works, sometimes doesn't, no obvious
+  pattern).
+- **Reorder always inserted after the target, never before**: dropping
+  visually on the upper/left half of a target still landed the dragged
+  item *after* it, so the result frequently didn't match where the drop
+  looked like it should land. Fixed by adding a `before` param to
+  `moveBlockAfter()`/`moveTabAfter()`, computed from cursor position vs.
+  the target's bounding-rect midpoint, with matching visual indicators
+  (top/bottom border for blocks, left/right accent for tab thumbnails).
+- **Backlog item logged for v2, not checked yet**: `layer-panel.js`'s
+  draggable `.layer-row` has the same missing `user-select: none` as the
+  text-selection bug above (it has a `.layer-name` text label and no
+  anchor, so only that one fix is likely relevant there) — flagged as
+  worth a real check, not yet reproduced against v2.
+- **Verified via an 8-point Playwright smoke test using manually
+  dispatched DragEvents (Playwright's plain mouse actions don't reliably
+  trigger native HTML5 DnD), passed clean on the first round** —
+  confirmed a Button block drags cleanly, confirmed before/after
+  insertion lands exactly where dropped for both blocks and tab
+  thumbnails (in both directions), and confirmed no text gets selected
+  when starting a drag from block text.
+
 ## What's next
 
 1. **Do the real Apps Script round-trip** described above — still the
@@ -191,8 +225,12 @@ plus flagged the bottom tab bar as too small with a rename-jump bug.
 2. **v2 backlog, not started**: (a) apply the corrected colour-group/
    tooltip/borderless-swatch presentation to v2's Canvas Settings
    drawer, (b) fix the identical rename-input box-model jump in v2's
-   slide bar. Both fixes exist in Tabbed Panels already and are meant
-   to be ported over, not re-designed from scratch.
+   slide bar, (c) check whether `layer-panel.js`'s draggable rows have
+   the same missing `user-select: none` that caused Tabbed Panels'
+   drag-reorder to feel inconsistent — not yet reproduced against v2,
+   just flagged as plausible. All three fixes exist in Tabbed Panels
+   already and are meant to be ported over, not re-designed from
+   scratch.
 3. Everything under "What's NOT built yet" in CLAUDE.md's Tabbed Panels
    section: touch/tablet drag-and-drop, accessibility pass, narrow-window
    layout — standing gaps carried over from v2, not yet looked at here.

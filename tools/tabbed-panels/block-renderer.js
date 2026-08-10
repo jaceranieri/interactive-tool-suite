@@ -73,6 +73,14 @@ function renderBlock(data, styles) {
       a.className = 'tp-button';
       a.textContent = data.label || '';
       a.href = data.url || '#';
+      // Anchors are natively draggable in every browser — without this,
+      // starting a drag gesture on the button's own text/area hijacks the
+      // browser's built-in "drag this link" behavior instead of the
+      // authoring canvas's block-reorder drag (see index.html's
+      // .tp-block dragstart), which is exactly what made dragging a
+      // Button block to reorder it feel inconsistent versus every other
+      // block type.
+      a.draggable = false;
       if (data.newTab) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
       a.style.background = variant.bg;
       a.style.color = variant.text;

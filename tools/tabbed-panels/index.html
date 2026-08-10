@@ -219,7 +219,7 @@
       <span id="shell-status" class="status-pill"><span class="dot"></span>Not connected</span>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="newProject()">New</button>
-      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); refreshProjectList();">Open</button>
+      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); browseFolder=''; refreshProjectList();">Open</button>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
       <div class="top-bar-divider"></div>
@@ -287,6 +287,27 @@
   </div>
 </div>
 
+<!-- Save project modal (first save only — pick a name and destination folder) -->
+<div class="modal-overlay" id="save-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div><div class="title-block">Save</div><h2>Save project</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('save-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="popup-field">
+        <label>Project name</label>
+        <input type="text" id="save-name-input" onkeydown="if (event.key === 'Enter') confirmSaveAs();">
+      </div>
+      <div id="save-folder-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Shell.closeModal('save-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmSaveAs()">Save here</button>
+    </div>
+  </div>
+</div>
+
 <!-- Export modal -->
 <div class="modal-overlay" id="export-modal">
   <div class="modal-dialog wide">
@@ -320,6 +341,9 @@
   Storage.configure('STORAGE_ENDPOINT_PLACEHOLDER', 'STORAGE_API_KEY_PLACEHOLDER');
 
   let currentProjectName = null;
+  let currentProjectFolder = ''; // '/'-separated folder the current project lives in ('' = root)
+  let browseFolder = ''; // folder currently being browsed in the Open modal
+  let saveFolder = ''; // folder currently being browsed in the Save-as modal (first save only)
   let hasUnsavedChanges = false;
   let selectedBlockId = null;
   let activePanel = null; // 'property' | 'styles' | null
@@ -1132,21 +1156,26 @@
     }
     tabManager.setState({ activeTabId: null, tabs: [defaultTab('Tab 1')], styles: defaultStyles() });
     currentProjectName = null;
+    currentProjectFolder = '';
     document.getElementById('display-project-name').textContent = 'Untitled project';
     closePanel();
     markSaved();
   }
 
   async function saveProject() {
-    let name = currentProjectName;
-    if (!name) {
-      name = await Shell.prompt('', '', { heading: 'Name this project', okLabel: 'Save' });
-      if (!name) return;
+    if (!currentProjectName) {
+      openSaveModal();
+      return;
     }
+    await doSave(currentProjectName, currentProjectFolder);
+  }
+
+  async function doSave(name, folder) {
     const pending = Shell.toast('Saving to GitHub…', 'pending');
     try {
-      await Storage.saveProject(TOOL_ID, name, tabManager.getState());
+      await Storage.saveProject(TOOL_ID, name, tabManager.getState(), folder);
       currentProjectName = name;
+      currentProjectFolder = folder;
       document.getElementById('display-project-name').textContent = name;
       pending.remove();
       Shell.toast(`Project "${name}" saved!`, 'success');
@@ -1159,17 +1188,78 @@
     }
   }
 
+  /* ---- Save-as modal: first save only — name + destination folder,
+     reusing the same folder-browsing UI as the Open modal (just without
+     any projects listed, since this picks a destination, not a file). ---- */
+
+  function openSaveModal() {
+    saveFolder = browseFolder; // start wherever the Open modal was last browsing — a reasonable default, not a hard rule
+    document.getElementById('save-name-input').value = '';
+    Shell.openModal('save-modal');
+    refreshSaveFolderList();
+  }
+
+  async function refreshSaveFolderList() {
+    const pending = Shell.toast('Fetching folders…', 'pending');
+    try {
+      const result = await Storage.listProjects(TOOL_ID, saveFolder);
+      pending.remove();
+      Shell.renderProjectList(
+        document.getElementById('save-folder-list'),
+        [], // this picks a destination folder, not a project to open — no project rows
+        () => {},
+        {
+          folders: result.folders,
+          currentFolder: saveFolder,
+          onOpenFolder: (folder) => { saveFolder = folder; refreshSaveFolderList(); },
+          onNewFolder: (parentFolder) => newFolderInSaveModal(parentFolder),
+        }
+      );
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Fetch failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function newFolderInSaveModal(parentFolder) {
+    const name = await Shell.prompt('', '', { heading: 'New folder name', okLabel: 'Create' });
+    if (!name) return;
+    const target = parentFolder ? `${parentFolder}/${name}` : name;
+    const pending = Shell.toast('Creating folder…', 'pending');
+    try {
+      await Storage.createFolder(TOOL_ID, target);
+      pending.remove();
+      saveFolder = target; // land inside the folder just created, ready to save into it
+      refreshSaveFolderList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Create folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function confirmSaveAs() {
+    const name = document.getElementById('save-name-input').value.trim();
+    if (!name) { Shell.toast('Enter a project name', 'danger'); return; }
+    Shell.closeModal('save-modal');
+    await doSave(name, saveFolder);
+  }
+
   async function refreshProjectList() {
     const pending = Shell.toast('Fetching projects…', 'pending');
     try {
-      const { projects } = await Storage.listProjects(TOOL_ID);
+      const result = await Storage.listProjects(TOOL_ID, browseFolder);
       pending.remove();
       Shell.renderProjectList(
-        document.getElementById('project-list'), projects,
-        (name) => loadProject(name),
+        document.getElementById('project-list'), result.projects,
+        (name) => loadProject(name, browseFolder),
         {
           onRename: (oldName, newName) => renameProjectFlow(oldName, newName),
           onDelete: (name) => deleteProjectFlow(name),
+          folders: result.folders,
+          currentFolder: browseFolder,
+          onOpenFolder: (folder) => { browseFolder = folder; refreshProjectList(); },
+          onNewFolder: (parentFolder) => newFolderInOpenModal(parentFolder),
+          onDeleteFolder: (folder) => deleteFolderInOpenModal(folder),
         },
       );
     } catch (error) {
@@ -1178,13 +1268,43 @@
     }
   }
 
-  async function loadProject(name) {
+  async function newFolderInOpenModal(parentFolder) {
+    const name = await Shell.prompt('', '', { heading: 'New folder name', okLabel: 'Create' });
+    if (!name) return;
+    const target = parentFolder ? `${parentFolder}/${name}` : name;
+    const pending = Shell.toast('Creating folder…', 'pending');
+    try {
+      await Storage.createFolder(TOOL_ID, target);
+      pending.remove();
+      Shell.toast(`Folder "${name}" created`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Create folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function deleteFolderInOpenModal(folder) {
+    const pending = Shell.toast('Deleting folder…', 'pending');
+    try {
+      await Storage.deleteFolder(TOOL_ID, folder);
+      pending.remove();
+      Shell.toast('Folder deleted', 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Delete folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function loadProject(name, folder = '') {
     Shell.closeModal('open-modal');
     const pending = Shell.toast(`Loading "${name}"...`, 'pending');
     try {
-      const { content } = await Storage.loadProject(TOOL_ID, name);
+      const { content } = await Storage.loadProject(TOOL_ID, name, folder);
       tabManager.setState(content);
       currentProjectName = name;
+      currentProjectFolder = folder;
       document.getElementById('display-project-name').textContent = name;
       closePanel();
       markSaved();
@@ -1199,8 +1319,8 @@
   async function renameProjectFlow(oldName, newName) {
     const pending = Shell.toast(`Renaming "${oldName}"…`, 'pending');
     try {
-      await Storage.renameProject(TOOL_ID, oldName, newName);
-      if (currentProjectName === oldName) {
+      await Storage.renameProject(TOOL_ID, oldName, newName, browseFolder);
+      if (currentProjectName === oldName && currentProjectFolder === browseFolder) {
         currentProjectName = newName;
         document.getElementById('display-project-name').textContent = newName;
       }
@@ -1218,7 +1338,7 @@
     if (!ok) return;
     const pending = Shell.toast(`Deleting "${name}"…`, 'pending');
     try {
-      await Storage.deleteProject(TOOL_ID, name);
+      await Storage.deleteProject(TOOL_ID, name, browseFolder);
       pending.remove();
       Shell.toast(`Deleted "${name}"`, 'success');
       refreshProjectList();

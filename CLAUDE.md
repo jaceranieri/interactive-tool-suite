@@ -58,15 +58,24 @@ database.
   extra keys on its existing `actions` param (`folders`, `currentFolder`,
   `onOpenFolder`, `onNewFolder`, `onDeleteFolder`) — omit all of them and
   it renders exactly as it did before folders existed, so tools that
-  haven't been wired up for folders yet (v1, Tabbed Panels) need no
-  changes. `animated-slides-v2/index.html` is the reference
-  implementation: it tracks `browseFolder` (where the Open modal is
-  currently browsing) and `currentProjectFolder` (where the open project
-  actually lives) as separate state, resets `browseFolder` to `''`
-  whenever the Open modal is (re)opened, and a brand-new project's first
-  Save lands in whatever folder was last browsed. Wiring this same
-  pattern into v1 and Tabbed Panels is still outstanding — see "Current
-  status" / "What's NOT built yet" below.
+  haven't been wired up for folders yet (currently just v1) need no
+  changes. `animated-slides-v2/index.html` was the first tool wired up,
+  and the pattern it established — `browseFolder` (where the Open modal
+  is currently browsing) and `currentProjectFolder` (where the open
+  project actually lives) as separate state, `browseFolder` reset to
+  `''` whenever the Open modal is (re)opened, a brand-new project's first
+  Save landing in whatever folder was last browsed — carried over as-is
+  to Tabbed Panels' `index.html`, which additionally has a dedicated Save
+  modal (`#save-modal`, `openSaveModal()`/`confirmSaveAs()`) for picking
+  the destination folder explicitly on a project's first save, rather
+  than only inheriting whatever the Open modal last browsed — the same
+  folder-browsing UI (breadcrumbs, folder rows, "New folder") reused
+  inside that modal via the same `renderProjectList()` opt-in params,
+  just with an empty `projects` array since it's picking a destination,
+  not a file. Worth considering backporting this explicit Save-folder-
+  picker to v2 too, for consistency — not done yet. Wiring folder support
+  into v1 at all is still outstanding — see "Current status" / "What's
+  NOT built yet" below.
 - **Shared foundation** (`shared/`): `design-tokens.css` (colors, spacing,
   type — includes an explicit house style: "Colour," not "Color," in
   labels and anywhere user-facing), `app-shell.css` / `app-shell.js` (top

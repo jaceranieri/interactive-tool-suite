@@ -178,6 +178,22 @@
   .tab-thumb-container:hover .tab-thumb-duplicate { display: flex; }
   .tab-thumb-duplicate:hover { background: var(--accent); color: white; border-color: var(--accent); }
 
+  /* Layers panel — lists the active tab's blocks in display order (top of
+     list = top of the block list, no inversion needed since `blocks` is
+     already stored top-to-bottom). Same look as v2's layer-panel.js rows. */
+  .layer-row { display: flex; align-items: center; gap: var(--space-2); padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--text-sm); border-top: 2px solid transparent; }
+  .layer-row.dragging { opacity: 0.4; }
+  .layer-row.drag-over { border-top-color: var(--accent); }
+  .layer-row:hover { background: var(--paper); }
+  .layer-row.active { background: var(--accent-soft); }
+  .layer-row i.layer-type-icon { color: var(--ink-faint); width: 16px; text-align: center; flex-shrink: 0; }
+  .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer-controls { display: flex; gap: 2px; flex-shrink: 0; }
+  .layer-controls button { border: none; background: none; color: var(--ink-soft); cursor: pointer; padding: 2px 4px; font-size: 10px; }
+  .layer-controls button:hover:not(:disabled) { color: var(--accent); }
+  .layer-controls button:disabled { opacity: 0.3; cursor: default; }
+  .layer-empty { font-size: var(--text-xs); color: var(--ink-soft); font-style: italic; }
+
   /* Styles drawer */
   .settings-section { margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--border); }
   .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
@@ -233,6 +249,14 @@
             <button class="modal-close" onclick="closePanel()">&times;</button>
           </div>
           <div class="side-panel-body" id="property-panel-body"></div>
+        </div>
+
+        <div class="side-panel" id="layers-panel">
+          <div class="side-panel-header">
+            <h2>Layers</h2>
+            <button class="modal-close" onclick="closePanel()">&times;</button>
+          </div>
+          <div class="side-panel-body" id="layers-panel-body"></div>
         </div>
 
         <div class="side-panel" id="styles-panel">
@@ -338,8 +362,9 @@
   // selecting any block after the first one in a session immediately
   // wiped selectedBlockId back to null and left the panel blank.
   function hidePanels() {
-    ['property-panel', 'styles-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
+    ['property-panel', 'layers-panel', 'styles-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
     document.getElementById('styles-toggle-btn')?.classList.remove('btn-active');
+    document.getElementById('layers-toggle-btn')?.classList.remove('btn-active');
   }
 
   function closePanel() {
@@ -359,6 +384,10 @@
     } else if (name === 'property') {
       document.getElementById('property-panel').classList.add('active');
       renderPropertyPanel();
+    } else if (name === 'layers') {
+      document.getElementById('layers-panel').classList.add('active');
+      document.getElementById('layers-toggle-btn').classList.add('btn-active');
+      renderLayersPanel();
     }
   }
 
@@ -385,6 +414,15 @@
     const divider = document.createElement('div');
     divider.className = 'rail-divider';
     rail.appendChild(divider);
+
+    const layersBtn = document.createElement('button');
+    layersBtn.className = 'add-block-btn';
+    layersBtn.id = 'layers-toggle-btn';
+    layersBtn.title = 'Layers';
+    layersBtn.setAttribute('aria-label', 'Layers');
+    layersBtn.innerHTML = '<i class="fa-solid fa-layer-group"></i>';
+    layersBtn.addEventListener('click', () => activePanel === 'layers' ? closePanel() : openPanel('layers'));
+    rail.appendChild(layersBtn);
 
     const stylesBtn = document.createElement('button');
     stylesBtn.className = 'add-block-btn';
@@ -597,6 +635,118 @@
       });
 
       container.appendChild(el);
+    });
+  }
+
+  /* ---- Layers panel: lists the active tab's blocks, reorderable by drag
+     or up/down chevrons — same interaction as v2's layer-panel.js, one
+     level down (blocks within a tab rather than elements within a slide).
+     Unlike v2, `blocks` is already stored in display order, so the list
+     here isn't reversed the way v2's stacking-order array is. ---- */
+
+  // A short, human-recognisable label per block — plain type names would
+  // make every heading/paragraph row look identical, so this pulls
+  // whatever text actually distinguishes one block from the next.
+  function blockSummary(data) {
+    const schema = BLOCK_TYPES[data.type];
+    if (data.type === 'heading') return data.text || schema.label;
+    if (data.type === 'paragraph') {
+      const text = (data.content || '').replace(/<[^>]*>/g, '').trim();
+      return text || schema.label;
+    }
+    if (data.type === 'list') return `${schema.label} (${(data.items || []).length})`;
+    if (data.type === 'button') return data.label || schema.label;
+    if (data.type === 'badge') return data.label || schema.label;
+    if (data.type === 'table') {
+      const rows = data.rows || [];
+      const cols = rows[0] ? rows[0].length : 0;
+      return `${schema.label} (${rows.length}×${cols})`;
+    }
+    return schema.label;
+  }
+
+  function renderLayersPanel() {
+    const container = document.getElementById('layers-panel-body');
+    container.innerHTML = '';
+    const tab = tabManager.getActiveTab();
+
+    if (tab.blocks.length === 0) {
+      container.innerHTML = '<div class="layer-empty">No blocks on this tab yet.</div>';
+      return;
+    }
+
+    let draggedId = null;
+
+    tab.blocks.forEach((data, index) => {
+      const schema = BLOCK_TYPES[data.type];
+
+      const row = document.createElement('div');
+      row.className = 'layer-row' + (data.id === selectedBlockId ? ' active' : '');
+      row.draggable = true;
+
+      const icon = document.createElement('i');
+      icon.className = 'fa-solid layer-type-icon ' + schema.icon;
+      row.appendChild(icon);
+
+      const label = document.createElement('span');
+      label.className = 'layer-name';
+      label.textContent = blockSummary(data);
+      row.appendChild(label);
+
+      const controls = document.createElement('span');
+      controls.className = 'layer-controls';
+
+      const upBtn = document.createElement('button');
+      upBtn.innerHTML = '<i class="fa-solid fa-chevron-up"></i>';
+      upBtn.title = 'Move up';
+      upBtn.disabled = index === 0;
+      upBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        tabManager.reorderBlock(data.id, -1);
+        history.commitAction();
+      });
+
+      const downBtn = document.createElement('button');
+      downBtn.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
+      downBtn.title = 'Move down';
+      downBtn.disabled = index === tab.blocks.length - 1;
+      downBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        tabManager.reorderBlock(data.id, 1);
+        history.commitAction();
+      });
+
+      controls.appendChild(upBtn);
+      controls.appendChild(downBtn);
+      row.appendChild(controls);
+
+      row.addEventListener('click', () => selectBlock(data.id));
+
+      row.addEventListener('dragstart', () => {
+        draggedId = data.id;
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        container.querySelectorAll('.layer-row').forEach((r) => r.classList.remove('drag-over'));
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (draggedId && draggedId !== data.id) row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        if (!draggedId || draggedId === data.id) return;
+        history.beginAction();
+        tabManager.moveBlockAfter(draggedId, data.id);
+        history.commitAction();
+      });
+
+      container.appendChild(row);
     });
   }
 
@@ -975,6 +1125,7 @@
     renderTabBar();
     renderBlockList();
     if (activePanel === 'styles') renderStylesPanel();
+    if (activePanel === 'layers') renderLayersPanel();
     if (selectedBlockId && !tabManager.getActiveTab().blocks.some((b) => b.id === selectedBlockId)) closePanel();
   }
 

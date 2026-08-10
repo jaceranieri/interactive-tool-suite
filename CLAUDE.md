@@ -379,6 +379,23 @@ diffing, which is fine at this scale.
   strip purely WYSIWYG (click-to-switch only) — tab CRUD needed a home
   outside that strip, and the bottom bar with live-content thumbnails is
   strictly more useful than a plain list ever was.
+- **Layers panel** (left rail, `fa-layer-group` icon next to Styles) —
+  same drawer mechanism as the property/Styles panels (`openPanel('layers')`,
+  one `.side-panel` slot shared between all three), listing the active
+  tab's blocks via `renderLayersPanel()` in `index.html`. Directly mirrors
+  v2's `layer-panel.js`: drag-to-reorder or up/down chevrons (disabled at
+  the top/bottom of the list), row click selects the block (same as
+  clicking it on the canvas — opens the property panel, which closes
+  Layers since they share the one drawer slot). One real difference from
+  v2: `tab.blocks` is already stored top-to-bottom, matching both the
+  canvas and the Layers list, so there's no display-order inversion to
+  worry about (v2's `elements` array is bottom-to-top, reversed for
+  display). Reordering by chevron needed a new `TabManager.reorderBlock(id,
+  direction)` — the one-step equivalent of the drag-based
+  `moveBlockAfter()`, mirroring `SlideManager.reorderLayer()`. Each row's
+  label comes from `blockSummary()` (a short, content-derived string —
+  a heading's text, a table's dimensions, etc. — rather than a generic
+  type name repeated for every row of the same type).
 
 ### Project-wide styles (`defaultStyles()` in `tab-manager.js`)
 

@@ -171,6 +171,21 @@ class TabManager {
     this.onChange();
   }
 
+  /** Moves a block earlier/later within the active tab's blocks by one
+   *  position — the up/down-chevron equivalent of moveBlockAfter's drag
+   *  reorder. direction: -1 = earlier (up, towards index 0), 1 = later
+   *  (down). Unlike v2's SlideManager.reorderLayer, no display-order
+   *  inversion is needed here: `blocks` is already stored top-to-bottom,
+   *  the same order the block list and layers panel both display it in. */
+  reorderBlock(blockId, direction) {
+    const tab = this.getActiveTab();
+    const i = tab.blocks.findIndex((b) => b.id === blockId);
+    const j = i + direction;
+    if (i === -1 || j < 0 || j >= tab.blocks.length) return;
+    [tab.blocks[i], tab.blocks[j]] = [tab.blocks[j], tab.blocks[i]];
+    this.onChange();
+  }
+
   /** Moves `draggedId` to sit immediately after `targetId` within the
    *  active tab's blocks — same drag-and-drop reorder pattern as
    *  moveTabAfter(), one level down. `targetId === null` moves it to the

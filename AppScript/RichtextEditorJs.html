@@ -72,9 +72,23 @@ function attachRichTextField(root, { value = '', inline = [], onChange = () => {
     btn.addEventListener('click', async () => {
       editable.focus();
       if (mark === 'link') {
+        // Shell.prompt() opens a modal, which steals focus to its own input
+        // — the browser clears the contenteditable's selection the moment
+        // that happens, so by the time the awaited promise resolves,
+        // execCommand('createLink') would have nothing selected to act on
+        // and silently do nothing. Save the range before awaiting, then
+        // restore it before calling execCommand — this was the actual bug
+        // behind inline links "not working at all".
+        const selection = window.getSelection();
+        const savedRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
         const existing = document.queryCommandValue('createLink');
         const url = await Shell.prompt('Enter a URL, or leave blank to remove the link.', existing || 'https://', { heading: 'Link' });
         if (url === false) return;
+        editable.focus();
+        if (savedRange) {
+          selection.removeAllRanges();
+          selection.addRange(savedRange);
+        }
         document.execCommand(url ? 'createLink' : 'unlink', false, url || undefined);
       } else {
         document.execCommand(spec.command, false, null);

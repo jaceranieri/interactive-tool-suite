@@ -24,9 +24,10 @@ files, never the actual `google.script.run` path.
   Apps Script editor (it already has `HistoryJs.html` — Tabbed Panels
   reuses that one as-is), redeploy, and do a real Save/Open/Rename/Delete
   round-trip, plus click through Export, the Layers panel, folder
-  support, and this session's UI-polish animations once for real. **The
-  person already hit one real "forgot to redeploy" issue this project**
-  — a stale `TabManagerJs.html` in their live Apps Script project threw
+  support, the UI-polish animations, and this session's link fix + table/
+  tab-colour/badge styling once for real. **The person already hit one
+  real "forgot to redeploy" issue this project** — a stale
+  `TabManagerJs.html` in their live Apps Script project threw
   `tabManager.reorderBlock is not a function` after the Layers panel was
   added. Always re-paste every file listed above together, not just
   whichever one seems related to the latest change.
@@ -34,107 +35,115 @@ files, never the actual `google.script.run` path.
   `AppScript/Code.gs` all gained a `folder` parameter, plus new
   `apiMoveProject`/`apiCreateFolder`/`apiDeleteFolder`. Re-paste `Code.gs`
   (and, if using the standalone fallback, `storage-backend.gs`) and do a
-  real folder create/browse/delete/save-into-folder round-trip before
-  trusting it in production.
-- **This session's shared-file changes**: `AppShellCss.html`/
-  `AppShellJs.html` (button press animation, toast spinner, entrance
-  keyframes), `SlideManagerJs.html`, `TabManagerJs.html` all changed —
-  same "re-paste everything together" caution applies.
+  real folder round-trip before trusting it in production.
+- **This session touched five more Tabbed Panels files**:
+  `RichtextEditorJs.html` (link fix), `TabManagerJs.html` (new style
+  fields + deeper backfill), `BlockRendererJs.html` (table wrapper),
+  `TabNavJs.html` (active tab colour), and `TabbedPanels.html` itself
+  (CSS + Styles drawer fields + **regenerated `MODULE_SOURCES`**, since
+  `block-renderer.js`/`tab-nav.js` changed and Export embeds those as
+  baked-in string constants, not `include()`d). Same "re-paste everything
+  together" caution applies.
 
-## This session: UI polish — micro-animations, loading spinners, entrance animations
+## This session: inline-link bug fix + table/tab-colour/badge styling
 
-Added across both tools, CSS-only (no GSAP dependency added), respecting
-`prefers-reduced-motion`. See CLAUDE.md's new "UI polish/micro-animation
-conventions" bullet under "Conventions" for the full writeup — summary:
+**Bug fix — inline hyperlinks in paragraph/list blocks did nothing.**
+Root cause: the richtext Link button's click handler is `async` (awaits
+`Shell.prompt()` for the URL); opening that modal steals focus to its own
+input, which clears the contenteditable's text selection immediately —
+so by the time the prompt resolved, `execCommand('createLink')` had
+nothing selected and silently no-opped. Fixed in
+`tools/tabbed-panels/richtext-editor.js` by saving the Range before the
+`await` and restoring it after, before calling `execCommand`. Verified
+via Playwright: select text, click Link, confirm a URL, the selection is
+now correctly wrapped in `<a href>`.
 
-- **Button press**: `.btn:active` (plus `.project-action-btn`/
-  `.modal-close`) scale down slightly on click — `shared/app-shell.css`,
-  applies everywhere automatically.
-- **Loading spinners**: `Shell.toast(msg, 'pending')` now renders a small
-  spinner alongside the message. Since every Save/Load/Rename/Delete/
-  folder operation in both tools already goes through this one function,
-  this single change covers loading feedback for every GitHub round trip
-  — no per-tool or per-button spinner wiring needed.
-- **New tab/slide/block entrance animation**: a newly created slide
-  thumbnail (v2), tab thumbnail (Tabbed Panels), or block (Tabbed Panels)
-  fades/scales in once, rather than just appearing. **This surfaced and
-  required fixing a genuine pre-existing-pattern timing bug**, not just
-  new code — see CLAUDE.md for the full explanation:
-  1. A manager's `onChange`/`onSlideChange` hook (which triggers the
-     render reading the "newly added" flag) fires *before* `addSlide()`/
-     `addTab()`/`addBlock()` return the new id — so the flag has to live
-     on the manager itself (`SlideManager.lastAddedSlideId`,
-     `TabManager.lastAddedTabId`/`lastAddedBlockId`, set internally
-     right before the onChange call), not be set by the caller from a
-     return value.
-  2. Tabbed Panels' "add block" flow renders `renderBlockList()` *twice*
-     back-to-back in one synchronous burst — clearing the flag
-     synchronously after the first render wiped it before the second
-     (the one actually painted) could use it, so the animation silently
-     never played. Fixed by deferring the clear to the next
-     `requestAnimationFrame` instead.
-  This was caught by Playwright testing that specifically checked *which*
-  element got the animation class across successive adds, not just
-  whether one did — an earlier, less rigorous check ("is there exactly
-  one `.thumb-enter` in the DOM") passed while the underlying bug (wrong
-  element, or block case: no element at all once painted) was still
-  present. Worth remembering as a testing lesson, not just a code one.
-- Applied to both repo source and deployed `AppScript/` copies for all
-  four touched files (`AnimatedSlidesV2.html`, `TabbedPanels.html`,
-  `SlideManagerJs.html`, `TabManagerJs.html`, plus the shared
-  `AppShellCss.html`/`AppShellJs.html`); diffed source vs. deployed
-  afterward to confirm only the expected 5-substitution boilerplate
-  differs.
-- **Not done, explicitly out of scope this round** (see the brainstormed
-  list from this session if picking it back up): exit/delete animations,
-  drag-and-drop reorder reflow animation, folder-navigation crossfade in
-  the Open modal, a save-success pulse on the Save button itself, an
-  unsaved-changes-dot pulse, animated tab-switching in Tabbed Panels
-  (v2's slide switch already GSAP-crossfades; Tabbed Panels' tab switch
-  is still instant), selection-outline transitions, invalid-input shake.
+**Table styling — corner radius, cell padding, header/body text size.**
+Added as four new number fields (`table.radius`/`cellPadding`/
+`headerFontSize`/`bodyFontSize`) alongside the existing bordered/plain
+colour variants in `defaultStyles()`, surfaced in the Styles drawer's
+Tables section. `block-renderer.js`'s table case now wraps the `<table>`
+in a `.tp-table-wrapper` div carrying the radius + border (border-radius
+doesn't clip a collapsed-border table reliably; a wrapper div with
+`overflow: hidden` does).
+
+**Tab nav — active tab text/underline colour.** New
+`tabLabel.activeColor` field, applied by `tab-nav.js` as an inline style
+on the `.active` tab only (inactive tabs keep whatever the host page's
+own CSS says). New swatch in the Styles drawer's Tab label section.
+
+**Badges — multiple side by side instead of one per line.** `#block-list`
+switched from a plain column to `flex-flow: row wrap`; every `.tp-block`
+defaults to `flex: 0 0 100%` (forces its own row) except
+`.tp-block-badge`, which is `flex: 0 0 auto` and wraps like inline text
+alongside adjacent badges. CSS-only, no data-model change — works
+retroactively on already-saved projects.
+
+**A real backfill bug also got fixed along the way**:
+`TabManager.setState()`'s old/loaded-project backfill only copied
+top-level style keys wholesale — an existing project's `styles.table`
+object (predating radius/cellPadding/etc.) would already be "present"
+and skip the top-level default fallback, silently leaving the new fields
+`undefined`. Fixed by making the backfill recurse one level (two for
+variant maps like badge/button/table) instead of a flat copy.
+
+All of the above applied to both repo source and every relevant deployed
+`AppScript/` file (see the list above), including regenerating Export's
+embedded `MODULE_SOURCES` programmatically (not hand-typed) since
+`block-renderer.js`/`tab-nav.js` are two of the three modules it bakes
+in. Diffed source vs. deployed afterward — clean except the expected
+5-substitution boilerplate. Verified via Playwright: link creation,
+badges rendering on the same line with a heading forcing a new row after
+them, all four new table fields showing correct defaults and the corner-
+radius field live-updating a rendered table, and the active-tab colour
+swatch live-updating the tab strip.
+
+## Earlier session: UI polish — micro-animations, loading spinners, entrance animations
+
+Button-press scale, a spinner on every `Shell.toast(pending)`, and
+one-shot entrance animations for new slides/tabs/blocks — CSS-only,
+`prefers-reduced-motion`-aware. See CLAUDE.md's "UI polish/micro-
+animation conventions" bullet. This surfaced and fixed a real timing bug
+in the underlying "newly added id" tracking (manager's onChange fires
+before addX() returns the id to the caller — the flag has to live on the
+manager itself, set before that call, and its clear has to be deferred a
+frame for flows that render twice back-to-back). Worth reading before
+touching entrance-animation code again.
 
 ## Earlier session: folder support wired into Tabbed Panels
 
-Open modal (breadcrumb, folder rows, new/delete folder) plus a **new**
-explicit Save-folder-picker modal (name + folder browser) for a
-project's first save — v2 still only infers the destination from
-whichever folder the Open modal was last browsing; Tabbed Panels now
-lets the person pick/create it directly. Worth considering backporting
-the explicit picker to v2 for consistency — not done.
+Open modal (breadcrumb, folder rows, new/delete folder) plus an explicit
+Save-folder-picker modal for a project's first save. v2 still only
+infers the destination from whichever folder the Open modal was last
+browsing — worth considering backporting Tabbed Panels' explicit picker
+there for consistency. Not done.
 
 ## Earlier session: Tabbed Panels Layers panel
 
-Left-rail drawer (`fa-layer-group` icon) listing the active tab's
-blocks, drag or chevron reorder (`TabManager.reorderBlock(id,
-direction)`), row click selects + opens the property panel. Mirrors v2's
-`layer-panel.js`. Touch/tablet drag-and-drop, a narrow-window layout
-pass, and an accessibility pass were considered and explicitly deferred
-that session — still open.
+Left-rail drawer listing the active tab's blocks, drag or chevron
+reorder. Touch/tablet drag-and-drop, a narrow-window layout pass, and an
+accessibility pass were considered and explicitly deferred that session
+— still open.
 
 ## Earlier session: folder support in shared storage (all tools)
 
-See CLAUDE.md's "Storage" bullet — paths, `.gitkeep` placeholders,
-`moveProject`/`createFolder`/`deleteFolder`, `renderProjectList()`'s
-opt-in folder params. First wired into v2, then Tabbed Panels (above).
-**v1 still has no folder support** — no code changes needed until
-someone adds it, following either tool's `index.html` as the pattern.
+See CLAUDE.md's "Storage" bullet. First wired into v2, then Tabbed
+Panels. **v1 still has no folder support.**
 
 ## What's next
 
-1. **Do the real Apps Script round-trips** described above — still the
-   single most important unverified thing, and the one that's already
-   bitten the person once (the `reorderBlock` stale-deploy error). This
-   session added five more files to the "must re-paste together" list.
-2. Consider the deferred polish ideas above (exit animations, drag
-   reflow, tab-switch animation in Tabbed Panels, etc.) if the person
-   wants a further round.
-3. Consider backporting the explicit Save-folder-picker to v2 for
-   consistency with Tabbed Panels.
+1. **Do the real Apps Script round-trips** — still the single most
+   important unverified thing, and the one that's already bitten the
+   person once. This session added five more files to the "must
+   re-paste together" list for Tabbed Panels.
+2. Consider the deferred polish ideas from the UI-polish session (exit
+   animations, drag-reorder reflow, tab-switch animation in Tabbed
+   Panels, save-success pulse, etc.) if the person wants a further round.
+3. Consider backporting the explicit Save-folder-picker to v2.
 4. **Wire folder browsing into v1's Open modal** — the only tool left
    without it.
 5. **v2 Canvas Settings swatch consistency audit** — older backlog item,
-   not started; needs its own look at
-   `tools/animated-slides-v2/index.html`'s settings-panel CSS/JS.
+   not started.
 6. Everything under "What's NOT built yet" in CLAUDE.md's Tabbed Panels
    section: touch/tablet drag-and-drop, accessibility pass, narrow-window
    layout — standing gaps, deferred multiple times now.
@@ -143,14 +152,14 @@ someone adds it, following either tool's `index.html` as the pattern.
 
 - GitHub → Apps Script auto-deploy via `clasp` — deferred at project
   start, never revisited. Every session now touches more
-  `AppScript/*.html` files to hand-sync (this one touched six), worth
-  revisiting sooner rather than later — especially given the
-  `reorderBlock` stale-deploy bug this project already produced once.
+  `AppScript/*.html` files to hand-sync, worth revisiting sooner rather
+  than later.
 
 ## Where to find things
 
-`CLAUDE.md` has the architecture (including Tabbed Panels' full internal
-architecture, the project-wide styles system, content-model decisions,
-the shared storage/folder system, and the new UI-polish/micro-animation
+`CLAUDE.md` has the architecture (Tabbed Panels' full internal
+architecture including this session's table/tab-colour/badge styling
+additions, the project-wide styles system, content-model decisions, the
+shared storage/folder system, and the UI-polish/micro-animation
 conventions), the Apps Script deployment pipeline checklist, and the
 local-preview workflow.

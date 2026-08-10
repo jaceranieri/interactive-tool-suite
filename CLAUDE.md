@@ -392,6 +392,16 @@ diffing, which is fine at this scale.
   never something a browser paste or a stray `execCommand` call could
   have snuck an unexpected tag/attribute into. Table cells are plain
   text, not richtext, so they don't go through this module.
+  **Real bug fixed here**: the Link button's click handler is `async`
+  (it awaits `Shell.prompt()` for the URL), and `Shell.prompt()` opens a
+  modal that steals focus to its own input — which clears the
+  contenteditable's text selection the instant that happens. By the time
+  the awaited promise resolved, `execCommand('createLink')` had nothing
+  selected to act on, so it silently did nothing — this was the actual
+  cause of inline links "not working at all," not a sanitizer or
+  rendering issue. Fixed by capturing `window.getSelection()`'s Range
+  *before* the `await`, then restoring it right after, before calling
+  `execCommand`.
 - `tab-manager.js` — `TabManager` owns `tabs` and `styles` (both mutated
   in place, per the usual reference-identity rule) and the active tab.
   `defaultStyles()` is the project-wide typography/colour object (see
@@ -489,6 +499,45 @@ any individual block) and `tabLabel` (`{ fontSize, paddingX, paddingY }`
 for `tab-nav.js`'s `.tp-tabnav-tab` buttons — `renderTabNav()` takes this
 as an optional `tabLabelStyle` param and applies it as inline styles,
 same "parameter, not a global" reasoning as `block-renderer.js`).
+`tabLabel` also carries `activeColor` (the active tab's text + underline
+colour, applied only to the `.active` button — inactive tabs still fall
+back to the host page's own `.tp-tabnav-tab` CSS) and `table` also
+carries `radius`/`cellPadding`/`headerFontSize`/`bodyFontSize` (layout,
+not a colour variant, so they live as sibling keys alongside `table`'s
+`bordered`/`plain` variant maps rather than a fourth variant). The
+Styles drawer's Tables section appends a `field-grid` of these four
+number inputs into the same section `renderVariantColourTable()`
+returns, so it all reads as one "Tables" group rather than two separate
+headings. `block-renderer.js`'s table case wraps the actual `<table>` in
+a `.tp-table-wrapper` div carrying the radius + outer border —
+border-radius on a `<table>` with `border-collapse: collapse` doesn't
+clip reliably across browsers, but `overflow: hidden` on a plain block
+div does, which is why the rounding lives one level up rather than on
+the table element itself.
+**Backfilling these into old saved projects needed more than the
+existing flat per-top-level-key copy** in `TabManager.setState()` — a
+saved project's existing `styles.table` object would already be
+"present" and skip the top-level fallback entirely, silently leaving
+`radius`/`cellPadding`/etc. `undefined` rather than picking up the new
+defaults. Fixed by making the backfill go one level deep for any
+top-level style key that's a plain object (and, for variant maps like
+`badge`/`button`/`table`, one level deeper again for each variant) —
+see the comment above the backfill loop if this needs touching again
+for a future style field.
+
+Blocks are laid out via `#block-list`'s `flex-flow: row wrap` (not a
+plain column) specifically so **multiple Badge blocks can sit side by
+side** instead of one per line: every `.tp-block` defaults to
+`flex: 0 0 100%` (forces its own full-width row), except
+`.tp-block-badge`, which is `flex: 0 0 auto` and therefore wraps like
+inline text alongside adjacent badges. Any other block type between two
+badges still forces its own line before/after, since it keeps the
+100%-width default. This is authoring-canvas AND Export CSS — both
+`tools/tabbed-panels/index.html`'s `<style>` block and the Export
+template's embedded `<style>` block need the same three rules
+(`#block-list`, `.tp-block`, `.tp-block-badge`) kept in sync, since the
+export ships its own hardcoded copy rather than reusing
+`shared/app-shell.css`.
 
 ### Content model, settled across two scaffolding/design-review rounds
 

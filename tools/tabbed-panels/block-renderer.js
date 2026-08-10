@@ -93,6 +93,13 @@ function renderBlock(data, styles) {
     }
     case 'table': {
       const variant = styles.table[data.style] || styles.table.bordered;
+      // A wrapper div, not border-radius on the <table> itself — border-
+      // collapse and table layout don't clip reliably to a rounded corner
+      // across browsers, but overflow:hidden on a plain block div does.
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tp-table-wrapper';
+      wrapper.style.borderRadius = (styles.table.radius ?? 8) + 'px';
+      wrapper.style.borderColor = variant.border;
       const table = document.createElement('table');
       table.className = 'tp-table';
       const rows = data.rows || [];
@@ -103,12 +110,15 @@ function renderBlock(data, styles) {
           const cell = document.createElement(isHeaderRow ? 'th' : 'td');
           cell.textContent = cellText || '';
           cell.style.borderColor = variant.border;
+          cell.style.padding = (styles.table.cellPadding ?? 10) + 'px';
+          cell.style.fontSize = (isHeaderRow ? styles.table.headerFontSize : styles.table.bodyFontSize) + 'px';
           if (isHeaderRow) { cell.style.background = variant.bg; cell.style.color = variant.text; }
           tr.appendChild(cell);
         });
         table.appendChild(tr);
       });
-      el.appendChild(table);
+      wrapper.appendChild(table);
+      el.appendChild(wrapper);
       break;
     }
     case 'separator': {

@@ -50,9 +50,13 @@ function defaultStyles() {
     table: {
       bordered: { bg: '#fafaf8', text: '#111827', border: '#cbc8be' },
       plain: { bg: '#ffffff', text: '#111827', border: '#ffffff' },
+      // Layout, not a per-variant colour — same "sibling keys alongside the
+      // variant maps" shape blockSpacing/tabLabel already use below, kept
+      // on `table` itself since these are specifically about tables.
+      radius: 8, cellPadding: 10, headerFontSize: 14, bodyFontSize: 14,
     },
     blockSpacing: 12, // gap between stacked blocks in the player body, px
-    tabLabel: { fontSize: 15, paddingX: 24, paddingY: 16 }, // tab-nav.js's .tp-tabnav-tab
+    tabLabel: { fontSize: 15, paddingX: 24, paddingY: 16, activeColor: '#0C5E82' }, // tab-nav.js's .tp-tabnav-tab
   };
 }
 
@@ -237,11 +241,29 @@ class TabManager {
     // project was last saved) with their defaults, same pattern as v2's
     // renderSettingsModal() backfilling nav keys, so the styles panel
     // reflects the actual effective value instead of reading as unset.
+    // Goes one level deep (and, for variant maps like table/badge/button,
+    // two) rather than a flat per-top-level-key copy — otherwise an old
+    // project's existing `styles.table` (predating radius/cellPadding/
+    // header-and-body font size) would silently keep those undefined
+    // instead of picking up the new defaults, since the whole `table`
+    // object would already be "present" and skip the top-level fallback.
     const incoming = snap.styles || defaultStyles();
     const defaults = defaultStyles();
     Object.keys(this.styles).forEach((k) => delete this.styles[k]);
     Object.keys(defaults).forEach((k) => {
-      this.styles[k] = incoming[k] !== undefined ? incoming[k] : defaults[k];
+      const defaultVal = defaults[k];
+      const incomingVal = incoming[k];
+      const isPlainObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
+      if (isPlainObject(defaultVal) && isPlainObject(incomingVal)) {
+        this.styles[k] = { ...defaultVal, ...incomingVal };
+        Object.keys(defaultVal).forEach((subKey) => {
+          if (isPlainObject(defaultVal[subKey])) {
+            this.styles[k][subKey] = { ...defaultVal[subKey], ...(incomingVal[subKey] || {}) };
+          }
+        });
+      } else {
+        this.styles[k] = incomingVal !== undefined ? incomingVal : defaultVal;
+      }
     });
 
     this.onChange();

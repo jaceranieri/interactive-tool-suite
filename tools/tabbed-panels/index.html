@@ -51,9 +51,15 @@
 
   /* Block list (the learner-facing preview surface, editable in place) */
   #player-body { padding: var(--space-6); overflow-y: auto; }
-  #block-list { display: flex; flex-direction: column; gap: var(--space-3); }
+  /* flex-wrap row rather than a plain column: every block defaults to a
+     full-width row (flex: 0 0 100%, below), EXCEPT .tp-block-badge, which
+     sizes to its content and wraps like inline text — that's what lets
+     consecutive Badge blocks sit side by side instead of one per line,
+     with any other block type still forcing its own line before/after. */
+  #block-list { display: flex; flex-flow: row wrap; align-items: flex-start; gap: var(--space-3); }
   #block-list-empty { text-align: center; color: var(--ink-faint); padding: var(--space-8) 0; }
-  .tp-block { position: relative; border: 2px solid transparent; border-radius: var(--radius-sm); padding: var(--space-2); cursor: pointer; }
+  .tp-block { position: relative; flex: 0 0 100%; min-width: 0; border: 2px solid transparent; border-radius: var(--radius-sm); padding: var(--space-2); cursor: pointer; }
+  .tp-block-badge { flex: 0 0 auto; }
   .tp-block:hover { border-color: var(--border); }
   .tp-block.selected { border-color: var(--accent); background: var(--accent-soft); }
   .tp-block.dragging { opacity: 0.4; }
@@ -74,8 +80,12 @@
   .tp-list { margin: 0; padding-left: 1.4em; line-height: 1.5; }
   .tp-button { display: inline-block; padding: 10px 20px; border-radius: var(--radius-sm); border: 1px solid transparent; text-decoration: none; font-weight: 600; font-size: var(--text-sm); }
   .tp-badge { display: inline-block; padding: 3px 12px; border-radius: 999px; border: 1px solid transparent; font-size: var(--text-xs); font-weight: 600; }
+  /* Corner radius lives on this wrapper, not the <table> — border-radius
+     doesn't clip a collapsed-border table reliably across browsers, but
+     overflow:hidden on a plain div does. */
+  .tp-table-wrapper { overflow: hidden; border: 1px solid var(--border-strong); }
   .tp-table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
-  .tp-table th, .tp-table td { border: 1px solid var(--border-strong); padding: 8px 10px; text-align: left; }
+  .tp-table th, .tp-table td { border: 1px solid var(--border-strong); text-align: left; }
   .tp-table th { background: var(--paper); font-weight: 600; }
   .tp-block-separator hr { border: none; border-top: 1px solid var(--border); margin: var(--space-2) 0; }
 
@@ -1046,7 +1056,32 @@
 
     body.appendChild(renderVariantColourTable('Badges', 'badge'));
     body.appendChild(renderVariantColourTable('Buttons', 'button'));
-    body.appendChild(renderVariantColourTable('Tables', 'table', [['bordered', 'Bordered'], ['plain', 'Plain']]));
+
+    // Tables also need layout controls (radius/padding/text size) beyond
+    // the bordered/plain colour variants — appended into the same section
+    // the colour table returns, so it all reads as one "Tables" group.
+    const tablesSection = renderVariantColourTable('Tables', 'table', [['bordered', 'Bordered'], ['plain', 'Plain']]);
+    const tableLayoutGrid = document.createElement('div');
+    tableLayoutGrid.className = 'field-grid';
+    tableLayoutGrid.style.marginTop = 'var(--space-4)';
+    tableLayoutGrid.appendChild(renderStyleNumberField(
+      'Corner radius', () => tabManager.styles.table.radius,
+      (v) => { tabManager.styles.table.radius = v; }, { min: 0, max: 40 },
+    ));
+    tableLayoutGrid.appendChild(renderStyleNumberField(
+      'Cell padding', () => tabManager.styles.table.cellPadding,
+      (v) => { tabManager.styles.table.cellPadding = v; }, { min: 0, max: 40 },
+    ));
+    tableLayoutGrid.appendChild(renderStyleNumberField(
+      'Header text size', () => tabManager.styles.table.headerFontSize,
+      (v) => { tabManager.styles.table.headerFontSize = v; }, { min: 8, max: 32 },
+    ));
+    tableLayoutGrid.appendChild(renderStyleNumberField(
+      'Body text size', () => tabManager.styles.table.bodyFontSize,
+      (v) => { tabManager.styles.table.bodyFontSize = v; }, { min: 8, max: 32 },
+    ));
+    tablesSection.appendChild(tableLayoutGrid);
+    body.appendChild(tablesSection);
   }
 
   /** A single labeled number input bound via getValue/setValue callbacks,
@@ -1106,6 +1141,23 @@
       (v) => { tabManager.styles.tabLabel.paddingX = v; },
       { min: 0, max: 60 },
     ));
+
+    const activeColorWrap = document.createElement('div');
+    activeColorWrap.className = 'popup-field';
+    activeColorWrap.innerHTML = '<label>Active tab colour</label>';
+    const activeColorInput = document.createElement('input');
+    activeColorInput.type = 'color';
+    activeColorInput.title = 'Active tab text & underline colour';
+    activeColorInput.value = tabManager.styles.tabLabel.activeColor;
+    activeColorInput.addEventListener('input', () => {
+      history.beginAction();
+      tabManager.styles.tabLabel.activeColor = activeColorInput.value;
+      history.commitAction();
+      markUnsaved(); renderTabStrip();
+    });
+    activeColorWrap.appendChild(activeColorInput);
+    grid.appendChild(activeColorWrap);
+
     section.appendChild(grid);
     return section;
   }
@@ -1413,15 +1465,18 @@
   .tp-tabnav-tab { flex-shrink: 0; padding: 16px 24px 12px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.9375rem; color: #4A5453; border-bottom: 2px solid transparent; white-space: nowrap; }
   .tp-tabnav-tab.active { color: #0C5E82; border-bottom-color: #0C5E82; font-weight: 600; }
   #player-body { padding: 32px; }
-  #block-list { display: flex; flex-direction: column; gap: 12px; }
+  #block-list { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 12px; }
+  .tp-block { flex: 0 0 100%; min-width: 0; }
+  .tp-block-badge { flex: 0 0 auto; }
   .tp-heading { margin: 0; }
   .tp-subtitle { margin: 4px 0 0; }
   .tp-paragraph { line-height: 1.5; }
   .tp-list { margin: 0; padding-left: 1.4em; line-height: 1.5; }
   .tp-button { display: inline-block; padding: 10px 20px; border-radius: 6px; border: 1px solid transparent; text-decoration: none; font-weight: 600; font-size: 0.8125rem; }
   .tp-badge { display: inline-block; padding: 3px 12px; border-radius: 999px; border: 1px solid transparent; font-size: 0.75rem; font-weight: 600; }
+  .tp-table-wrapper { overflow: hidden; border: 1px solid #CBC8BE; }
   .tp-table { border-collapse: collapse; width: 100%; font-size: 0.8125rem; }
-  .tp-table th, .tp-table td { border: 1px solid #CBC8BE; padding: 8px 10px; text-align: left; }
+  .tp-table th, .tp-table td { border: 1px solid #CBC8BE; text-align: left; }
   .tp-table th { background: #FAFAF8; font-weight: 600; }
   .tp-block-separator hr { border: none; border-top: 1px solid #E3E1DA; margin: 8px 0; }
 </style>

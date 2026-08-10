@@ -20,6 +20,19 @@
    tab-types.js) and rendered via textContent.
    ========================================================================== */
 
+// Inline links (richtext's `link` mark, created via execCommand in
+// richtext-editor.js) are stored as plain `<a href>` with no target —
+// applied at render time instead of storage time so it's a single source
+// of truth covering every link regardless of how/when it was created,
+// same reasoning the button block forces target uniformly rather than
+// storing it per-instance.
+function forceLinksToNewTab(container) {
+  container.querySelectorAll('a').forEach((a) => {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  });
+}
+
 function renderBlock(data, styles) {
   const schema = BLOCK_TYPES[data.type];
   if (!schema) throw new Error(`Unknown block type: ${data.type}`);
@@ -53,6 +66,7 @@ function renderBlock(data, styles) {
       p.className = 'tp-paragraph';
       p.innerHTML = data.content || '';
       p.style.textAlign = data.align || 'left';
+      forceLinksToNewTab(p);
       el.appendChild(p);
       break;
     }
@@ -64,6 +78,7 @@ function renderBlock(data, styles) {
         li.innerHTML = item || '';
         listEl.appendChild(li);
       });
+      forceLinksToNewTab(listEl);
       el.appendChild(listEl);
       break;
     }
@@ -73,7 +88,8 @@ function renderBlock(data, styles) {
       a.className = 'tp-button';
       a.textContent = data.label || '';
       a.href = data.url || '#';
-      if (data.newTab) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+      a.target = '_blank'; // always — see tab-types.js's button.fields comment
+      a.rel = 'noopener noreferrer';
       a.style.background = variant.bg;
       a.style.color = variant.text;
       a.style.borderColor = variant.border;

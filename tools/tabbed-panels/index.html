@@ -1450,9 +1450,31 @@
 <head>
 <meta charset="UTF-8">
 <title>${currentProjectName || 'Tabbed Panels'}</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
+</head>
+<body>
+<div id="player-card">
+  <div id="tabnav-host"></div>
+  <div id="player-body"><div id="block-list"></div></div>
+</div>
+<script>
+// Fonts and CSS are injected here via script rather than static <link>/
+// <style> tags in <head> — some course/LMS "embed HTML" blocks (hit in
+// practice with an Articulate embed) strip <head> children like <style>
+// and <link rel="stylesheet"> from pasted code while still executing
+// <script> content, so anything that needs to survive that has to be
+// created by script instead of sitting in the static markup.
+[
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+  'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap',
+].forEach((href) => {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  document.head.appendChild(link);
+});
+
+const playerStyle = document.createElement('style');
+playerStyle.textContent = \`
   * { box-sizing: border-box; }
   html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: #F1F0EB; }
   #player-card { max-width: 860px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(28,35,33,0.08); overflow: hidden; }
@@ -1479,14 +1501,9 @@
   .tp-table th, .tp-table td { border: 1px solid #CBC8BE; text-align: left; }
   .tp-table th { background: #FAFAF8; font-weight: 600; }
   .tp-block-separator hr { border: none; border-top: 1px solid #E3E1DA; margin: 8px 0; }
-</style>
-</head>
-<body>
-<div id="player-card">
-  <div id="tabnav-host"></div>
-  <div id="player-body"><div id="block-list"></div></div>
-</div>
-<script>
+\`;
+document.head.appendChild(playerStyle);
+
 ${modules}
 
 const tabs = ${tabsJSON};

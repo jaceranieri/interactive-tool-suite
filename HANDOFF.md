@@ -13,7 +13,13 @@ instead — this file only covers what's transient.
 below was verified working via local browser preview (serving the repo
 directly and driving it with Playwright — see CLAUDE.md's "Local preview"
 section) — that only exercises the repo-source `tools/*/index.html`
-files, never the actual `google.script.run` path.
+files, never the actual `google.script.run` path. **The Export CSS fix
+below (this session) was additionally verified by loading the generated
+export HTML standalone in a fresh browser tab** (not just previewed
+inside the authoring tool), which is as close to "does this survive
+being pasted somewhere else" as this environment can test without an
+actual Articulate/LMS embed to try it in — that real-world check still
+needs to happen.
 
 - **Tabbed Panels**: `AppScript/TabbedPanels.html` + module files exist,
   went through the 5-substitution pass, and the `PAGES` entry is
@@ -23,92 +29,96 @@ files, never the actual `google.script.run` path.
   `BlockRendererJs.html`, `TabNavJs.html`, `TabManagerJs.html` into the
   Apps Script editor (it already has `HistoryJs.html` — Tabbed Panels
   reuses that one as-is), redeploy, and do a real Save/Open/Rename/Delete
-  round-trip, plus click through Export, the Layers panel, folder
-  support, the UI-polish animations, and this session's link fix + table/
-  tab-colour/badge styling once for real. **The person already hit one
-  real "forgot to redeploy" issue this project** — a stale
-  `TabManagerJs.html` in their live Apps Script project threw
+  round-trip, click through Export, **paste an exported Export into an
+  actual Articulate embed block and confirm it now renders styled** (the
+  original bug report), and exercise the Layers panel, folder support,
+  and the UI-polish animations from earlier sessions once for real.
+  **The person already hit one real "forgot to redeploy" issue this
+  project** — a stale `TabManagerJs.html` threw
   `tabManager.reorderBlock is not a function` after the Layers panel was
-  added. Always re-paste every file listed above together, not just
-  whichever one seems related to the latest change.
+  added. Always re-paste every file together, not just whichever one
+  seems related to the latest change — this session alone touched 6 of
+  Tabbed Panels' 11 AppScript files.
 - **Storage folders**: `apiSaveProject`/`apiListProjects`/etc. in
   `AppScript/Code.gs` all gained a `folder` parameter, plus new
   `apiMoveProject`/`apiCreateFolder`/`apiDeleteFolder`. Re-paste `Code.gs`
   (and, if using the standalone fallback, `storage-backend.gs`) and do a
   real folder round-trip before trusting it in production.
-- **This session touched five more Tabbed Panels files**:
-  `RichtextEditorJs.html` (link fix), `TabManagerJs.html` (new style
-  fields + deeper backfill), `BlockRendererJs.html` (table wrapper),
-  `TabNavJs.html` (active tab colour), and `TabbedPanels.html` itself
-  (CSS + Styles drawer fields + **regenerated `MODULE_SOURCES`**, since
-  `block-renderer.js`/`tab-nav.js` changed and Export embeds those as
-  baked-in string constants, not `include()`d). Same "re-paste everything
-  together" caution applies.
 
-## This session: inline-link bug fix + table/tab-colour/badge styling
+## This session: Articulate export-styling bug fix + always-new-tab links
 
-**Bug fix — inline hyperlinks in paragraph/list blocks did nothing.**
-Root cause: the richtext Link button's click handler is `async` (awaits
-`Shell.prompt()` for the URL); opening that modal steals focus to its own
-input, which clears the contenteditable's text selection immediately —
-so by the time the prompt resolved, `execCommand('createLink')` had
-nothing selected and silently no-opped. Fixed in
-`tools/tabbed-panels/richtext-editor.js` by saving the Range before the
-`await` and restoring it after, before calling `execCommand`. Verified
-via Playwright: select text, click Link, confirm a URL, the selection is
-now correctly wrapped in `<a href>`.
+**Bug fix — exported Tabbed Panels HTML lost its styling when pasted
+into an Articulate embed block** (reported with a screenshot: tab strip
+rendered as plain unstyled buttons, the button block as a bare
+underlined link, table header cells showing a stray pink background —
+while structural content and *inline* JS-set styles, like heading
+font-size/colour, rendered correctly). That split — inline styles
+surviving, stylesheet-based CSS not — is the signature of an embed
+sanitizer stripping `<style>`/`<link rel="stylesheet">` tags from pasted
+HTML while still executing `<script>` content. Fixed by no longer
+shipping a static `<style>`/`<link>` in the exported `<head>` at all —
+both are now created by the exported page's own `<script>` at runtime
+(`document.createElement('style'|'link')` → `document.head.appendChild`).
+Since script execution demonstrably still works (real block data was
+rendering correctly), this sidesteps whatever is stripping the static
+tags regardless of the exact mechanism (not independently confirmed to
+be a sanitizer vs. CSP vs. something else — the fix targets the observed
+symptom, described in detail in CLAUDE.md). Applied to both
+`openExportModal()` templates (repo source and the Apps-Script-deployed
+copy — same CSS text, embedded per the usual substitution-2 split).
+**Verified by loading the generated export HTML standalone** (not just
+inside the tool) in a fresh Playwright page: card/shadow/radius, tab
+strip underline+colour, button background, and table wrapper radius all
+confirmed present via computed styles. **Not yet verified in a real
+Articulate embed** — that's the one thing this fix still needs from the
+person, since this environment has no way to reproduce Articulate's
+actual embed sanitization to test against directly.
 
-**Table styling — corner radius, cell padding, header/body text size.**
-Added as four new number fields (`table.radius`/`cellPadding`/
-`headerFontSize`/`bodyFontSize`) alongside the existing bordered/plain
-colour variants in `defaultStyles()`, surfaced in the Styles drawer's
-Tables section. `block-renderer.js`'s table case now wraps the `<table>`
-in a `.tp-table-wrapper` div carrying the radius + border (border-radius
-doesn't clip a collapsed-border table reliably; a wrapper div with
-`overflow: hidden` does).
+**Feature — buttons and inline links always open in a new tab.**
+Previously the button block had a per-instance "Open in new tab" toggle
+(default on); removed entirely from `tab-types.js`'s schema — a course
+button sending the learner away from the course entirely was judged to
+always be the wrong default, not worth a choice. `block-renderer.js` now
+sets `target="_blank"`/`rel="noopener noreferrer"` unconditionally on
+the button anchor. Inline links (richtext's `link` mark) previously had
+no `target` at all (opened in the same tab/frame); fixed with a new
+`forceLinksToNewTab()` helper in `block-renderer.js`, applied to every
+`<a>` inside a rendered paragraph/list block at render time — a single
+source of truth covering every link regardless of how/when it was
+created, rather than trying to set it at link-creation time in
+`richtext-editor.js`. Verified via Playwright: created an inline link,
+confirmed `target="_blank"` on both it and a button block, both in the
+authoring canvas and in a standalone-loaded export.
 
-**Tab nav — active tab text/underline colour.** New
-`tabLabel.activeColor` field, applied by `tab-nav.js` as an inline style
-on the `.active` tab only (inactive tabs keep whatever the host page's
-own CSS says). New swatch in the Styles drawer's Tab label section.
+Applied to repo source and all affected `AppScript/` files:
+`TabTypesJs.html`, `BlockRendererJs.html`, `TabbedPanels.html` (CSS/JS +
+regenerated `MODULE_SOURCES`, since `tab-types.js`/`block-renderer.js`
+both changed and Export bakes those in as string constants). Diffed
+source vs. deployed afterward — clean except the expected
+5-substitution boilerplate.
 
-**Badges — multiple side by side instead of one per line.** `#block-list`
-switched from a plain column to `flex-flow: row wrap`; every `.tp-block`
-defaults to `flex: 0 0 100%` (forces its own row) except
-`.tp-block-badge`, which is `flex: 0 0 auto` and wraps like inline text
-alongside adjacent badges. CSS-only, no data-model change — works
-retroactively on already-saved projects.
+## Earlier session: inline-link creation bug fix + table/tab-colour/badge styling
 
-**A real backfill bug also got fixed along the way**:
-`TabManager.setState()`'s old/loaded-project backfill only copied
-top-level style keys wholesale — an existing project's `styles.table`
-object (predating radius/cellPadding/etc.) would already be "present"
-and skip the top-level default fallback, silently leaving the new fields
-`undefined`. Fixed by making the backfill recurse one level (two for
-variant maps like badge/button/table) instead of a flat copy.
-
-All of the above applied to both repo source and every relevant deployed
-`AppScript/` file (see the list above), including regenerating Export's
-embedded `MODULE_SOURCES` programmatically (not hand-typed) since
-`block-renderer.js`/`tab-nav.js` are two of the three modules it bakes
-in. Diffed source vs. deployed afterward — clean except the expected
-5-substitution boilerplate. Verified via Playwright: link creation,
-badges rendering on the same line with a heading forcing a new row after
-them, all four new table fields showing correct defaults and the corner-
-radius field live-updating a rendered table, and the active-tab colour
-swatch live-updating the tab strip.
+Separate, earlier bug: inline links did nothing at all when created (not
+a new-tab issue — the link never got created). Root cause was
+`Shell.prompt()`'s modal stealing focus and clearing the contenteditable
+selection before `execCommand('createLink')` ran; fixed by saving/
+restoring the selection Range around the `await`. Also added that
+session: table corner-radius/cell-padding/header-and-body-text-size
+controls, an active-tab text/underline colour control, and badges laid
+out side by side instead of one per line. See CLAUDE.md for details —
+all still in place, unaffected by this session's changes (this session
+added *on top of* that work, e.g. the button/link new-tab behavior
+touches the same block-renderer.js table/badge code just added, no
+conflicts).
 
 ## Earlier session: UI polish — micro-animations, loading spinners, entrance animations
 
 Button-press scale, a spinner on every `Shell.toast(pending)`, and
-one-shot entrance animations for new slides/tabs/blocks — CSS-only,
-`prefers-reduced-motion`-aware. See CLAUDE.md's "UI polish/micro-
-animation conventions" bullet. This surfaced and fixed a real timing bug
-in the underlying "newly added id" tracking (manager's onChange fires
-before addX() returns the id to the caller — the flag has to live on the
-manager itself, set before that call, and its clear has to be deferred a
-frame for flows that render twice back-to-back). Worth reading before
-touching entrance-animation code again.
+one-shot entrance animations for new slides/tabs/blocks. See CLAUDE.md's
+"UI polish/micro-animation conventions" bullet — includes a real timing
+bug that was found and fixed in the underlying "newly added id"
+tracking, worth reading before touching entrance-animation code again.
 
 ## Earlier session: folder support wired into Tabbed Panels
 
@@ -133,9 +143,11 @@ Panels. **v1 still has no folder support.**
 ## What's next
 
 1. **Do the real Apps Script round-trips** — still the single most
-   important unverified thing, and the one that's already bitten the
-   person once. This session added five more files to the "must
-   re-paste together" list for Tabbed Panels.
+   important unverified thing. Specifically for this session: **paste an
+   exported Tabbed Panels HTML into a real Articulate embed block** and
+   confirm the styling fix actually resolves the reported issue there —
+   this is the one thing that genuinely could not be verified in this
+   environment.
 2. Consider the deferred polish ideas from the UI-polish session (exit
    animations, drag-reorder reflow, tab-switch animation in Tabbed
    Panels, save-success pulse, etc.) if the person wants a further round.
@@ -158,8 +170,8 @@ Panels. **v1 still has no folder support.**
 ## Where to find things
 
 `CLAUDE.md` has the architecture (Tabbed Panels' full internal
-architecture including this session's table/tab-colour/badge styling
-additions, the project-wide styles system, content-model decisions, the
-shared storage/folder system, and the UI-polish/micro-animation
-conventions), the Apps Script deployment pipeline checklist, and the
-local-preview workflow.
+architecture including this session's Export-styling fix and the
+always-new-tab link behaviour, the project-wide styles system,
+content-model decisions, the shared storage/folder system, and the
+UI-polish/micro-animation conventions), the Apps Script deployment
+pipeline checklist, and the local-preview workflow.

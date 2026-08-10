@@ -426,6 +426,27 @@ diffing, which is fine at this scale.
   lifecycle (New/Save/Open/rename/delete) is copy-adapted from v2's
   `index.html`, same `Shell`/`Storage` calls, different `TOOL_ID`
   (`'tabbed-panels'`) and content shape.
+  **Export's `<head>` has no static `<style>` or `<link rel="stylesheet">`
+  — both are created by the exported page's own `<script>` at runtime
+  instead** (`document.createElement('style'|'link')`, appended to
+  `document.head`). This was a real bug fix, not a stylistic choice: an
+  author reported the exported HTML losing essentially all of its
+  class-based styling (tab strip rendering as plain buttons, the button
+  block as a bare underlined link, table cells picking up a stray pink
+  background) when pasted into an Articulate embed block, while
+  structural content and inline JS-set styles (`el.style.x = ...`, e.g.
+  heading font-size/colour) still worked fine. That split — inline
+  styles surviving, stylesheet-based CSS not — is the signature of an
+  embed sanitizer that strips `<style>`/`<link>` tags from pasted HTML
+  while still executing `<script>` content; since script execution
+  clearly still works, injecting the same CSS via a script-created
+  `<style>` element sidesteps whatever is stripping the static tag,
+  regardless of the exact sanitizer/CSP mechanism Articulate uses (not
+  independently verified — the fix targets the observed symptom).
+  Applies to both the local-preview/testing template
+  (`fetchModuleSources()`'s caller) and the Apps-Script-deployed
+  template — same CSS text, just embedded differently per substitution
+  2's usual split.
 - **Tab management lives in the bottom bar, not a drawer** — same role
   and layout as v2's `#editor-slide-bar`: one thumbnail per tab
   (`renderTabThumbnail()` renders the SAME `renderBlock()` the real
@@ -546,14 +567,22 @@ export ships its own hardcoded copy rather than reusing
   separately-styled line beneath it rather than being its own block
   type), `paragraph` (richtext + text-align), `list` (bullet/numbered,
   flat array of richtext items — **no nesting**), `button`
-  (label/url/newTab/style — a standalone CTA), `badge` (label + style),
+  (label/url/style — a standalone CTA), `badge` (label + style),
   `table` (style variant + add/remove rows and columns in the property
   panel, **plain-text cells, no richtext** — kept simple for a dense
   grid), `separator` (no fields, just a rule).
 - **Inline link vs. button block are deliberately two different things**
   — a link embedded mid-sentence (richtext's `link` mark) and a
   standalone CTA (the `button` block) read differently to a learner, so
-  neither collapses into the other.
+  neither collapses into the other. Both **always open in a new tab** —
+  the button block's `newTab` toggle was removed (a course sending the
+  learner away from the course entirely was judged to always be the
+  wrong default, so it stopped being a per-instance choice); inline
+  links get `target`/`rel` forced at *render* time in
+  `block-renderer.js`'s `forceLinksToNewTab()`, applied to every `<a>`
+  inside a rendered paragraph/list regardless of how the link was
+  created, rather than trying to set it at creation time in
+  `richtext-editor.js`.
 - **Rich text storage**: sanitized HTML string, not a custom run-based
   model — see `richtext-editor.js` above.
 - **Tab strip is WYSIWYG, tab CRUD is not** — the canvas only ever

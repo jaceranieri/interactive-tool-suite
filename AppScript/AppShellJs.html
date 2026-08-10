@@ -32,7 +32,16 @@ const Shell = (() => {
     if (!stack) return;
     const el = document.createElement('div');
     el.className = `toast${type ? ' ' + type : ''}`;
-    el.textContent = message;
+    if (type === 'pending') {
+      const spinner = document.createElement('span');
+      spinner.className = 'toast-spinner';
+      el.appendChild(spinner);
+      const label = document.createElement('span');
+      label.textContent = message;
+      el.appendChild(label);
+    } else {
+      el.textContent = message;
+    }
     stack.appendChild(el);
     if (type !== 'pending') {
       setTimeout(() => {
@@ -152,16 +161,105 @@ const Shell = (() => {
      projects: [{ name, updatedAt }], onSelect(name) fires on row click. */
   /** actions (optional): { onRename(oldName, newName), onDelete(name) } —
    *  omit entirely and this behaves exactly as before (row click = open,
-   *  no action icons shown). Existing 3-arg call sites need no changes. */
-  function renderProjectList(containerEl, projects, onSelect, actions) {
+   *  no action icons shown). Existing 3-arg call sites need no changes.
+   *
+   *  Folder browsing (all optional, opt-in — omit all of these and this
+   *  renders exactly as it did before folders existed):
+   *    folders: [{ name }]        subfolders at the current level
+   *    currentFolder: string      '/'-separated path of the level being shown ('' = root)
+   *    onOpenFolder(path)         fires when a folder row (or breadcrumb segment) is clicked
+   *    onNewFolder(currentFolder) fires when "New folder" is clicked
+   *    onDeleteFolder(path)       fires (after an in-dialog confirm) when a folder's delete icon is clicked
+   */
+  function renderProjectList(containerEl, projects, onSelect, actions = {}) {
     containerEl.innerHTML = '';
-    if (!projects || projects.length === 0) {
-      containerEl.innerHTML = '<div class="project-empty">No projects yet — save one to see it here.</div>';
+
+    const { folders, currentFolder = '', onOpenFolder, onNewFolder, onDeleteFolder } = actions;
+    const folderBrowsingEnabled = !!onOpenFolder;
+
+    if (folderBrowsingEnabled) {
+      const toolbar = document.createElement('div');
+      toolbar.className = 'project-folder-toolbar';
+
+      const crumb = document.createElement('div');
+      crumb.className = 'project-breadcrumb';
+      const rootLink = document.createElement('span');
+      rootLink.className = 'breadcrumb-link';
+      rootLink.textContent = 'All projects';
+      rootLink.addEventListener('click', () => onOpenFolder(''));
+      crumb.appendChild(rootLink);
+      let pathSoFar = '';
+      (currentFolder ? currentFolder.split('/') : []).forEach((seg) => {
+        pathSoFar = pathSoFar ? `${pathSoFar}/${seg}` : seg;
+        const target = pathSoFar;
+        const sep = document.createElement('span');
+        sep.className = 'breadcrumb-sep';
+        sep.textContent = '/';
+        crumb.appendChild(sep);
+        const link = document.createElement('span');
+        link.className = 'breadcrumb-link';
+        link.textContent = seg;
+        link.addEventListener('click', () => onOpenFolder(target));
+        crumb.appendChild(link);
+      });
+      toolbar.appendChild(crumb);
+
+      if (onNewFolder) {
+        const newFolderBtn = document.createElement('button');
+        newFolderBtn.className = 'btn btn-secondary btn-small';
+        newFolderBtn.innerHTML = '<i class="fa-solid fa-folder-plus"></i> New folder';
+        newFolderBtn.addEventListener('click', () => onNewFolder(currentFolder));
+        toolbar.appendChild(newFolderBtn);
+      }
+
+      containerEl.appendChild(toolbar);
+    }
+
+    if ((!projects || projects.length === 0) && (!folders || folders.length === 0)) {
+      const empty = document.createElement('div');
+      empty.className = 'project-empty';
+      empty.textContent = 'No projects yet — save one to see it here.';
+      containerEl.appendChild(empty);
       return;
     }
     const list = document.createElement('div');
     list.className = 'project-list';
-    projects.forEach(p => {
+
+    (folders || []).forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'project-row project-row-folder';
+      const path = currentFolder ? `${currentFolder}/${f.name}` : f.name;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'project-name';
+      nameSpan.innerHTML = `<i class="fa-solid fa-folder"></i> ${escapeHtml(f.name)}`;
+      row.appendChild(nameSpan);
+
+      if (onDeleteFolder) {
+        const actionsWrap = document.createElement('span');
+        actionsWrap.className = 'project-row-actions';
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'project-action-btn danger';
+        deleteBtn.title = 'Delete folder';
+        deleteBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const ok = await confirmDialog(`Delete folder "${f.name}" and everything in it? This can't be undone.`, { heading: 'Delete folder', okLabel: 'Delete', danger: true });
+          if (ok) onDeleteFolder(path);
+        });
+        actionsWrap.appendChild(deleteBtn);
+        row.appendChild(actionsWrap);
+      }
+
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.project-action-btn')) return;
+        onOpenFolder(path);
+      });
+
+      list.appendChild(row);
+    });
+
+    (projects || []).forEach(p => {
       const row = document.createElement('div');
       row.className = 'project-row';
 
@@ -236,5 +334,4 @@ const Shell = (() => {
 
   return { init, toast, openModal, closeModal, bindOverlayDismiss, renderProjectList, setStatus, confirm: confirmDialog, prompt: promptDialog };
 })();
-
 </script>

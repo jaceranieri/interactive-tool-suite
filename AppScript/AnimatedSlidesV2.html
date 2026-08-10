@@ -194,7 +194,7 @@
       <span id="shell-status" class="status-pill"><span class="dot"></span>Not connected</span>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="newProject()">New</button>
-      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); refreshProjectList();">Open</button>
+      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); browseFolder=''; refreshProjectList();">Open</button>
       <button class="btn btn-secondary" onclick="openImportModal()">Load from code</button>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
@@ -386,6 +386,8 @@
   const layerListEl = document.getElementById('layer-list');
 
   let currentProjectName = "Untitled project";
+  let currentProjectFolder = ""; // '/'-separated folder the current project lives in ('' = root)
+  let browseFolder = ""; // folder currently being browsed in the Open modal
   let lastSavedStateJSON = null; // snapshot at last save/load/new — comparing against this is what "unsaved changes" means
 
   function hasUnsavedChanges() {
@@ -510,7 +512,7 @@
       wrap.className = 'slide-tab-wrap';
 
       const thumbContainer = document.createElement('div');
-      thumbContainer.className = 'slide-thumb-container';
+      thumbContainer.className = 'slide-thumb-container' + (s.id === slideManager.lastAddedSlideId ? ' thumb-enter' : '');
       thumbContainer.draggable = true;
 
       const thumb = document.createElement('div');
@@ -579,6 +581,17 @@
       wrap.appendChild(nameEl);
       tabs.appendChild(wrap);
     });
+
+    // One-shot — deferred to the next animation frame rather than cleared
+    // immediately, in case a future change makes addSlide/duplicateSlide
+    // trigger more than one render in the same synchronous burst (see
+    // Tabbed Panels' renderBlockList() for the concrete case that bit
+    // this pattern — an immediate clear can wipe the flag before the
+    // render that actually gets painted has a chance to use it).
+    if (slideManager.lastAddedSlideId) {
+      const consumedId = slideManager.lastAddedSlideId;
+      requestAnimationFrame(() => { if (slideManager.lastAddedSlideId === consumedId) slideManager.lastAddedSlideId = null; });
+    }
   }
 
   function startRenameSlide(wrap, nameEl, index) {
@@ -659,6 +672,7 @@
       if (!proceed) return;
     }
     currentProjectName = "Untitled project";
+    currentProjectFolder = "";
     document.getElementById('display-project-name').innerText = currentProjectName;
     slideManager.setState({ activeIndex: 0, slides: defaultSlides() });
     history.undoStack = [];
@@ -705,6 +719,7 @@
 
     Shell.closeModal('import-modal');
     currentProjectName = "Untitled project";
+    currentProjectFolder = "";
     document.getElementById('display-project-name').innerText = currentProjectName;
     slideManager.setState({ activeIndex: 0, canvasSettings, slides });
     history.undoStack = [];
@@ -1043,11 +1058,15 @@
       const name = await Shell.prompt('', '', { heading: 'Name this project', okLabel: 'Save' });
       if (!name) return;
       currentProjectName = name;
+      // A brand-new project saves into whatever folder was last browsed in
+      // the Open modal — lets an author navigate into a folder and have
+      // "Save" land there without a separate folder picker.
+      currentProjectFolder = browseFolder;
       document.getElementById('display-project-name').innerText = currentProjectName;
     }
     const pending = Shell.toast('Saving to GitHub…', 'pending');
     try {
-      await Storage.saveProject(TOOL_ID, currentProjectName, slideManager.getState());
+      await Storage.saveProject(TOOL_ID, currentProjectName, slideManager.getState(), currentProjectFolder);
       pending.remove();
       lastSavedStateJSON = JSON.stringify(slideManager.getState());
       Shell.toast(`Project "${currentProjectName}" saved!`, 'success');
@@ -1063,15 +1082,20 @@
     const pending = Shell.toast('Fetching projects…', 'pending');
     try {
       Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
-      const result = await Storage.listProjects(TOOL_ID);
+      const result = await Storage.listProjects(TOOL_ID, browseFolder);
       pending.remove();
       Shell.renderProjectList(
         document.getElementById('project-list-container'),
         result.projects,
-        (name) => loadProject(name),
+        (name) => loadProject(name, browseFolder),
         {
           onRename: (oldName, newName) => renameProjectAction(oldName, newName),
           onDelete: (name) => deleteProjectAction(name),
+          folders: result.folders,
+          currentFolder: browseFolder,
+          onOpenFolder: (folder) => { browseFolder = folder; refreshProjectList(); },
+          onNewFolder: (parentFolder) => newFolderAction(parentFolder),
+          onDeleteFolder: (folder) => deleteFolderAction(folder),
         }
       );
     } catch (error) {
@@ -1080,13 +1104,42 @@
     }
   }
 
+  async function newFolderAction(parentFolder) {
+    const name = await Shell.prompt('', '', { heading: 'New folder name', okLabel: 'Create' });
+    if (!name) return;
+    const target = parentFolder ? `${parentFolder}/${name}` : name;
+    const pending = Shell.toast('Creating folder…', 'pending');
+    try {
+      await Storage.createFolder(TOOL_ID, target);
+      pending.remove();
+      Shell.toast(`Folder "${name}" created`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Create folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function deleteFolderAction(folder) {
+    const pending = Shell.toast('Deleting folder…', 'pending');
+    try {
+      await Storage.deleteFolder(TOOL_ID, folder);
+      pending.remove();
+      Shell.toast('Folder deleted', 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Delete folder failed: ${error.message}`, 'danger');
+    }
+  }
+
   async function renameProjectAction(oldName, newName) {
     const pending = Shell.toast(`Renaming "${oldName}"…`, 'pending');
     try {
-      await Storage.renameProject(TOOL_ID, oldName, newName);
+      await Storage.renameProject(TOOL_ID, oldName, newName, browseFolder);
       pending.remove();
       Shell.toast(`Renamed to "${newName}"`, 'success');
-      if (currentProjectName === oldName) {
+      if (currentProjectName === oldName && currentProjectFolder === browseFolder) {
         currentProjectName = newName;
         document.getElementById('display-project-name').innerText = newName;
       }
@@ -1100,7 +1153,7 @@
   async function deleteProjectAction(name) {
     const pending = Shell.toast(`Deleting "${name}"…`, 'pending');
     try {
-      await Storage.deleteProject(TOOL_ID, name);
+      await Storage.deleteProject(TOOL_ID, name, browseFolder);
       pending.remove();
       Shell.toast(`Deleted "${name}"`, 'success');
       refreshProjectList();
@@ -1110,13 +1163,14 @@
     }
   }
 
-  async function loadProject(name) {
+  async function loadProject(name, folder = '') {
     Shell.closeModal('open-modal');
     const pending = Shell.toast(`Loading "${name}"...`, 'pending');
     try {
-      const result = await Storage.loadProject(TOOL_ID, name);
+      const result = await Storage.loadProject(TOOL_ID, name, folder);
       pending.remove();
       currentProjectName = name;
+      currentProjectFolder = folder;
       document.getElementById('display-project-name').innerText = currentProjectName;
       slideManager.setState(result.content);
       // A freshly loaded project shouldn't carry over undo history from

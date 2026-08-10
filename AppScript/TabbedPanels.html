@@ -52,9 +52,15 @@
 
   /* Block list (the learner-facing preview surface, editable in place) */
   #player-body { padding: var(--space-6); overflow-y: auto; }
-  #block-list { display: flex; flex-direction: column; gap: var(--space-3); }
+  /* flex-wrap row rather than a plain column: every block defaults to a
+     full-width row (flex: 0 0 100%, below), EXCEPT .tp-block-badge, which
+     sizes to its content and wraps like inline text — that's what lets
+     consecutive Badge blocks sit side by side instead of one per line,
+     with any other block type still forcing its own line before/after. */
+  #block-list { display: flex; flex-flow: row wrap; align-items: flex-start; gap: var(--space-3); }
   #block-list-empty { text-align: center; color: var(--ink-faint); padding: var(--space-8) 0; }
-  .tp-block { position: relative; border: 2px solid transparent; border-radius: var(--radius-sm); padding: var(--space-2); cursor: pointer; }
+  .tp-block { position: relative; flex: 0 0 100%; min-width: 0; border: 2px solid transparent; border-radius: var(--radius-sm); padding: var(--space-2); cursor: pointer; }
+  .tp-block-badge { flex: 0 0 auto; }
   .tp-block:hover { border-color: var(--border); }
   .tp-block.selected { border-color: var(--accent); background: var(--accent-soft); }
   .tp-block.dragging { opacity: 0.4; }
@@ -75,8 +81,12 @@
   .tp-list { margin: 0; padding-left: 1.4em; line-height: 1.5; }
   .tp-button { display: inline-block; padding: 10px 20px; border-radius: var(--radius-sm); border: 1px solid transparent; text-decoration: none; font-weight: 600; font-size: var(--text-sm); }
   .tp-badge { display: inline-block; padding: 3px 12px; border-radius: 999px; border: 1px solid transparent; font-size: var(--text-xs); font-weight: 600; }
+  /* Corner radius lives on this wrapper, not the <table> — border-radius
+     doesn't clip a collapsed-border table reliably across browsers, but
+     overflow:hidden on a plain div does. */
+  .tp-table-wrapper { overflow: hidden; border: 1px solid var(--border-strong); }
   .tp-table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
-  .tp-table th, .tp-table td { border: 1px solid var(--border-strong); padding: 8px 10px; text-align: left; }
+  .tp-table th, .tp-table td { border: 1px solid var(--border-strong); text-align: left; }
   .tp-table th { background: var(--paper); font-weight: 600; }
   .tp-block-separator hr { border: none; border-top: 1px solid var(--border); margin: var(--space-2) 0; }
 
@@ -178,6 +188,22 @@
   .tab-thumb-container:hover .tab-thumb-duplicate { display: flex; }
   .tab-thumb-duplicate:hover { background: var(--accent); color: white; border-color: var(--accent); }
 
+  /* Layers panel — lists the active tab's blocks in display order (top of
+     list = top of the block list, no inversion needed since `blocks` is
+     already stored top-to-bottom). Same look as v2's layer-panel.js rows. */
+  .layer-row { display: flex; align-items: center; gap: var(--space-2); padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--text-sm); border-top: 2px solid transparent; }
+  .layer-row.dragging { opacity: 0.4; }
+  .layer-row.drag-over { border-top-color: var(--accent); }
+  .layer-row:hover { background: var(--paper); }
+  .layer-row.active { background: var(--accent-soft); }
+  .layer-row i.layer-type-icon { color: var(--ink-faint); width: 16px; text-align: center; flex-shrink: 0; }
+  .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer-controls { display: flex; gap: 2px; flex-shrink: 0; }
+  .layer-controls button { border: none; background: none; color: var(--ink-soft); cursor: pointer; padding: 2px 4px; font-size: 10px; }
+  .layer-controls button:hover:not(:disabled) { color: var(--accent); }
+  .layer-controls button:disabled { opacity: 0.3; cursor: default; }
+  .layer-empty { font-size: var(--text-xs); color: var(--ink-soft); font-style: italic; }
+
   /* Styles drawer */
   .settings-section { margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--border); }
   .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
@@ -204,7 +230,7 @@
       <span id="shell-status" class="status-pill"><span class="dot"></span>Not connected</span>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="newProject()">New</button>
-      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); refreshProjectList();">Open</button>
+      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); browseFolder=''; refreshProjectList();">Open</button>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
       <div class="top-bar-divider"></div>
@@ -235,6 +261,14 @@
           <div class="side-panel-body" id="property-panel-body"></div>
         </div>
 
+        <div class="side-panel" id="layers-panel">
+          <div class="side-panel-header">
+            <h2>Layers</h2>
+            <button class="modal-close" onclick="closePanel()">&times;</button>
+          </div>
+          <div class="side-panel-body" id="layers-panel-body"></div>
+        </div>
+
         <div class="side-panel" id="styles-panel">
           <div class="side-panel-header">
             <h2>Styles</h2>
@@ -261,6 +295,27 @@
       <button class="modal-close" onclick="Shell.closeModal('open-modal')">&times;</button>
     </div>
     <div class="modal-body"><div id="project-list"></div></div>
+  </div>
+</div>
+
+<!-- Save project modal (first save only — pick a name and destination folder) -->
+<div class="modal-overlay" id="save-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div><div class="title-block">Save</div><h2>Save project</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('save-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="popup-field">
+        <label>Project name</label>
+        <input type="text" id="save-name-input" onkeydown="if (event.key === 'Enter') confirmSaveAs();">
+      </div>
+      <div id="save-folder-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Shell.closeModal('save-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmSaveAs()">Save here</button>
+    </div>
   </div>
 </div>
 
@@ -302,6 +357,9 @@
   Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
 
   let currentProjectName = null;
+  let currentProjectFolder = ''; // '/'-separated folder the current project lives in ('' = root)
+  let browseFolder = ''; // folder currently being browsed in the Open modal
+  let saveFolder = ''; // folder currently being browsed in the Save-as modal (first save only)
   let hasUnsavedChanges = false;
   let selectedBlockId = null;
   let activePanel = null; // 'property' | 'styles' | null
@@ -338,8 +396,9 @@
   // selecting any block after the first one in a session immediately
   // wiped selectedBlockId back to null and left the panel blank.
   function hidePanels() {
-    ['property-panel', 'styles-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
+    ['property-panel', 'layers-panel', 'styles-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
     document.getElementById('styles-toggle-btn')?.classList.remove('btn-active');
+    document.getElementById('layers-toggle-btn')?.classList.remove('btn-active');
   }
 
   function closePanel() {
@@ -359,6 +418,10 @@
     } else if (name === 'property') {
       document.getElementById('property-panel').classList.add('active');
       renderPropertyPanel();
+    } else if (name === 'layers') {
+      document.getElementById('layers-panel').classList.add('active');
+      document.getElementById('layers-toggle-btn').classList.add('btn-active');
+      renderLayersPanel();
     }
   }
 
@@ -385,6 +448,15 @@
     const divider = document.createElement('div');
     divider.className = 'rail-divider';
     rail.appendChild(divider);
+
+    const layersBtn = document.createElement('button');
+    layersBtn.className = 'add-block-btn';
+    layersBtn.id = 'layers-toggle-btn';
+    layersBtn.title = 'Layers';
+    layersBtn.setAttribute('aria-label', 'Layers');
+    layersBtn.innerHTML = '<i class="fa-solid fa-layer-group"></i>';
+    layersBtn.addEventListener('click', () => activePanel === 'layers' ? closePanel() : openPanel('layers'));
+    rail.appendChild(layersBtn);
 
     const stylesBtn = document.createElement('button');
     stylesBtn.className = 'add-block-btn';
@@ -441,7 +513,7 @@
       wrap.className = 'tab-thumb-wrap';
 
       const thumbContainer = document.createElement('div');
-      thumbContainer.className = 'tab-thumb-container';
+      thumbContainer.className = 'tab-thumb-container' + (tab.id === tabManager.lastAddedTabId ? ' thumb-enter' : '');
       thumbContainer.draggable = true;
       thumbContainer.dataset.tabId = tab.id;
 
@@ -512,6 +584,16 @@
       wrap.appendChild(nameEl);
       container.appendChild(wrap);
     });
+
+    // One-shot — deferred to the next animation frame rather than cleared
+    // immediately, since adding a tab can trigger more than one render
+    // back-to-back within the same synchronous burst (see addBlock's
+    // equivalent case in renderBlockList for why an immediate clear would
+    // lose the flag before the final render of the burst gets to use it).
+    if (tabManager.lastAddedTabId) {
+      const consumedId = tabManager.lastAddedTabId;
+      requestAnimationFrame(() => { if (tabManager.lastAddedTabId === consumedId) tabManager.lastAddedTabId = null; });
+    }
   }
 
   function startRenameTab(wrap, nameEl, tabId) {
@@ -564,6 +646,7 @@
     tab.blocks.forEach((data) => {
       const el = renderBlock(data, tabManager.styles); // block-renderer.js — authoring-unaware
       el.classList.toggle('selected', data.id === selectedBlockId);
+      if (data.id === tabManager.lastAddedBlockId) el.classList.add('row-enter');
       el.draggable = true;
 
       const controls = document.createElement('div');
@@ -597,6 +680,130 @@
       });
 
       container.appendChild(el);
+    });
+
+    // One-shot — deferred to the next animation frame rather than cleared
+    // immediately: adding a block triggers two renderBlockList() calls
+    // back-to-back in the same synchronous burst (once via addBlock()'s
+    // own onChange, once via selectBlock()'s explicit re-render to show
+    // the selection). Clearing synchronously here would wipe the flag
+    // after the first render, so the second (the one actually painted)
+    // would never see it and the animation would never visibly play.
+    if (tabManager.lastAddedBlockId) {
+      const consumedId = tabManager.lastAddedBlockId;
+      requestAnimationFrame(() => { if (tabManager.lastAddedBlockId === consumedId) tabManager.lastAddedBlockId = null; });
+    }
+  }
+
+  /* ---- Layers panel: lists the active tab's blocks, reorderable by drag
+     or up/down chevrons — same interaction as v2's layer-panel.js, one
+     level down (blocks within a tab rather than elements within a slide).
+     Unlike v2, `blocks` is already stored in display order, so the list
+     here isn't reversed the way v2's stacking-order array is. ---- */
+
+  // A short, human-recognisable label per block — plain type names would
+  // make every heading/paragraph row look identical, so this pulls
+  // whatever text actually distinguishes one block from the next.
+  function blockSummary(data) {
+    const schema = BLOCK_TYPES[data.type];
+    if (data.type === 'heading') return data.text || schema.label;
+    if (data.type === 'paragraph') {
+      const text = (data.content || '').replace(/<[^>]*>/g, '').trim();
+      return text || schema.label;
+    }
+    if (data.type === 'list') return `${schema.label} (${(data.items || []).length})`;
+    if (data.type === 'button') return data.label || schema.label;
+    if (data.type === 'badge') return data.label || schema.label;
+    if (data.type === 'table') {
+      const rows = data.rows || [];
+      const cols = rows[0] ? rows[0].length : 0;
+      return `${schema.label} (${rows.length}×${cols})`;
+    }
+    return schema.label;
+  }
+
+  function renderLayersPanel() {
+    const container = document.getElementById('layers-panel-body');
+    container.innerHTML = '';
+    const tab = tabManager.getActiveTab();
+
+    if (tab.blocks.length === 0) {
+      container.innerHTML = '<div class="layer-empty">No blocks on this tab yet.</div>';
+      return;
+    }
+
+    let draggedId = null;
+
+    tab.blocks.forEach((data, index) => {
+      const schema = BLOCK_TYPES[data.type];
+
+      const row = document.createElement('div');
+      row.className = 'layer-row' + (data.id === selectedBlockId ? ' active' : '');
+      row.draggable = true;
+
+      const icon = document.createElement('i');
+      icon.className = 'fa-solid layer-type-icon ' + schema.icon;
+      row.appendChild(icon);
+
+      const label = document.createElement('span');
+      label.className = 'layer-name';
+      label.textContent = blockSummary(data);
+      row.appendChild(label);
+
+      const controls = document.createElement('span');
+      controls.className = 'layer-controls';
+
+      const upBtn = document.createElement('button');
+      upBtn.innerHTML = '<i class="fa-solid fa-chevron-up"></i>';
+      upBtn.title = 'Move up';
+      upBtn.disabled = index === 0;
+      upBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        tabManager.reorderBlock(data.id, -1);
+        history.commitAction();
+      });
+
+      const downBtn = document.createElement('button');
+      downBtn.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
+      downBtn.title = 'Move down';
+      downBtn.disabled = index === tab.blocks.length - 1;
+      downBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        tabManager.reorderBlock(data.id, 1);
+        history.commitAction();
+      });
+
+      controls.appendChild(upBtn);
+      controls.appendChild(downBtn);
+      row.appendChild(controls);
+
+      row.addEventListener('click', () => selectBlock(data.id));
+
+      row.addEventListener('dragstart', () => {
+        draggedId = data.id;
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        container.querySelectorAll('.layer-row').forEach((r) => r.classList.remove('drag-over'));
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (draggedId && draggedId !== data.id) row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        if (!draggedId || draggedId === data.id) return;
+        history.beginAction();
+        tabManager.moveBlockAfter(draggedId, data.id);
+        history.commitAction();
+      });
+
+      container.appendChild(row);
     });
   }
 
@@ -855,7 +1062,32 @@
 
     body.appendChild(renderVariantColourTable('Badges', 'badge'));
     body.appendChild(renderVariantColourTable('Buttons', 'button'));
-    body.appendChild(renderVariantColourTable('Tables', 'table', [['bordered', 'Bordered'], ['plain', 'Plain']]));
+
+    // Tables also need layout controls (radius/padding/text size) beyond
+    // the bordered/plain colour variants — appended into the same section
+    // the colour table returns, so it all reads as one "Tables" group.
+    const tablesSection = renderVariantColourTable('Tables', 'table', [['bordered', 'Bordered'], ['plain', 'Plain']]);
+    const tableLayoutGrid = document.createElement('div');
+    tableLayoutGrid.className = 'field-grid';
+    tableLayoutGrid.style.marginTop = 'var(--space-4)';
+    tableLayoutGrid.appendChild(renderStyleNumberField(
+      'Corner radius', () => tabManager.styles.table.radius,
+      (v) => { tabManager.styles.table.radius = v; }, { min: 0, max: 40 },
+    ));
+    tableLayoutGrid.appendChild(renderStyleNumberField(
+      'Cell padding', () => tabManager.styles.table.cellPadding,
+      (v) => { tabManager.styles.table.cellPadding = v; }, { min: 0, max: 40 },
+    ));
+    tableLayoutGrid.appendChild(renderStyleNumberField(
+      'Header text size', () => tabManager.styles.table.headerFontSize,
+      (v) => { tabManager.styles.table.headerFontSize = v; }, { min: 8, max: 32 },
+    ));
+    tableLayoutGrid.appendChild(renderStyleNumberField(
+      'Body text size', () => tabManager.styles.table.bodyFontSize,
+      (v) => { tabManager.styles.table.bodyFontSize = v; }, { min: 8, max: 32 },
+    ));
+    tablesSection.appendChild(tableLayoutGrid);
+    body.appendChild(tablesSection);
   }
 
   /** A single labeled number input bound via getValue/setValue callbacks,
@@ -915,6 +1147,23 @@
       (v) => { tabManager.styles.tabLabel.paddingX = v; },
       { min: 0, max: 60 },
     ));
+
+    const activeColorWrap = document.createElement('div');
+    activeColorWrap.className = 'popup-field';
+    activeColorWrap.innerHTML = '<label>Active tab colour</label>';
+    const activeColorInput = document.createElement('input');
+    activeColorInput.type = 'color';
+    activeColorInput.title = 'Active tab text & underline colour';
+    activeColorInput.value = tabManager.styles.tabLabel.activeColor;
+    activeColorInput.addEventListener('input', () => {
+      history.beginAction();
+      tabManager.styles.tabLabel.activeColor = activeColorInput.value;
+      history.commitAction();
+      markUnsaved(); renderTabStrip();
+    });
+    activeColorWrap.appendChild(activeColorInput);
+    grid.appendChild(activeColorWrap);
+
     section.appendChild(grid);
     return section;
   }
@@ -975,6 +1224,7 @@
     renderTabBar();
     renderBlockList();
     if (activePanel === 'styles') renderStylesPanel();
+    if (activePanel === 'layers') renderLayersPanel();
     if (selectedBlockId && !tabManager.getActiveTab().blocks.some((b) => b.id === selectedBlockId)) closePanel();
   }
 
@@ -987,21 +1237,26 @@
     }
     tabManager.setState({ activeTabId: null, tabs: [defaultTab('Tab 1')], styles: defaultStyles() });
     currentProjectName = null;
+    currentProjectFolder = '';
     document.getElementById('display-project-name').textContent = 'Untitled project';
     closePanel();
     markSaved();
   }
 
   async function saveProject() {
-    let name = currentProjectName;
-    if (!name) {
-      name = await Shell.prompt('', '', { heading: 'Name this project', okLabel: 'Save' });
-      if (!name) return;
+    if (!currentProjectName) {
+      openSaveModal();
+      return;
     }
+    await doSave(currentProjectName, currentProjectFolder);
+  }
+
+  async function doSave(name, folder) {
     const pending = Shell.toast('Saving to GitHub…', 'pending');
     try {
-      await Storage.saveProject(TOOL_ID, name, tabManager.getState());
+      await Storage.saveProject(TOOL_ID, name, tabManager.getState(), folder);
       currentProjectName = name;
+      currentProjectFolder = folder;
       document.getElementById('display-project-name').textContent = name;
       pending.remove();
       Shell.toast(`Project "${name}" saved!`, 'success');
@@ -1014,17 +1269,78 @@
     }
   }
 
+  /* ---- Save-as modal: first save only — name + destination folder,
+     reusing the same folder-browsing UI as the Open modal (just without
+     any projects listed, since this picks a destination, not a file). ---- */
+
+  function openSaveModal() {
+    saveFolder = browseFolder; // start wherever the Open modal was last browsing — a reasonable default, not a hard rule
+    document.getElementById('save-name-input').value = '';
+    Shell.openModal('save-modal');
+    refreshSaveFolderList();
+  }
+
+  async function refreshSaveFolderList() {
+    const pending = Shell.toast('Fetching folders…', 'pending');
+    try {
+      const result = await Storage.listProjects(TOOL_ID, saveFolder);
+      pending.remove();
+      Shell.renderProjectList(
+        document.getElementById('save-folder-list'),
+        [], // this picks a destination folder, not a project to open — no project rows
+        () => {},
+        {
+          folders: result.folders,
+          currentFolder: saveFolder,
+          onOpenFolder: (folder) => { saveFolder = folder; refreshSaveFolderList(); },
+          onNewFolder: (parentFolder) => newFolderInSaveModal(parentFolder),
+        }
+      );
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Fetch failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function newFolderInSaveModal(parentFolder) {
+    const name = await Shell.prompt('', '', { heading: 'New folder name', okLabel: 'Create' });
+    if (!name) return;
+    const target = parentFolder ? `${parentFolder}/${name}` : name;
+    const pending = Shell.toast('Creating folder…', 'pending');
+    try {
+      await Storage.createFolder(TOOL_ID, target);
+      pending.remove();
+      saveFolder = target; // land inside the folder just created, ready to save into it
+      refreshSaveFolderList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Create folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function confirmSaveAs() {
+    const name = document.getElementById('save-name-input').value.trim();
+    if (!name) { Shell.toast('Enter a project name', 'danger'); return; }
+    Shell.closeModal('save-modal');
+    await doSave(name, saveFolder);
+  }
+
   async function refreshProjectList() {
     const pending = Shell.toast('Fetching projects…', 'pending');
     try {
-      const { projects } = await Storage.listProjects(TOOL_ID);
+      const result = await Storage.listProjects(TOOL_ID, browseFolder);
       pending.remove();
       Shell.renderProjectList(
-        document.getElementById('project-list'), projects,
-        (name) => loadProject(name),
+        document.getElementById('project-list'), result.projects,
+        (name) => loadProject(name, browseFolder),
         {
           onRename: (oldName, newName) => renameProjectFlow(oldName, newName),
           onDelete: (name) => deleteProjectFlow(name),
+          folders: result.folders,
+          currentFolder: browseFolder,
+          onOpenFolder: (folder) => { browseFolder = folder; refreshProjectList(); },
+          onNewFolder: (parentFolder) => newFolderInOpenModal(parentFolder),
+          onDeleteFolder: (folder) => deleteFolderInOpenModal(folder),
         },
       );
     } catch (error) {
@@ -1033,13 +1349,43 @@
     }
   }
 
-  async function loadProject(name) {
+  async function newFolderInOpenModal(parentFolder) {
+    const name = await Shell.prompt('', '', { heading: 'New folder name', okLabel: 'Create' });
+    if (!name) return;
+    const target = parentFolder ? `${parentFolder}/${name}` : name;
+    const pending = Shell.toast('Creating folder…', 'pending');
+    try {
+      await Storage.createFolder(TOOL_ID, target);
+      pending.remove();
+      Shell.toast(`Folder "${name}" created`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Create folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function deleteFolderInOpenModal(folder) {
+    const pending = Shell.toast('Deleting folder…', 'pending');
+    try {
+      await Storage.deleteFolder(TOOL_ID, folder);
+      pending.remove();
+      Shell.toast('Folder deleted', 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Delete folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function loadProject(name, folder = '') {
     Shell.closeModal('open-modal');
     const pending = Shell.toast(`Loading "${name}"...`, 'pending');
     try {
-      const { content } = await Storage.loadProject(TOOL_ID, name);
+      const { content } = await Storage.loadProject(TOOL_ID, name, folder);
       tabManager.setState(content);
       currentProjectName = name;
+      currentProjectFolder = folder;
       document.getElementById('display-project-name').textContent = name;
       closePanel();
       markSaved();
@@ -1054,8 +1400,8 @@
   async function renameProjectFlow(oldName, newName) {
     const pending = Shell.toast(`Renaming "${oldName}"…`, 'pending');
     try {
-      await Storage.renameProject(TOOL_ID, oldName, newName);
-      if (currentProjectName === oldName) {
+      await Storage.renameProject(TOOL_ID, oldName, newName, browseFolder);
+      if (currentProjectName === oldName && currentProjectFolder === browseFolder) {
         currentProjectName = newName;
         document.getElementById('display-project-name').textContent = newName;
       }
@@ -1073,7 +1419,7 @@
     if (!ok) return;
     const pending = Shell.toast(`Deleting "${name}"…`, 'pending');
     try {
-      await Storage.deleteProject(TOOL_ID, name);
+      await Storage.deleteProject(TOOL_ID, name, browseFolder);
       pending.remove();
       Shell.toast(`Deleted "${name}"`, 'success');
       refreshProjectList();
@@ -1099,9 +1445,9 @@
   // embeds are baked in as string constants instead. See CLAUDE.md's
   // deployment pipeline section, substitution 2.
   const MODULE_SOURCES = {
-    tabTypes: "/* ==========================================================================\n   Tabbed Panels — Block Type Schema\n   Same idea as Animated Slides v2's ELEMENT_TYPES: one declaration per\n   block type, field lists drive the property panel and \"add block\" menu\n   instead of hand-written per-type UI. block-renderer.js reads these same\n   field names when drawing/updating a block's DOM node.\n\n   Every block also has `id` and `type`, handled by the engine directly.\n   Only what's specific to a type goes in its `fields`.\n\n   Field type `richtext` is NOT a native input — see richtext-editor.js for\n   the hand-rolled contenteditable + mark-toggling implementation. Its\n   value is always a sanitized HTML string restricted to the tags implied\n   by `inline` (b/i/u/a).\n\n   Field type `table` is also not a native input — its value is a 2D array\n   of plain-text cell strings, `data.rows`; see index.html's property-panel\n   table-grid editor (add/remove row/column) for the only place that reads\n   `field.type === 'table'` specially. Cells are plain text, not richtext —\n   a deliberate scope decision, kept simple for a dense grid.\n\n   `heading`'s `level` (h2/h3/h4) and `subtitle` text, `badge`'s `style`,\n   `button`'s `style`, and `table`'s `style` all read their actual\n   size/colour from the project-wide STYLES object (see tab-manager.js's\n   defaultStyles()) rather than storing it per-block — the same \"instance\n   picks a variant, a project-level settings panel defines what that\n   variant looks like\" split v2 uses for nav Active/Inactive colours.\n\n   Deliberate scope boundaries (see HANDOFF.md if reconsidering these):\n   - No nested blocks — `list.items` is a flat array of richtext strings,\n     not sub-blocks.\n   - `heading` has no inline marks on its main text (plain text only) — a\n     bold-in-the-middle heading was judged not worth the complexity. Its\n     `subtitle` field is a second, separately-styled plain-text line\n     (settled as a field on Heading rather than its own block type).\n   - Inline links (via richtext's `link` mark) and the standalone `button`\n     block are deliberately two different things, not one collapsed onto\n     the other — a link embedded mid-sentence and a standalone CTA read\n     differently to a learner.\n   - `table` cells are plain text, not richtext.\n   ========================================================================== */\n\nconst BLOCK_TYPES = {\n\n  heading: {\n    label: 'Heading',\n    icon: 'fa-heading',\n    fields: {\n      level:    { type: 'select', label: 'Size',     default: 'h2', options: [['h2', 'H2 (large)'], ['h3', 'H3 (medium)'], ['h4', 'H4 (small)']] },\n      text:     { type: 'text',   label: 'Text',      default: 'Heading' },\n      subtitle: { type: 'text',   label: 'Subtitle (optional)', default: '' },\n    },\n  },\n\n  paragraph: {\n    label: 'Text',\n    icon: 'fa-align-left',\n    fields: {\n      content: { type: 'richtext', label: 'Text',  default: '', inline: ['bold', 'italic', 'underline', 'link'] },\n      align:   { type: 'select',   label: 'Align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },\n    },\n  },\n\n  list: {\n    label: 'List',\n    icon: 'fa-list-ul',\n    fields: {\n      style: { type: 'select', label: 'Style', default: 'bullet', options: [['bullet', 'Bulleted'], ['numbered', 'Numbered']] },\n      items: { type: 'array',  label: 'Items',  default: [''], of: { type: 'richtext', inline: ['bold', 'italic', 'link'] } },\n    },\n  },\n\n  button: {\n    label: 'Button',\n    icon: 'fa-link',\n    fields: {\n      label:  { type: 'text',    label: 'Label',        default: 'Learn more' },\n      url:    { type: 'url',     label: 'Link URL',      default: '' },\n      newTab: { type: 'boolean', label: 'Open in new tab', default: true },\n      style:  { type: 'select',  label: 'Style',         default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },\n    },\n  },\n\n  badge: {\n    label: 'Badge',\n    icon: 'fa-certificate',\n    fields: {\n      label: { type: 'text',   label: 'Label', default: 'New' },\n      style: { type: 'select', label: 'Style', default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },\n    },\n  },\n\n  table: {\n    label: 'Table',\n    icon: 'fa-table',\n    fields: {\n      style:        { type: 'select',  label: 'Style', default: 'bordered', options: [['bordered', 'Bordered'], ['plain', 'Plain']] },\n      hasHeaderRow: { type: 'boolean', label: 'First row is a header', default: true },\n      rows: {\n        type: 'table', label: 'Cells',\n        default: [['Header 1', 'Header 2'], ['Cell 1', 'Cell 2']],\n      },\n    },\n  },\n\n  separator: {\n    label: 'Separator',\n    icon: 'fa-minus',\n    fields: {},\n  },\n\n};\n\n/**\n * Builds a fresh block's data object from its schema defaults — this is\n * what \"add block\" calls. Keeps default-value logic in one place instead\n * of repeated inline object literals scattered through the editor.\n */\nfunction makeDefaultBlock(type, id) {\n  const schema = BLOCK_TYPES[type];\n  if (!schema) throw new Error(`Unknown block type: ${type}`);\n\n  const data = { id, type };\n  Object.entries(schema.fields).forEach(([key, field]) => {\n    // Deep-clone array/object defaults (JSON round-trip is enough here —\n    // every field default is plain JSON-serializable data) so each block\n    // gets its own copy rather than a shared reference to the schema's\n    // default value. A shallow [...spread] isn't enough for `table.rows`,\n    // which is an array of arrays.\n    data[key] = (typeof field.default === 'object' && field.default !== null)\n      ? JSON.parse(JSON.stringify(field.default))\n      : field.default;\n  });\n  return data;\n}\n",
-    blockRenderer: "/* ==========================================================================\n   Tabbed Panels — Block Renderer\n   Same role as Animated Slides v2's element-renderer.js: the one rendering\n   path, used unmodified by both the authoring content area and the\n   exported player. Never make this authoring-aware — it only reads plain\n   block `data` objects (plus the project-wide `styles` object) and\n   returns real DOM, no concept of selection or editing.\n\n   `styles` (see tab-manager.js's defaultStyles()) supplies the actual\n   size/colour for whichever variant a block picked (heading level,\n   badge/button primary-or-secondary) — passed in as a parameter rather\n   than imported globally so this stays a pure function of its inputs,\n   the same reasoning v2's nav-bar.js takes its style object as a\n   parameter instead of reaching for a global.\n\n   Rich text fields (`content`, list `items`) are stored as sanitized HTML\n   strings (see richtext-editor.js for how they're produced) and rendered\n   via innerHTML — trusted the same way an author-supplied value already is\n   everywhere else in this suite. Table cells are plain text (see\n   tab-types.js) and rendered via textContent.\n   ========================================================================== */\n\nfunction renderBlock(data, styles) {\n  const schema = BLOCK_TYPES[data.type];\n  if (!schema) throw new Error(`Unknown block type: ${data.type}`);\n\n  const el = document.createElement('div');\n  el.className = 'tp-block tp-block-' + data.type;\n  el.dataset.blockId = data.id;\n\n  switch (data.type) {\n    case 'heading': {\n      const level = styles[data.level] || styles.h2;\n      const tag = data.level === 'h4' ? 'h4' : data.level === 'h3' ? 'h3' : 'h2';\n      const h = document.createElement(tag);\n      h.className = 'tp-heading';\n      h.textContent = data.text || '';\n      h.style.fontSize = level.size + 'px';\n      h.style.color = level.color;\n      el.appendChild(h);\n      if (data.subtitle) {\n        const sub = document.createElement('div');\n        sub.className = 'tp-subtitle';\n        sub.textContent = data.subtitle;\n        sub.style.fontSize = styles.subtitle.size + 'px';\n        sub.style.color = styles.subtitle.color;\n        el.appendChild(sub);\n      }\n      break;\n    }\n    case 'paragraph': {\n      const p = document.createElement('div');\n      p.className = 'tp-paragraph';\n      p.innerHTML = data.content || '';\n      p.style.textAlign = data.align || 'left';\n      el.appendChild(p);\n      break;\n    }\n    case 'list': {\n      const listEl = document.createElement(data.style === 'numbered' ? 'ol' : 'ul');\n      listEl.className = 'tp-list';\n      (data.items || []).forEach((item) => {\n        const li = document.createElement('li');\n        li.innerHTML = item || '';\n        listEl.appendChild(li);\n      });\n      el.appendChild(listEl);\n      break;\n    }\n    case 'button': {\n      const variant = styles.button[data.style] || styles.button.primary;\n      const a = document.createElement('a');\n      a.className = 'tp-button';\n      a.textContent = data.label || '';\n      a.href = data.url || '#';\n      if (data.newTab) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }\n      a.style.background = variant.bg;\n      a.style.color = variant.text;\n      a.style.borderColor = variant.border;\n      el.appendChild(a);\n      break;\n    }\n    case 'badge': {\n      const variant = styles.badge[data.style] || styles.badge.primary;\n      const span = document.createElement('span');\n      span.className = 'tp-badge';\n      span.textContent = data.label || '';\n      span.style.background = variant.bg;\n      span.style.color = variant.text;\n      span.style.borderColor = variant.border;\n      el.appendChild(span);\n      break;\n    }\n    case 'table': {\n      const variant = styles.table[data.style] || styles.table.bordered;\n      const table = document.createElement('table');\n      table.className = 'tp-table';\n      const rows = data.rows || [];\n      rows.forEach((row, r) => {\n        const tr = document.createElement('tr');\n        const isHeaderRow = data.hasHeaderRow && r === 0;\n        row.forEach((cellText) => {\n          const cell = document.createElement(isHeaderRow ? 'th' : 'td');\n          cell.textContent = cellText || '';\n          cell.style.borderColor = variant.border;\n          if (isHeaderRow) { cell.style.background = variant.bg; cell.style.color = variant.text; }\n          tr.appendChild(cell);\n        });\n        table.appendChild(tr);\n      });\n      el.appendChild(table);\n      break;\n    }\n    case 'separator': {\n      el.appendChild(document.createElement('hr'));\n      break;\n    }\n  }\n\n  return el;\n}\n\n/** Renders a tab's full block list into a container, replacing whatever\n *  was there. Simple full-rebuild rather than incremental diffing —\n *  there's no animation or drag state riding on individual block DOM\n *  nodes surviving a re-render (unlike v2's element nodes), so this stays\n *  cheap and correct rather than needing SlideManager-style careful\n *  in-place patching. */\nfunction renderTabContent(tab, container, styles) {\n  container.innerHTML = '';\n  tab.blocks.forEach((data) => container.appendChild(renderBlock(data, styles)));\n}\n",
-    tabNav: "/* ==========================================================================\n   Tabbed Panels — Tab Navigation\n   The learner-facing tab strip: an underline under the active tab, and\n   left/right chevrons to scroll the strip when tabs overflow its width.\n   Same role as Animated Slides v2's nav-bar.js — one rendering + click-\n   handling path, used UNMODIFIED by both the authoring canvas and the\n   exported player, so the canvas is genuinely WYSIWYG rather than an\n   editor-only approximation of what learners will see.\n\n   Authoring-only concerns (add/rename/delete/reorder/duplicate tabs) live\n   entirely outside this file, in index.html's bottom tab bar — this\n   module only ever renders tabs + reports which one was clicked.\n   ========================================================================== */\n\n/**\n * @param container      element to render into (its children are replaced).\n * @param tabs           [{ id, title }, ...] — extra keys (e.g. `blocks`) are ignored.\n * @param activeTabId\n * @param onSelect       called with a tab's id when clicked.\n * @param tabLabelStyle  optional { fontSize, paddingX, paddingY } — see\n *                       tab-manager.js's defaultStyles().tabLabel. Falls\n *                       back to the CSS defaults when omitted.\n */\nfunction renderTabNav(container, { tabs, activeTabId, onSelect, tabLabelStyle }) {\n  container.innerHTML = '';\n  container.className = 'tp-tabnav';\n\n  const prevBtn = document.createElement('button');\n  prevBtn.type = 'button';\n  prevBtn.className = 'tp-tabnav-chevron';\n  prevBtn.setAttribute('aria-label', 'Scroll tabs left');\n  prevBtn.innerHTML = '<i class=\"fa-solid fa-chevron-left\"></i>';\n\n  const strip = document.createElement('div');\n  strip.className = 'tp-tabnav-strip';\n\n  const nextBtn = document.createElement('button');\n  nextBtn.type = 'button';\n  nextBtn.className = 'tp-tabnav-chevron';\n  nextBtn.setAttribute('aria-label', 'Scroll tabs right');\n  nextBtn.innerHTML = '<i class=\"fa-solid fa-chevron-right\"></i>';\n\n  tabs.forEach((tab) => {\n    const btn = document.createElement('button');\n    btn.type = 'button';\n    btn.className = 'tp-tabnav-tab' + (tab.id === activeTabId ? ' active' : '');\n    btn.textContent = tab.title;\n    if (tabLabelStyle) {\n      btn.style.fontSize = tabLabelStyle.fontSize + 'px';\n      btn.style.padding = `${tabLabelStyle.paddingY}px ${tabLabelStyle.paddingX}px`;\n    }\n    btn.addEventListener('click', () => onSelect(tab.id));\n    strip.appendChild(btn);\n  });\n\n  function updateChevrons() {\n    prevBtn.disabled = strip.scrollLeft <= 0;\n    nextBtn.disabled = strip.scrollLeft >= strip.scrollWidth - strip.clientWidth - 1;\n  }\n  prevBtn.addEventListener('click', () => strip.scrollBy({ left: -strip.clientWidth * 0.8, behavior: 'smooth' }));\n  nextBtn.addEventListener('click', () => strip.scrollBy({ left: strip.clientWidth * 0.8, behavior: 'smooth' }));\n  strip.addEventListener('scroll', updateChevrons);\n\n  container.appendChild(prevBtn);\n  container.appendChild(strip);\n  container.appendChild(nextBtn);\n\n  // Layout isn't final until after this returns and the browser paints —\n  // defer the initial enabled/disabled check one frame so scrollWidth is\n  // accurate instead of always reading as \"no overflow yet\".\n  requestAnimationFrame(updateChevrons);\n}\n"
+    tabTypes: "/* ==========================================================================\n   Tabbed Panels \u2014 Block Type Schema\n   Same idea as Animated Slides v2's ELEMENT_TYPES: one declaration per\n   block type, field lists drive the property panel and \"add block\" menu\n   instead of hand-written per-type UI. block-renderer.js reads these same\n   field names when drawing/updating a block's DOM node.\n\n   Every block also has `id` and `type`, handled by the engine directly.\n   Only what's specific to a type goes in its `fields`.\n\n   Field type `richtext` is NOT a native input \u2014 see richtext-editor.js for\n   the hand-rolled contenteditable + mark-toggling implementation. Its\n   value is always a sanitized HTML string restricted to the tags implied\n   by `inline` (b/i/u/a).\n\n   Field type `table` is also not a native input \u2014 its value is a 2D array\n   of plain-text cell strings, `data.rows`; see index.html's property-panel\n   table-grid editor (add/remove row/column) for the only place that reads\n   `field.type === 'table'` specially. Cells are plain text, not richtext \u2014\n   a deliberate scope decision, kept simple for a dense grid.\n\n   `heading`'s `level` (h2/h3/h4) and `subtitle` text, `badge`'s `style`,\n   `button`'s `style`, and `table`'s `style` all read their actual\n   size/colour from the project-wide STYLES object (see tab-manager.js's\n   defaultStyles()) rather than storing it per-block \u2014 the same \"instance\n   picks a variant, a project-level settings panel defines what that\n   variant looks like\" split v2 uses for nav Active/Inactive colours.\n\n   Deliberate scope boundaries (see HANDOFF.md if reconsidering these):\n   - No nested blocks \u2014 `list.items` is a flat array of richtext strings,\n     not sub-blocks.\n   - `heading` has no inline marks on its main text (plain text only) \u2014 a\n     bold-in-the-middle heading was judged not worth the complexity. Its\n     `subtitle` field is a second, separately-styled plain-text line\n     (settled as a field on Heading rather than its own block type).\n   - Inline links (via richtext's `link` mark) and the standalone `button`\n     block are deliberately two different things, not one collapsed onto\n     the other \u2014 a link embedded mid-sentence and a standalone CTA read\n     differently to a learner.\n   - `table` cells are plain text, not richtext.\n   ========================================================================== */\n\nconst BLOCK_TYPES = {\n\n  heading: {\n    label: 'Heading',\n    icon: 'fa-heading',\n    fields: {\n      level:    { type: 'select', label: 'Size',     default: 'h2', options: [['h2', 'H2 (large)'], ['h3', 'H3 (medium)'], ['h4', 'H4 (small)']] },\n      text:     { type: 'text',   label: 'Text',      default: 'Heading' },\n      subtitle: { type: 'text',   label: 'Subtitle (optional)', default: '' },\n    },\n  },\n\n  paragraph: {\n    label: 'Text',\n    icon: 'fa-align-left',\n    fields: {\n      content: { type: 'richtext', label: 'Text',  default: '', inline: ['bold', 'italic', 'underline', 'link'] },\n      align:   { type: 'select',   label: 'Align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },\n    },\n  },\n\n  list: {\n    label: 'List',\n    icon: 'fa-list-ul',\n    fields: {\n      style: { type: 'select', label: 'Style', default: 'bullet', options: [['bullet', 'Bulleted'], ['numbered', 'Numbered']] },\n      items: { type: 'array',  label: 'Items',  default: [''], of: { type: 'richtext', inline: ['bold', 'italic', 'link'] } },\n    },\n  },\n\n  button: {\n    label: 'Button',\n    icon: 'fa-link',\n    fields: {\n      // Always opens in a new tab (see block-renderer.js) \u2014 no per-block\n      // toggle, since a course button sending the learner away from the\n      // course entirely was judged to always be the wrong default.\n      label: { type: 'text',   label: 'Label',    default: 'Learn more' },\n      url:   { type: 'url',    label: 'Link URL', default: '' },\n      style: { type: 'select', label: 'Style',    default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },\n    },\n  },\n\n  badge: {\n    label: 'Badge',\n    icon: 'fa-certificate',\n    fields: {\n      label: { type: 'text',   label: 'Label', default: 'New' },\n      style: { type: 'select', label: 'Style', default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },\n    },\n  },\n\n  table: {\n    label: 'Table',\n    icon: 'fa-table',\n    fields: {\n      style:        { type: 'select',  label: 'Style', default: 'bordered', options: [['bordered', 'Bordered'], ['plain', 'Plain']] },\n      hasHeaderRow: { type: 'boolean', label: 'First row is a header', default: true },\n      rows: {\n        type: 'table', label: 'Cells',\n        default: [['Header 1', 'Header 2'], ['Cell 1', 'Cell 2']],\n      },\n    },\n  },\n\n  separator: {\n    label: 'Separator',\n    icon: 'fa-minus',\n    fields: {},\n  },\n\n};\n\n/**\n * Builds a fresh block's data object from its schema defaults \u2014 this is\n * what \"add block\" calls. Keeps default-value logic in one place instead\n * of repeated inline object literals scattered through the editor.\n */\nfunction makeDefaultBlock(type, id) {\n  const schema = BLOCK_TYPES[type];\n  if (!schema) throw new Error(`Unknown block type: ${type}`);\n\n  const data = { id, type };\n  Object.entries(schema.fields).forEach(([key, field]) => {\n    // Deep-clone array/object defaults (JSON round-trip is enough here \u2014\n    // every field default is plain JSON-serializable data) so each block\n    // gets its own copy rather than a shared reference to the schema's\n    // default value. A shallow [...spread] isn't enough for `table.rows`,\n    // which is an array of arrays.\n    data[key] = (typeof field.default === 'object' && field.default !== null)\n      ? JSON.parse(JSON.stringify(field.default))\n      : field.default;\n  });\n  return data;\n}\n",
+    blockRenderer: "/* ==========================================================================\n   Tabbed Panels \u2014 Block Renderer\n   Same role as Animated Slides v2's element-renderer.js: the one rendering\n   path, used unmodified by both the authoring content area and the\n   exported player. Never make this authoring-aware \u2014 it only reads plain\n   block `data` objects (plus the project-wide `styles` object) and\n   returns real DOM, no concept of selection or editing.\n\n   `styles` (see tab-manager.js's defaultStyles()) supplies the actual\n   size/colour for whichever variant a block picked (heading level,\n   badge/button primary-or-secondary) \u2014 passed in as a parameter rather\n   than imported globally so this stays a pure function of its inputs,\n   the same reasoning v2's nav-bar.js takes its style object as a\n   parameter instead of reaching for a global.\n\n   Rich text fields (`content`, list `items`) are stored as sanitized HTML\n   strings (see richtext-editor.js for how they're produced) and rendered\n   via innerHTML \u2014 trusted the same way an author-supplied value already is\n   everywhere else in this suite. Table cells are plain text (see\n   tab-types.js) and rendered via textContent.\n   ========================================================================== */\n\n// Inline links (richtext's `link` mark, created via execCommand in\n// richtext-editor.js) are stored as plain `<a href>` with no target \u2014\n// applied at render time instead of storage time so it's a single source\n// of truth covering every link regardless of how/when it was created,\n// same reasoning the button block forces target uniformly rather than\n// storing it per-instance.\nfunction forceLinksToNewTab(container) {\n  container.querySelectorAll('a').forEach((a) => {\n    a.target = '_blank';\n    a.rel = 'noopener noreferrer';\n  });\n}\n\nfunction renderBlock(data, styles) {\n  const schema = BLOCK_TYPES[data.type];\n  if (!schema) throw new Error(`Unknown block type: ${data.type}`);\n\n  const el = document.createElement('div');\n  el.className = 'tp-block tp-block-' + data.type;\n  el.dataset.blockId = data.id;\n\n  switch (data.type) {\n    case 'heading': {\n      const level = styles[data.level] || styles.h2;\n      const tag = data.level === 'h4' ? 'h4' : data.level === 'h3' ? 'h3' : 'h2';\n      const h = document.createElement(tag);\n      h.className = 'tp-heading';\n      h.textContent = data.text || '';\n      h.style.fontSize = level.size + 'px';\n      h.style.color = level.color;\n      el.appendChild(h);\n      if (data.subtitle) {\n        const sub = document.createElement('div');\n        sub.className = 'tp-subtitle';\n        sub.textContent = data.subtitle;\n        sub.style.fontSize = styles.subtitle.size + 'px';\n        sub.style.color = styles.subtitle.color;\n        el.appendChild(sub);\n      }\n      break;\n    }\n    case 'paragraph': {\n      const p = document.createElement('div');\n      p.className = 'tp-paragraph';\n      p.innerHTML = data.content || '';\n      p.style.textAlign = data.align || 'left';\n      forceLinksToNewTab(p);\n      el.appendChild(p);\n      break;\n    }\n    case 'list': {\n      const listEl = document.createElement(data.style === 'numbered' ? 'ol' : 'ul');\n      listEl.className = 'tp-list';\n      (data.items || []).forEach((item) => {\n        const li = document.createElement('li');\n        li.innerHTML = item || '';\n        listEl.appendChild(li);\n      });\n      forceLinksToNewTab(listEl);\n      el.appendChild(listEl);\n      break;\n    }\n    case 'button': {\n      const variant = styles.button[data.style] || styles.button.primary;\n      const a = document.createElement('a');\n      a.className = 'tp-button';\n      a.textContent = data.label || '';\n      a.href = data.url || '#';\n      a.target = '_blank'; // always \u2014 see tab-types.js's button.fields comment\n      a.rel = 'noopener noreferrer';\n      a.style.background = variant.bg;\n      a.style.color = variant.text;\n      a.style.borderColor = variant.border;\n      el.appendChild(a);\n      break;\n    }\n    case 'badge': {\n      const variant = styles.badge[data.style] || styles.badge.primary;\n      const span = document.createElement('span');\n      span.className = 'tp-badge';\n      span.textContent = data.label || '';\n      span.style.background = variant.bg;\n      span.style.color = variant.text;\n      span.style.borderColor = variant.border;\n      el.appendChild(span);\n      break;\n    }\n    case 'table': {\n      const variant = styles.table[data.style] || styles.table.bordered;\n      // A wrapper div, not border-radius on the <table> itself \u2014 border-\n      // collapse and table layout don't clip reliably to a rounded corner\n      // across browsers, but overflow:hidden on a plain block div does.\n      const wrapper = document.createElement('div');\n      wrapper.className = 'tp-table-wrapper';\n      wrapper.style.borderRadius = (styles.table.radius ?? 8) + 'px';\n      wrapper.style.borderColor = variant.border;\n      const table = document.createElement('table');\n      table.className = 'tp-table';\n      const rows = data.rows || [];\n      rows.forEach((row, r) => {\n        const tr = document.createElement('tr');\n        const isHeaderRow = data.hasHeaderRow && r === 0;\n        row.forEach((cellText) => {\n          const cell = document.createElement(isHeaderRow ? 'th' : 'td');\n          cell.textContent = cellText || '';\n          cell.style.borderColor = variant.border;\n          cell.style.padding = (styles.table.cellPadding ?? 10) + 'px';\n          cell.style.fontSize = (isHeaderRow ? styles.table.headerFontSize : styles.table.bodyFontSize) + 'px';\n          if (isHeaderRow) { cell.style.background = variant.bg; cell.style.color = variant.text; }\n          tr.appendChild(cell);\n        });\n        table.appendChild(tr);\n      });\n      wrapper.appendChild(table);\n      el.appendChild(wrapper);\n      break;\n    }\n    case 'separator': {\n      el.appendChild(document.createElement('hr'));\n      break;\n    }\n  }\n\n  return el;\n}\n\n/** Renders a tab's full block list into a container, replacing whatever\n *  was there. Simple full-rebuild rather than incremental diffing \u2014\n *  there's no animation or drag state riding on individual block DOM\n *  nodes surviving a re-render (unlike v2's element nodes), so this stays\n *  cheap and correct rather than needing SlideManager-style careful\n *  in-place patching. */\nfunction renderTabContent(tab, container, styles) {\n  container.innerHTML = '';\n  tab.blocks.forEach((data) => container.appendChild(renderBlock(data, styles)));\n}\n",
+    tabNav: "/* ==========================================================================\n   Tabbed Panels \u2014 Tab Navigation\n   The learner-facing tab strip: an underline under the active tab, and\n   left/right chevrons to scroll the strip when tabs overflow its width.\n   Same role as Animated Slides v2's nav-bar.js \u2014 one rendering + click-\n   handling path, used UNMODIFIED by both the authoring canvas and the\n   exported player, so the canvas is genuinely WYSIWYG rather than an\n   editor-only approximation of what learners will see.\n\n   Authoring-only concerns (add/rename/delete/reorder/duplicate tabs) live\n   entirely outside this file, in index.html's bottom tab bar \u2014 this\n   module only ever renders tabs + reports which one was clicked.\n   ========================================================================== */\n\n/**\n * @param container      element to render into (its children are replaced).\n * @param tabs           [{ id, title }, ...] \u2014 extra keys (e.g. `blocks`) are ignored.\n * @param activeTabId\n * @param onSelect       called with a tab's id when clicked.\n * @param tabLabelStyle  optional { fontSize, paddingX, paddingY, activeColor } \u2014\n *                       see tab-manager.js's defaultStyles().tabLabel.\n *                       Falls back to the CSS defaults when omitted.\n */\nfunction renderTabNav(container, { tabs, activeTabId, onSelect, tabLabelStyle }) {\n  container.innerHTML = '';\n  container.className = 'tp-tabnav';\n\n  const prevBtn = document.createElement('button');\n  prevBtn.type = 'button';\n  prevBtn.className = 'tp-tabnav-chevron';\n  prevBtn.setAttribute('aria-label', 'Scroll tabs left');\n  prevBtn.innerHTML = '<i class=\"fa-solid fa-chevron-left\"></i>';\n\n  const strip = document.createElement('div');\n  strip.className = 'tp-tabnav-strip';\n\n  const nextBtn = document.createElement('button');\n  nextBtn.type = 'button';\n  nextBtn.className = 'tp-tabnav-chevron';\n  nextBtn.setAttribute('aria-label', 'Scroll tabs right');\n  nextBtn.innerHTML = '<i class=\"fa-solid fa-chevron-right\"></i>';\n\n  tabs.forEach((tab) => {\n    const btn = document.createElement('button');\n    btn.type = 'button';\n    const isActive = tab.id === activeTabId;\n    btn.className = 'tp-tabnav-tab' + (isActive ? ' active' : '');\n    btn.textContent = tab.title;\n    if (tabLabelStyle) {\n      btn.style.fontSize = tabLabelStyle.fontSize + 'px';\n      btn.style.padding = `${tabLabelStyle.paddingY}px ${tabLabelStyle.paddingX}px`;\n      // Only the active tab needs this \u2014 the inactive colour stays\n      // whatever the host page's own .tp-tabnav-tab CSS says, same as\n      // before this field existed.\n      if (isActive && tabLabelStyle.activeColor) {\n        btn.style.color = tabLabelStyle.activeColor;\n        btn.style.borderBottomColor = tabLabelStyle.activeColor;\n      }\n    }\n    btn.addEventListener('click', () => onSelect(tab.id));\n    strip.appendChild(btn);\n  });\n\n  function updateChevrons() {\n    prevBtn.disabled = strip.scrollLeft <= 0;\n    nextBtn.disabled = strip.scrollLeft >= strip.scrollWidth - strip.clientWidth - 1;\n  }\n  prevBtn.addEventListener('click', () => strip.scrollBy({ left: -strip.clientWidth * 0.8, behavior: 'smooth' }));\n  nextBtn.addEventListener('click', () => strip.scrollBy({ left: strip.clientWidth * 0.8, behavior: 'smooth' }));\n  strip.addEventListener('scroll', updateChevrons);\n\n  container.appendChild(prevBtn);\n  container.appendChild(strip);\n  container.appendChild(nextBtn);\n\n  // Layout isn't final until after this returns and the browser paints \u2014\n  // defer the initial enabled/disabled check one frame so scrollWidth is\n  // accurate instead of always reading as \"no overflow yet\".\n  requestAnimationFrame(updateChevrons);\n}\n",
   };
 
   function openExportModal() {
@@ -1115,9 +1461,31 @@
 <head>
 <meta charset="UTF-8">
 <title>${currentProjectName || 'Tabbed Panels'}</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
+</head>
+<body>
+<div id="player-card">
+  <div id="tabnav-host"></div>
+  <div id="player-body"><div id="block-list"></div></div>
+</div>
+<script>
+// Fonts and CSS are injected here via script rather than static <link>/
+// <style> tags in <head> — some course/LMS "embed HTML" blocks (hit in
+// practice with an Articulate embed) strip <head> children like <style>
+// and <link rel="stylesheet"> from pasted code while still executing
+// <script> content, so anything that needs to survive that has to be
+// created by script instead of sitting in the static markup.
+[
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+  'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap',
+].forEach((href) => {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  document.head.appendChild(link);
+});
+
+const playerStyle = document.createElement('style');
+playerStyle.textContent = \`
   * { box-sizing: border-box; }
   html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: #F1F0EB; }
   #player-card { max-width: 860px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(28,35,33,0.08); overflow: hidden; }
@@ -1130,25 +1498,23 @@
   .tp-tabnav-tab { flex-shrink: 0; padding: 16px 24px 12px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.9375rem; color: #4A5453; border-bottom: 2px solid transparent; white-space: nowrap; }
   .tp-tabnav-tab.active { color: #0C5E82; border-bottom-color: #0C5E82; font-weight: 600; }
   #player-body { padding: 32px; }
-  #block-list { display: flex; flex-direction: column; gap: 12px; }
+  #block-list { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 12px; }
+  .tp-block { flex: 0 0 100%; min-width: 0; }
+  .tp-block-badge { flex: 0 0 auto; }
   .tp-heading { margin: 0; }
   .tp-subtitle { margin: 4px 0 0; }
   .tp-paragraph { line-height: 1.5; }
   .tp-list { margin: 0; padding-left: 1.4em; line-height: 1.5; }
   .tp-button { display: inline-block; padding: 10px 20px; border-radius: 6px; border: 1px solid transparent; text-decoration: none; font-weight: 600; font-size: 0.8125rem; }
   .tp-badge { display: inline-block; padding: 3px 12px; border-radius: 999px; border: 1px solid transparent; font-size: 0.75rem; font-weight: 600; }
+  .tp-table-wrapper { overflow: hidden; border: 1px solid #CBC8BE; }
   .tp-table { border-collapse: collapse; width: 100%; font-size: 0.8125rem; }
-  .tp-table th, .tp-table td { border: 1px solid #CBC8BE; padding: 8px 10px; text-align: left; }
+  .tp-table th, .tp-table td { border: 1px solid #CBC8BE; text-align: left; }
   .tp-table th { background: #FAFAF8; font-weight: 600; }
   .tp-block-separator hr { border: none; border-top: 1px solid #E3E1DA; margin: 8px 0; }
-</style>
-</head>
-<body>
-<div id="player-card">
-  <div id="tabnav-host"></div>
-  <div id="player-body"><div id="block-list"></div></div>
-</div>
-<script>
+\`;
+document.head.appendChild(playerStyle);
+
 ${modules}
 
 const tabs = ${tabsJSON};

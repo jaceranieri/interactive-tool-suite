@@ -21,6 +21,19 @@
    tab-types.js) and rendered via textContent.
    ========================================================================== */
 
+// Inline links (richtext's `link` mark, created via execCommand in
+// richtext-editor.js) are stored as plain `<a href>` with no target —
+// applied at render time instead of storage time so it's a single source
+// of truth covering every link regardless of how/when it was created,
+// same reasoning the button block forces target uniformly rather than
+// storing it per-instance.
+function forceLinksToNewTab(container) {
+  container.querySelectorAll('a').forEach((a) => {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  });
+}
+
 function renderBlock(data, styles) {
   const schema = BLOCK_TYPES[data.type];
   if (!schema) throw new Error(`Unknown block type: ${data.type}`);
@@ -54,6 +67,7 @@ function renderBlock(data, styles) {
       p.className = 'tp-paragraph';
       p.innerHTML = data.content || '';
       p.style.textAlign = data.align || 'left';
+      forceLinksToNewTab(p);
       el.appendChild(p);
       break;
     }
@@ -65,6 +79,7 @@ function renderBlock(data, styles) {
         li.innerHTML = item || '';
         listEl.appendChild(li);
       });
+      forceLinksToNewTab(listEl);
       el.appendChild(listEl);
       break;
     }
@@ -74,7 +89,8 @@ function renderBlock(data, styles) {
       a.className = 'tp-button';
       a.textContent = data.label || '';
       a.href = data.url || '#';
-      if (data.newTab) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+      a.target = '_blank'; // always — see tab-types.js's button.fields comment
+      a.rel = 'noopener noreferrer';
       a.style.background = variant.bg;
       a.style.color = variant.text;
       a.style.borderColor = variant.border;
@@ -94,6 +110,13 @@ function renderBlock(data, styles) {
     }
     case 'table': {
       const variant = styles.table[data.style] || styles.table.bordered;
+      // A wrapper div, not border-radius on the <table> itself — border-
+      // collapse and table layout don't clip reliably to a rounded corner
+      // across browsers, but overflow:hidden on a plain block div does.
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tp-table-wrapper';
+      wrapper.style.borderRadius = (styles.table.radius ?? 8) + 'px';
+      wrapper.style.borderColor = variant.border;
       const table = document.createElement('table');
       table.className = 'tp-table';
       const rows = data.rows || [];
@@ -104,12 +127,15 @@ function renderBlock(data, styles) {
           const cell = document.createElement(isHeaderRow ? 'th' : 'td');
           cell.textContent = cellText || '';
           cell.style.borderColor = variant.border;
+          cell.style.padding = (styles.table.cellPadding ?? 10) + 'px';
+          cell.style.fontSize = (isHeaderRow ? styles.table.headerFontSize : styles.table.bodyFontSize) + 'px';
           if (isHeaderRow) { cell.style.background = variant.bg; cell.style.color = variant.text; }
           tr.appendChild(cell);
         });
         table.appendChild(tr);
       });
-      el.appendChild(table);
+      wrapper.appendChild(table);
+      el.appendChild(wrapper);
       break;
     }
     case 'separator': {

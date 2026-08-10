@@ -74,10 +74,12 @@ const BLOCK_TYPES = {
     label: 'Button',
     icon: 'fa-link',
     fields: {
-      label:  { type: 'text',    label: 'Label',        default: 'Learn more' },
-      url:    { type: 'url',     label: 'Link URL',      default: '' },
-      newTab: { type: 'boolean', label: 'Open in new tab', default: true },
-      style:  { type: 'select',  label: 'Style',         default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },
+      // Always opens in a new tab (see block-renderer.js) — no per-block
+      // toggle, since a course button sending the learner away from the
+      // course entirely was judged to always be the wrong default.
+      label: { type: 'text',   label: 'Label',    default: 'Learn more' },
+      url:   { type: 'url',    label: 'Link URL', default: '' },
+      style: { type: 'select', label: 'Style',    default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },
     },
   },
 

@@ -39,32 +39,61 @@ const Storage = (() => {
   // Saving under the same name again is a normal update, not an overwrite in
   // the old sense — it lands as a new commit on the same file, so history
   // is preserved automatically.
-  async function saveProject(tool, name, content) {
-    if (isAppsScriptHosted) return runRPC('apiSaveProject', tool, name, content);
-    return request('POST', { action: 'save', tool, name, content: JSON.stringify(content), key: apiKey });
+  //
+  // `folder` (optional, defaults to '') is a '/'-separated path relative to
+  // the tool's own projects/{tool}/ directory — '' means the tool's root,
+  // same as before folders existed, so every call below still works
+  // unchanged for a tool that never passes it.
+  async function saveProject(tool, name, content, folder = '') {
+    if (isAppsScriptHosted) return runRPC('apiSaveProject', tool, name, content, folder);
+    return request('POST', { action: 'save', tool, name, content: JSON.stringify(content), folder, key: apiKey });
   }
 
-  async function listProjects(tool) {
-    if (isAppsScriptHosted) return runRPC('apiListProjects', tool);
-    return request('GET', { action: 'list', tool, key: apiKey });
+  // Resolves to { projects: [{name}], folders: [{name}] } — the files and
+  // subfolders that live directly inside `folder`.
+  async function listProjects(tool, folder = '') {
+    if (isAppsScriptHosted) return runRPC('apiListProjects', tool, folder);
+    return request('GET', { action: 'list', tool, folder, key: apiKey });
   }
 
-  async function loadProject(tool, name) {
-    if (isAppsScriptHosted) return runRPC('apiLoadProject', tool, name);
-    return request('GET', { action: 'load', tool, name, key: apiKey });
+  async function loadProject(tool, name, folder = '') {
+    if (isAppsScriptHosted) return runRPC('apiLoadProject', tool, name, folder);
+    return request('GET', { action: 'load', tool, name, folder, key: apiKey });
   }
 
-  async function deleteProject(tool, name) {
-    if (isAppsScriptHosted) return runRPC('apiDeleteProject', tool, name);
-    return request('POST', { action: 'delete', tool, name, key: apiKey });
+  async function deleteProject(tool, name, folder = '') {
+    if (isAppsScriptHosted) return runRPC('apiDeleteProject', tool, name, folder);
+    return request('POST', { action: 'delete', tool, name, folder, key: apiKey });
   }
 
   // GitHub has no native rename — this commits the content under the new
   // name and removes the old file, which is why it needs the content on
-  // hand rather than just the two names.
-  async function renameProject(tool, oldName, newName) {
-    if (isAppsScriptHosted) return runRPC('apiRenameProject', tool, oldName, newName);
-    return request('POST', { action: 'rename', tool, name: oldName, newName, key: apiKey });
+  // hand rather than just the two names. Stays within the same folder —
+  // use moveProject to move a project between folders.
+  async function renameProject(tool, oldName, newName, folder = '') {
+    if (isAppsScriptHosted) return runRPC('apiRenameProject', tool, oldName, newName, folder);
+    return request('POST', { action: 'rename', tool, name: oldName, newName, folder, key: apiKey });
+  }
+
+  // Moves an existing project into a different folder (or to/from the
+  // root). Same create-then-delete approach as renameProject.
+  async function moveProject(tool, name, fromFolder, toFolder) {
+    if (isAppsScriptHosted) return runRPC('apiMoveProject', tool, name, fromFolder, toFolder);
+    return request('POST', { action: 'move', tool, name, folder: fromFolder, toFolder, key: apiKey });
+  }
+
+  // Creates an (initially empty) folder so it shows up in listProjects
+  // right away, without needing a project saved into it first.
+  async function createFolder(tool, folder) {
+    if (isAppsScriptHosted) return runRPC('apiCreateFolder', tool, folder);
+    return request('POST', { action: 'createFolder', tool, folder, key: apiKey });
+  }
+
+  // Deletes a folder and everything in it (projects and any nested
+  // subfolders) — irreversible, same as deleteProject.
+  async function deleteFolder(tool, folder) {
+    if (isAppsScriptHosted) return runRPC('apiDeleteFolder', tool, folder);
+    return request('POST', { action: 'deleteFolder', tool, folder, key: apiKey });
   }
 
   async function request(method, params) {
@@ -96,5 +125,5 @@ const Storage = (() => {
     return data;
   }
 
-  return { configure, saveProject, listProjects, loadProject, deleteProject, renameProject };
+  return { configure, saveProject, listProjects, loadProject, deleteProject, renameProject, moveProject, createFolder, deleteFolder };
 })();

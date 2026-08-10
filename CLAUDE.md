@@ -31,13 +31,51 @@ database.
   ever mysteriously fails).
 - **Hub**: `?page=hub` (also the default with no `?page=` at all) lists
   every tool straight from `PAGES`.
-- **Storage**: projects are JSON files at `projects/{tool-id}/{name}.json`
-  in this repo, written via GitHub's Contents API from Apps Script. Rename
-  = create the new file, then delete the old one — GitHub's API has no
-  native rename. `shared/storage-connector.js` is what every tool calls;
-  it auto-detects `google.script.run` (the real, hosted path) vs.
-  `fetch()` (a fallback only exercised by local testing, backed by the
-  separate standalone `storage-backend.gs`).
+- **Storage**: projects are JSON files at
+  `projects/{tool-id}/{folder}/{name}.json` in this repo (folder is
+  optional — omitted or `''` means the tool's root, exactly the old
+  `projects/{tool-id}/{name}.json` layout), written via GitHub's Contents
+  API from Apps Script. Rename = create the new file, then delete the old
+  one — GitHub's API has no native rename; moving a project between
+  folders (`moveProject`/`apiMoveProject`) uses the same create-then-
+  delete pattern, just varying the directory instead of the filename.
+  GitHub has no real empty directories, so a folder only exists once it
+  contains a file — `createFolder`/`apiCreateFolder` writes a placeholder
+  `.gitkeep` so a newly-made folder shows up immediately; deleting a
+  folder (`deleteFolder`/`apiDeleteFolder`) recursively deletes every file
+  under it (including nested subfolders), which is sufficient to make
+  GitHub stop listing the directory at all. `shared/storage-connector.js`
+  is what every tool calls; it auto-detects `google.script.run` (the
+  real, hosted path) vs. `fetch()` (a fallback only exercised by local
+  testing, backed by the separate standalone `storage-backend.gs`, which
+  mirrors the same folder support). `Storage.listProjects(tool, folder)`
+  resolves to `{ projects: [{name}], folders: [{name}] }` — both the
+  files and the subfolders one level under `folder`, so a tool's Open
+  modal can render one browsable listing per level without a second round
+  trip just to find subfolders.
+  `shared/app-shell.js`'s `renderProjectList()` has opt-in folder-
+  browsing support (breadcrumbs, folder rows, a "New folder" button) via
+  extra keys on its existing `actions` param (`folders`, `currentFolder`,
+  `onOpenFolder`, `onNewFolder`, `onDeleteFolder`) — omit all of them and
+  it renders exactly as it did before folders existed, so tools that
+  haven't been wired up for folders yet (currently just v1) need no
+  changes. `animated-slides-v2/index.html` was the first tool wired up,
+  and the pattern it established — `browseFolder` (where the Open modal
+  is currently browsing) and `currentProjectFolder` (where the open
+  project actually lives) as separate state, `browseFolder` reset to
+  `''` whenever the Open modal is (re)opened, a brand-new project's first
+  Save landing in whatever folder was last browsed — carried over as-is
+  to Tabbed Panels' `index.html`, which additionally has a dedicated Save
+  modal (`#save-modal`, `openSaveModal()`/`confirmSaveAs()`) for picking
+  the destination folder explicitly on a project's first save, rather
+  than only inheriting whatever the Open modal last browsed — the same
+  folder-browsing UI (breadcrumbs, folder rows, "New folder") reused
+  inside that modal via the same `renderProjectList()` opt-in params,
+  just with an empty `projects` array since it's picking a destination,
+  not a file. Worth considering backporting this explicit Save-folder-
+  picker to v2 too, for consistency — not done yet. Wiring folder support
+  into v1 at all is still outstanding — see "Current status" / "What's
+  NOT built yet" below.
 - **Shared foundation** (`shared/`): `design-tokens.css` (colors, spacing,
   type — includes an explicit house style: "Colour," not "Color," in
   labels and anywhere user-facing), `app-shell.css` / `app-shell.js` (top
@@ -165,6 +203,46 @@ without icons, animation, or the intended fonts).
 
 - **"Colour," not "Color"** — an explicit preference, used in field
   labels and anywhere else it's user-facing.
+- **UI polish/micro-animation conventions** (added when button-press,
+  loading-spinner, and new-tab/slide entrance animations were added to
+  both v2 and Tabbed Panels): CSS-only, no GSAP, using the existing
+  `--duration-fast`/`--duration-base`/`--ease-standard` tokens —
+  `shared/app-shell.css` has `.btn:active` (and `.project-action-btn`/
+  `.modal-close`) press-scale, a `.toast-spinner` shown automatically on
+  every `Shell.toast(msg, 'pending')` (which is how every Save/Load/
+  Rename/Delete/folder call in both tools already reports progress, so
+  this alone covers loading feedback everywhere without each tool
+  needing its own spinner), and two reusable one-shot entrance keyframes
+  (`.thumb-enter` — scale, for square thumbnails; `.row-enter` — a small
+  translateY, for full-width rows/blocks). New micro-animations should
+  reuse these rather than adding new keyframes/durations. All of it is
+  wrapped in `@media (prefers-reduced-motion: reduce)` — the spinner
+  stays (it's functional, not decorative) but just runs slower; the rest
+  is disabled outright.
+  **The "one-shot entrance" pattern has a real timing trap, worth reading
+  before touching it again**: a manager's `addX()`/`duplicateX()` (e.g.
+  `SlideManager.addSlide`, `TabManager.addTab`/`addBlock`) fires its own
+  `onChange`/`onSlideChange` hook — and therefore the render that reads
+  the "newly added id" flag — *before* the method returns that id to its
+  caller. Setting the flag from the caller's return value is therefore
+  always one render too late. Fix: the flag (`lastAddedSlideId`,
+  `lastAddedTabId`, `lastAddedBlockId`) lives **on the manager itself**
+  (`SlideManager`/`TabManager`), set internally right before the
+  onChange-triggering call, not by the caller in `index.html`. A second,
+  subtler trap: Tabbed Panels' "add block" flow triggers **two**
+  `renderBlockList()` calls back-to-back in one synchronous burst
+  (`addBlock()`'s own `onChange`, then `selectBlock()`'s explicit
+  re-render to show the new selection) — clearing the flag synchronously
+  at the end of the first render wipes it before the second (the one
+  actually painted) ever sees it, so the entrance animation silently
+  never plays. Fixed by deferring the clear to the next
+  `requestAnimationFrame` instead of clearing inline — see the comment
+  above `renderBlockList()`'s clear in `tools/tabbed-panels/index.html`
+  for the concrete case, and `renderSlideTabs()`/`renderTabBar()` for the
+  same defensive pattern applied even where only one render currently
+  happens. Also reset the flag to `null` in each manager's `setState()`
+  — a fresh load/undo/redo is never itself an "add" and shouldn't carry
+  over a stale animation target.
 - **Every drag-derived numeric value gets `Math.round()`'d.** No
   fractional pixel positions.
 - **Shared mutable state (`elements`, `nodes`, `canvasSettings`,
@@ -237,7 +315,11 @@ There's no automated test suite. What exists:
   a divider, then Link/Layers/Settings, each opening a non-blocking
   slide-out drawer instead of a modal that covers the canvas); and a
   settings drawer rebuilt as a 2-column grid with a proper Active/
-  Inactive colour table, matching a supplied design mockup.
+  Inactive colour table, matching a supplied design mockup; and
+  folder support in Save/Open (see "Storage" above) — the Open modal
+  now browses into folders via breadcrumbs, can create/delete folders,
+  and a new project's first save lands in whichever folder was last
+  browsed.
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7
@@ -310,6 +392,16 @@ diffing, which is fine at this scale.
   never something a browser paste or a stray `execCommand` call could
   have snuck an unexpected tag/attribute into. Table cells are plain
   text, not richtext, so they don't go through this module.
+  **Real bug fixed here**: the Link button's click handler is `async`
+  (it awaits `Shell.prompt()` for the URL), and `Shell.prompt()` opens a
+  modal that steals focus to its own input — which clears the
+  contenteditable's text selection the instant that happens. By the time
+  the awaited promise resolved, `execCommand('createLink')` had nothing
+  selected to act on, so it silently did nothing — this was the actual
+  cause of inline links "not working at all," not a sanitizer or
+  rendering issue. Fixed by capturing `window.getSelection()`'s Range
+  *before* the `await`, then restoring it right after, before calling
+  `execCommand`.
 - `tab-manager.js` — `TabManager` owns `tabs` and `styles` (both mutated
   in place, per the usual reference-identity rule) and the active tab.
   `defaultStyles()` is the project-wide typography/colour object (see
@@ -334,6 +426,27 @@ diffing, which is fine at this scale.
   lifecycle (New/Save/Open/rename/delete) is copy-adapted from v2's
   `index.html`, same `Shell`/`Storage` calls, different `TOOL_ID`
   (`'tabbed-panels'`) and content shape.
+  **Export's `<head>` has no static `<style>` or `<link rel="stylesheet">`
+  — both are created by the exported page's own `<script>` at runtime
+  instead** (`document.createElement('style'|'link')`, appended to
+  `document.head`). This was a real bug fix, not a stylistic choice: an
+  author reported the exported HTML losing essentially all of its
+  class-based styling (tab strip rendering as plain buttons, the button
+  block as a bare underlined link, table cells picking up a stray pink
+  background) when pasted into an Articulate embed block, while
+  structural content and inline JS-set styles (`el.style.x = ...`, e.g.
+  heading font-size/colour) still worked fine. That split — inline
+  styles surviving, stylesheet-based CSS not — is the signature of an
+  embed sanitizer that strips `<style>`/`<link>` tags from pasted HTML
+  while still executing `<script>` content; since script execution
+  clearly still works, injecting the same CSS via a script-created
+  `<style>` element sidesteps whatever is stripping the static tag,
+  regardless of the exact sanitizer/CSP mechanism Articulate uses (not
+  independently verified — the fix targets the observed symptom).
+  Applies to both the local-preview/testing template
+  (`fetchModuleSources()`'s caller) and the Apps-Script-deployed
+  template — same CSS text, just embedded differently per substitution
+  2's usual split.
 - **Tab management lives in the bottom bar, not a drawer** — same role
   and layout as v2's `#editor-slide-bar`: one thumbnail per tab
   (`renderTabThumbnail()` renders the SAME `renderBlock()` the real
@@ -346,6 +459,23 @@ diffing, which is fine at this scale.
   strip purely WYSIWYG (click-to-switch only) — tab CRUD needed a home
   outside that strip, and the bottom bar with live-content thumbnails is
   strictly more useful than a plain list ever was.
+- **Layers panel** (left rail, `fa-layer-group` icon next to Styles) —
+  same drawer mechanism as the property/Styles panels (`openPanel('layers')`,
+  one `.side-panel` slot shared between all three), listing the active
+  tab's blocks via `renderLayersPanel()` in `index.html`. Directly mirrors
+  v2's `layer-panel.js`: drag-to-reorder or up/down chevrons (disabled at
+  the top/bottom of the list), row click selects the block (same as
+  clicking it on the canvas — opens the property panel, which closes
+  Layers since they share the one drawer slot). One real difference from
+  v2: `tab.blocks` is already stored top-to-bottom, matching both the
+  canvas and the Layers list, so there's no display-order inversion to
+  worry about (v2's `elements` array is bottom-to-top, reversed for
+  display). Reordering by chevron needed a new `TabManager.reorderBlock(id,
+  direction)` — the one-step equivalent of the drag-based
+  `moveBlockAfter()`, mirroring `SlideManager.reorderLayer()`. Each row's
+  label comes from `blockSummary()` (a short, content-derived string —
+  a heading's text, a table's dimensions, etc. — rather than a generic
+  type name repeated for every row of the same type).
 
 ### Project-wide styles (`defaultStyles()` in `tab-manager.js`)
 
@@ -390,6 +520,45 @@ any individual block) and `tabLabel` (`{ fontSize, paddingX, paddingY }`
 for `tab-nav.js`'s `.tp-tabnav-tab` buttons — `renderTabNav()` takes this
 as an optional `tabLabelStyle` param and applies it as inline styles,
 same "parameter, not a global" reasoning as `block-renderer.js`).
+`tabLabel` also carries `activeColor` (the active tab's text + underline
+colour, applied only to the `.active` button — inactive tabs still fall
+back to the host page's own `.tp-tabnav-tab` CSS) and `table` also
+carries `radius`/`cellPadding`/`headerFontSize`/`bodyFontSize` (layout,
+not a colour variant, so they live as sibling keys alongside `table`'s
+`bordered`/`plain` variant maps rather than a fourth variant). The
+Styles drawer's Tables section appends a `field-grid` of these four
+number inputs into the same section `renderVariantColourTable()`
+returns, so it all reads as one "Tables" group rather than two separate
+headings. `block-renderer.js`'s table case wraps the actual `<table>` in
+a `.tp-table-wrapper` div carrying the radius + outer border —
+border-radius on a `<table>` with `border-collapse: collapse` doesn't
+clip reliably across browsers, but `overflow: hidden` on a plain block
+div does, which is why the rounding lives one level up rather than on
+the table element itself.
+**Backfilling these into old saved projects needed more than the
+existing flat per-top-level-key copy** in `TabManager.setState()` — a
+saved project's existing `styles.table` object would already be
+"present" and skip the top-level fallback entirely, silently leaving
+`radius`/`cellPadding`/etc. `undefined` rather than picking up the new
+defaults. Fixed by making the backfill go one level deep for any
+top-level style key that's a plain object (and, for variant maps like
+`badge`/`button`/`table`, one level deeper again for each variant) —
+see the comment above the backfill loop if this needs touching again
+for a future style field.
+
+Blocks are laid out via `#block-list`'s `flex-flow: row wrap` (not a
+plain column) specifically so **multiple Badge blocks can sit side by
+side** instead of one per line: every `.tp-block` defaults to
+`flex: 0 0 100%` (forces its own full-width row), except
+`.tp-block-badge`, which is `flex: 0 0 auto` and therefore wraps like
+inline text alongside adjacent badges. Any other block type between two
+badges still forces its own line before/after, since it keeps the
+100%-width default. This is authoring-canvas AND Export CSS — both
+`tools/tabbed-panels/index.html`'s `<style>` block and the Export
+template's embedded `<style>` block need the same three rules
+(`#block-list`, `.tp-block`, `.tp-block-badge`) kept in sync, since the
+export ships its own hardcoded copy rather than reusing
+`shared/app-shell.css`.
 
 ### Content model, settled across two scaffolding/design-review rounds
 
@@ -398,14 +567,22 @@ same "parameter, not a global" reasoning as `block-renderer.js`).
   separately-styled line beneath it rather than being its own block
   type), `paragraph` (richtext + text-align), `list` (bullet/numbered,
   flat array of richtext items — **no nesting**), `button`
-  (label/url/newTab/style — a standalone CTA), `badge` (label + style),
+  (label/url/style — a standalone CTA), `badge` (label + style),
   `table` (style variant + add/remove rows and columns in the property
   panel, **plain-text cells, no richtext** — kept simple for a dense
   grid), `separator` (no fields, just a rule).
 - **Inline link vs. button block are deliberately two different things**
   — a link embedded mid-sentence (richtext's `link` mark) and a
   standalone CTA (the `button` block) read differently to a learner, so
-  neither collapses into the other.
+  neither collapses into the other. Both **always open in a new tab** —
+  the button block's `newTab` toggle was removed (a course sending the
+  learner away from the course entirely was judged to always be the
+  wrong default, so it stopped being a per-instance choice); inline
+  links get `target`/`rel` forced at *render* time in
+  `block-renderer.js`'s `forceLinksToNewTab()`, applied to every `<a>`
+  inside a rendered paragraph/list regardless of how the link was
+  created, rather than trying to set it at creation time in
+  `richtext-editor.js`.
 - **Rich text storage**: sanitized HTML string, not a custom run-based
   model — see `richtext-editor.js` above.
 - **Tab strip is WYSIWYG, tab CRUD is not** — the canvas only ever

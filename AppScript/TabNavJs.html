@@ -18,9 +18,9 @@
  * @param tabs           [{ id, title }, ...] — extra keys (e.g. `blocks`) are ignored.
  * @param activeTabId
  * @param onSelect       called with a tab's id when clicked.
- * @param tabLabelStyle  optional { fontSize, paddingX, paddingY } — see
- *                       tab-manager.js's defaultStyles().tabLabel. Falls
- *                       back to the CSS defaults when omitted.
+ * @param tabLabelStyle  optional { fontSize, paddingX, paddingY, activeColor } —
+ *                       see tab-manager.js's defaultStyles().tabLabel.
+ *                       Falls back to the CSS defaults when omitted.
  */
 function renderTabNav(container, { tabs, activeTabId, onSelect, tabLabelStyle }) {
   container.innerHTML = '';
@@ -44,11 +44,19 @@ function renderTabNav(container, { tabs, activeTabId, onSelect, tabLabelStyle })
   tabs.forEach((tab) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'tp-tabnav-tab' + (tab.id === activeTabId ? ' active' : '');
+    const isActive = tab.id === activeTabId;
+    btn.className = 'tp-tabnav-tab' + (isActive ? ' active' : '');
     btn.textContent = tab.title;
     if (tabLabelStyle) {
       btn.style.fontSize = tabLabelStyle.fontSize + 'px';
       btn.style.padding = `${tabLabelStyle.paddingY}px ${tabLabelStyle.paddingX}px`;
+      // Only the active tab needs this — the inactive colour stays
+      // whatever the host page's own .tp-tabnav-tab CSS says, same as
+      // before this field existed.
+      if (isActive && tabLabelStyle.activeColor) {
+        btn.style.color = tabLabelStyle.activeColor;
+        btn.style.borderBottomColor = tabLabelStyle.activeColor;
+      }
     }
     btn.addEventListener('click', () => onSelect(tab.id));
     strip.appendChild(btn);

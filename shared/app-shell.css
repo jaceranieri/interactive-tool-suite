@@ -86,6 +86,13 @@ body {
 .btn-danger { background: var(--surface); color: var(--danger); border: 1px solid var(--danger-soft); }
 .btn-danger:hover { background: var(--danger-soft); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Micro-animation: a quick press-down on click, using the transform this
+   rule's `transition: all` already covers — no separate transition needed. */
+.btn:active:not(:disabled) { transform: scale(0.96); }
+.project-action-btn, .modal-close {
+  transition: transform var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.project-action-btn:active:not(:disabled), .modal-close:active:not(:disabled) { transform: scale(0.9); }
 
 .status-pill {
   display: inline-flex; align-items: center; gap: var(--space-2);
@@ -220,4 +227,43 @@ input[type="text"].field-input-text:focus, textarea.field-input-text:focus { bor
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+/* Spinner shown on every 'pending' toast — since every Save/Load/Rename/
+   Delete/folder operation in both tools already routes through
+   Shell.toast(msg, 'pending'), this alone covers loading feedback for
+   every GitHub round trip without each tool needing its own spinner. */
+.toast-spinner {
+  width: 13px; height: 13px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #fff;
+  animation: toast-spin 0.7s linear infinite;
+}
+@keyframes toast-spin { to { transform: rotate(360deg); } }
+
+/* Reusable one-shot "just appeared" entrance — tools apply this class to a
+   single freshly-created row/thumbnail (a new tab, slide, or block), then
+   drop the class after it plays once. Not used for anything re-rendering
+   for other reasons (rename, reorder, etc.), which would replay it on
+   every unrelated change instead of just on creation. */
+@keyframes thumb-enter {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+.thumb-enter { animation: thumb-enter var(--duration-base) var(--ease-standard); }
+@keyframes row-enter {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.row-enter { animation: row-enter var(--duration-base) var(--ease-standard); }
+
+/* Respect the OS-level reduced-motion preference for the decorative
+   motion added above — the spinner stays (it communicates real async
+   state, not decoration) but runs a little slower rather than vanishing,
+   since an inert "stuck" spinner reads as broken. */
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled),
+  .project-action-btn:active:not(:disabled),
+  .modal-close:active:not(:disabled) { transform: none; }
+  .thumb-enter, .row-enter { animation: none; }
+  .toast { animation: none; }
+  .toast-spinner { animation-duration: 1.6s; }
 }

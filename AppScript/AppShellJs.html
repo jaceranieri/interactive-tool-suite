@@ -32,7 +32,16 @@ const Shell = (() => {
     if (!stack) return;
     const el = document.createElement('div');
     el.className = `toast${type ? ' ' + type : ''}`;
-    el.textContent = message;
+    if (type === 'pending') {
+      const spinner = document.createElement('span');
+      spinner.className = 'toast-spinner';
+      el.appendChild(spinner);
+      const label = document.createElement('span');
+      label.textContent = message;
+      el.appendChild(label);
+    } else {
+      el.textContent = message;
+    }
     stack.appendChild(el);
     if (type !== 'pending') {
       setTimeout(() => {

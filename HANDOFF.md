@@ -23,112 +23,134 @@ files, never the actual `google.script.run` path.
   `BlockRendererJs.html`, `TabNavJs.html`, `TabManagerJs.html` into the
   Apps Script editor (it already has `HistoryJs.html` — Tabbed Panels
   reuses that one as-is), redeploy, and do a real Save/Open/Rename/Delete
-  round-trip, plus click through Export, the Layers panel, and the new
-  folder support (below) once for real. **The person already hit one
-  real "forgot to redeploy" issue this project** — a stale
-  `TabManagerJs.html` in their live Apps Script project threw
-  `tabManager.reorderBlock is not a function` in the console after the
-  Layers panel was added here. Always re-paste every file listed above
-  together, not just whichever one seems related to the latest change.
-- **Storage folders** (added two sessions ago, both tools' shared
-  backend): `apiSaveProject`/`apiListProjects`/etc. in
+  round-trip, plus click through Export, the Layers panel, folder
+  support, and this session's UI-polish animations once for real. **The
+  person already hit one real "forgot to redeploy" issue this project**
+  — a stale `TabManagerJs.html` in their live Apps Script project threw
+  `tabManager.reorderBlock is not a function` after the Layers panel was
+  added. Always re-paste every file listed above together, not just
+  whichever one seems related to the latest change.
+- **Storage folders**: `apiSaveProject`/`apiListProjects`/etc. in
   `AppScript/Code.gs` all gained a `folder` parameter, plus new
-  `apiMoveProject`/`apiCreateFolder`/`apiDeleteFolder`. This is a
-  live-code-path change to something both tools already depend on —
-  re-paste `Code.gs` (and, if using the standalone fallback,
-  `storage-backend.gs`) and do a real folder create/browse/delete/
-  save-into-folder round-trip before trusting it in production, not just
-  the folder UI smoke-tested locally.
+  `apiMoveProject`/`apiCreateFolder`/`apiDeleteFolder`. Re-paste `Code.gs`
+  (and, if using the standalone fallback, `storage-backend.gs`) and do a
+  real folder create/browse/delete/save-into-folder round-trip before
+  trusting it in production.
+- **This session's shared-file changes**: `AppShellCss.html`/
+  `AppShellJs.html` (button press animation, toast spinner, entrance
+  keyframes), `SlideManagerJs.html`, `TabManagerJs.html` all changed —
+  same "re-paste everything together" caution applies.
 
-## This session: folder support wired into Tabbed Panels
+## This session: UI polish — micro-animations, loading spinners, entrance animations
 
-Extended Tabbed Panels' Open modal and Save flow with the same folder
-browsing v2 already had, plus one thing v2 doesn't have yet — see
-CLAUDE.md's "Storage" bullet for the full writeup. Summary:
+Added across both tools, CSS-only (no GSAP dependency added), respecting
+`prefers-reduced-motion`. See CLAUDE.md's new "UI polish/micro-animation
+conventions" bullet under "Conventions" for the full writeup — summary:
 
-- **Open modal**: breadcrumb navigation, folder rows, "New folder", and
-  per-folder delete — reusing `shared/app-shell.js`'s `renderProjectList()`
-  opt-in folder params, same as v2. Added `browseFolder` state (reset to
-  `''` each time the Open modal opens) and threaded it through
-  `Storage.listProjects`/`loadProject`/`renameProject`/`deleteProject`.
-- **New: an explicit Save-folder-picker.** v2 only ever infers a new
-  project's destination folder from wherever the Open modal was last
-  browsing (`browseFolder`) — asked for directly here instead. Added a
-  dedicated `#save-modal` (name field + the same folder-browsing UI, just
-  with an empty `projects` array since it's picking a destination not a
-  file) that opens on a project's first save. `openSaveModal()` seeds its
-  starting folder from `browseFolder` as a convenience default, but the
-  person explicitly picks/creates the real destination before confirming.
-  Existing (already-named) projects still just save straight back to
-  `currentProjectFolder`, no modal.
-- Applied to both `tools/tabbed-panels/index.html` (repo source) and
-  `AppScript/TabbedPanels.html` (deployed copy), hand-synced per
-  CLAUDE.md's deployment pipeline section — verified the diff between the
-  two afterward contains only the expected 5-substitution boilerplate,
-  nothing else drifted.
-- Verified via Playwright against local preview: breadcrumb + folder rows
-  render and navigate correctly in the Open modal, per-folder delete
-  calls through with a confirm dialog, the Save modal's "New folder"
-  flow creates a folder and lands inside it without clobbering the name
-  field already typed, and the final save call receives the right
-  `{name, folder}` pair. Zero console/page errors across all of it.
-- **Worth considering, not done**: backporting the explicit
-  Save-folder-picker modal to `animated-slides-v2` too, so both tools
-  behave the same way on first save instead of v2 still using the
-  implicit "wherever Open was last browsing" behavior.
+- **Button press**: `.btn:active` (plus `.project-action-btn`/
+  `.modal-close`) scale down slightly on click — `shared/app-shell.css`,
+  applies everywhere automatically.
+- **Loading spinners**: `Shell.toast(msg, 'pending')` now renders a small
+  spinner alongside the message. Since every Save/Load/Rename/Delete/
+  folder operation in both tools already goes through this one function,
+  this single change covers loading feedback for every GitHub round trip
+  — no per-tool or per-button spinner wiring needed.
+- **New tab/slide/block entrance animation**: a newly created slide
+  thumbnail (v2), tab thumbnail (Tabbed Panels), or block (Tabbed Panels)
+  fades/scales in once, rather than just appearing. **This surfaced and
+  required fixing a genuine pre-existing-pattern timing bug**, not just
+  new code — see CLAUDE.md for the full explanation:
+  1. A manager's `onChange`/`onSlideChange` hook (which triggers the
+     render reading the "newly added" flag) fires *before* `addSlide()`/
+     `addTab()`/`addBlock()` return the new id — so the flag has to live
+     on the manager itself (`SlideManager.lastAddedSlideId`,
+     `TabManager.lastAddedTabId`/`lastAddedBlockId`, set internally
+     right before the onChange call), not be set by the caller from a
+     return value.
+  2. Tabbed Panels' "add block" flow renders `renderBlockList()` *twice*
+     back-to-back in one synchronous burst — clearing the flag
+     synchronously after the first render wiped it before the second
+     (the one actually painted) could use it, so the animation silently
+     never played. Fixed by deferring the clear to the next
+     `requestAnimationFrame` instead.
+  This was caught by Playwright testing that specifically checked *which*
+  element got the animation class across successive adds, not just
+  whether one did — an earlier, less rigorous check ("is there exactly
+  one `.thumb-enter` in the DOM") passed while the underlying bug (wrong
+  element, or block case: no element at all once painted) was still
+  present. Worth remembering as a testing lesson, not just a code one.
+- Applied to both repo source and deployed `AppScript/` copies for all
+  four touched files (`AnimatedSlidesV2.html`, `TabbedPanels.html`,
+  `SlideManagerJs.html`, `TabManagerJs.html`, plus the shared
+  `AppShellCss.html`/`AppShellJs.html`); diffed source vs. deployed
+  afterward to confirm only the expected 5-substitution boilerplate
+  differs.
+- **Not done, explicitly out of scope this round** (see the brainstormed
+  list from this session if picking it back up): exit/delete animations,
+  drag-and-drop reorder reflow animation, folder-navigation crossfade in
+  the Open modal, a save-success pulse on the Save button itself, an
+  unsaved-changes-dot pulse, animated tab-switching in Tabbed Panels
+  (v2's slide switch already GSAP-crossfades; Tabbed Panels' tab switch
+  is still instant), selection-outline transitions, invalid-input shake.
 
-## Previous session: Tabbed Panels Layers panel
+## Earlier session: folder support wired into Tabbed Panels
 
-Added a Layers panel to the left rail (`fa-layer-group` icon, next to
-Styles), mirroring v2's `layer-panel.js` — lists the active tab's blocks,
-reorderable by drag or up/down chevrons (needed a new
-`TabManager.reorderBlock(id, direction)`), row click selects the block
-and opens the property panel. See CLAUDE.md's Tabbed Panels internal-
-architecture section for the full writeup. Touch/tablet drag-and-drop, a
-narrow-window layout pass, and an accessibility pass were considered that
-session and explicitly deferred — still open, see CLAUDE.md's "What's
-NOT built yet" for Tabbed Panels.
+Open modal (breadcrumb, folder rows, new/delete folder) plus a **new**
+explicit Save-folder-picker modal (name + folder browser) for a
+project's first save — v2 still only infers the destination from
+whichever folder the Open modal was last browsing; Tabbed Panels now
+lets the person pick/create it directly. Worth considering backporting
+the explicit picker to v2 for consistency — not done.
 
-## Earlier session: folder support in Save/Open (shared storage, all tools)
+## Earlier session: Tabbed Panels Layers panel
 
-Added folder browsing/organizing to the shared save/load system used by
-every tool — see CLAUDE.md's "Storage" bullet for the full architecture
-(paths, `.gitkeep` placeholders, `moveProject`/`createFolder`/
-`deleteFolder`, `renderProjectList()`'s opt-in folder-browsing params).
-First wired into `animated-slides-v2` as the reference implementation;
-now also wired into Tabbed Panels (this session, above). **v1 still has
-no folder support and needs no code changes until someone adds it** —
-same opt-in pattern, following either tool's `index.html`.
+Left-rail drawer (`fa-layer-group` icon) listing the active tab's
+blocks, drag or chevron reorder (`TabManager.reorderBlock(id,
+direction)`), row click selects + opens the property panel. Mirrors v2's
+`layer-panel.js`. Touch/tablet drag-and-drop, a narrow-window layout
+pass, and an accessibility pass were considered and explicitly deferred
+that session — still open.
+
+## Earlier session: folder support in shared storage (all tools)
+
+See CLAUDE.md's "Storage" bullet — paths, `.gitkeep` placeholders,
+`moveProject`/`createFolder`/`deleteFolder`, `renderProjectList()`'s
+opt-in folder params. First wired into v2, then Tabbed Panels (above).
+**v1 still has no folder support** — no code changes needed until
+someone adds it, following either tool's `index.html` as the pattern.
 
 ## What's next
 
-1. **Do the real Apps Script round-trips** described above — for Tabbed
-   Panels generally, the folder-support storage changes, and this
-   session's Open-modal/Save-modal folder work specifically. Still the
+1. **Do the real Apps Script round-trips** described above — still the
    single most important unverified thing, and the one that's already
-   bitten the person once (the `reorderBlock` stale-deploy error).
-2. Consider backporting the explicit Save-folder-picker to v2 (see
-   above) for consistency between the two tools.
-3. **Wire folder browsing into v1's Open modal** — the only tool left
+   bitten the person once (the `reorderBlock` stale-deploy error). This
+   session added five more files to the "must re-paste together" list.
+2. Consider the deferred polish ideas above (exit animations, drag
+   reflow, tab-switch animation in Tabbed Panels, etc.) if the person
+   wants a further round.
+3. Consider backporting the explicit Save-folder-picker to v2 for
+   consistency with Tabbed Panels.
+4. **Wire folder browsing into v1's Open modal** — the only tool left
    without it.
-4. **v2 Canvas Settings swatch consistency audit** — older backlog item,
+5. **v2 Canvas Settings swatch consistency audit** — older backlog item,
    not started; needs its own look at
    `tools/animated-slides-v2/index.html`'s settings-panel CSS/JS.
-5. Everything under "What's NOT built yet" in CLAUDE.md's Tabbed Panels
+6. Everything under "What's NOT built yet" in CLAUDE.md's Tabbed Panels
    section: touch/tablet drag-and-drop, accessibility pass, narrow-window
-   layout — standing gaps, explicitly deferred twice now.
+   layout — standing gaps, deferred multiple times now.
 
 ## Older, still-outstanding items from earlier in the project
 
 - GitHub → Apps Script auto-deploy via `clasp` — deferred at project
-  start, never revisited. Now genuinely two tools' worth of
-  `AppScript/*.html` files to hand-sync, worth revisiting sooner rather
-  than later — especially given the `reorderBlock` stale-deploy bug this
-  project already produced once.
+  start, never revisited. Every session now touches more
+  `AppScript/*.html` files to hand-sync (this one touched six), worth
+  revisiting sooner rather than later — especially given the
+  `reorderBlock` stale-deploy bug this project already produced once.
 
 ## Where to find things
 
 `CLAUDE.md` has the architecture (including Tabbed Panels' full internal
 architecture, the project-wide styles system, content-model decisions,
-and the shared storage/folder system), conventions, the Apps Script
-deployment pipeline checklist, and the local-preview workflow.
+the shared storage/folder system, and the new UI-polish/micro-animation
+conventions), the Apps Script deployment pipeline checklist, and the
+local-preview workflow.

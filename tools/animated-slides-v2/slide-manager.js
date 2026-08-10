@@ -49,6 +49,9 @@ class SlideManager {
     this.nodes = {};    // mutated in place
     this.editor = null; // set via attachEditor(), since CanvasEditor needs `elements`/`nodes` to already exist
     this.onSlideChange = () => {}; // hook for UI (nav bar, slide list) to refresh
+    this.lastAddedSlideId = null; // one-shot: set before onSlideChange fires (see addSlide/duplicateSlide) so a UI entrance
+    // animation can target the right slide — setting this only from the caller's return value would be one render too
+    // late, since onSlideChange (triggered inside these methods) runs before they return the new id.
 
     this._rebuildActiveSlide(false);
   }
@@ -252,7 +255,9 @@ class SlideManager {
     this._commitActiveSlideElements();
     const newSlide = { id: 'slide-' + Date.now(), name: 'Slide ' + (this.slides.length + 1), elements: [] };
     this.slides.splice(afterIndex + 1, 0, newSlide);
+    this.lastAddedSlideId = newSlide.id; // set BEFORE goToSlide, which triggers onSlideChange (and therefore the render) synchronously
     this.goToSlide(afterIndex + 1, false);
+    return newSlide.id;
   }
 
   /** Duplicates a whole slide — every element on the copy keeps the SAME
@@ -269,7 +274,9 @@ class SlideManager {
       elements: original.elements.map((e) => ({ ...e })),
     };
     this.slides.splice(index + 1, 0, newSlide);
+    this.lastAddedSlideId = newSlide.id; // see addSlide() — must be set before goToSlide triggers the render
     this.goToSlide(index + 1, false);
+    return newSlide.id;
   }
 
   deleteSlide(index) {
@@ -324,6 +331,7 @@ class SlideManager {
 
     this.activeIndex = snap.activeIndex;
     this._activeOrder = null;
+    this.lastAddedSlideId = null; // a fresh load/undo/redo is never itself an "add" — don't carry over a stale entrance-animation target
     this._rebuildActiveSlide();
     if (this.editor) this.editor.deselect();
     this.onSlideChange();

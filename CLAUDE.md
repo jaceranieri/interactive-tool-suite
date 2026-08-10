@@ -203,6 +203,46 @@ without icons, animation, or the intended fonts).
 
 - **"Colour," not "Color"** — an explicit preference, used in field
   labels and anywhere else it's user-facing.
+- **UI polish/micro-animation conventions** (added when button-press,
+  loading-spinner, and new-tab/slide entrance animations were added to
+  both v2 and Tabbed Panels): CSS-only, no GSAP, using the existing
+  `--duration-fast`/`--duration-base`/`--ease-standard` tokens —
+  `shared/app-shell.css` has `.btn:active` (and `.project-action-btn`/
+  `.modal-close`) press-scale, a `.toast-spinner` shown automatically on
+  every `Shell.toast(msg, 'pending')` (which is how every Save/Load/
+  Rename/Delete/folder call in both tools already reports progress, so
+  this alone covers loading feedback everywhere without each tool
+  needing its own spinner), and two reusable one-shot entrance keyframes
+  (`.thumb-enter` — scale, for square thumbnails; `.row-enter` — a small
+  translateY, for full-width rows/blocks). New micro-animations should
+  reuse these rather than adding new keyframes/durations. All of it is
+  wrapped in `@media (prefers-reduced-motion: reduce)` — the spinner
+  stays (it's functional, not decorative) but just runs slower; the rest
+  is disabled outright.
+  **The "one-shot entrance" pattern has a real timing trap, worth reading
+  before touching it again**: a manager's `addX()`/`duplicateX()` (e.g.
+  `SlideManager.addSlide`, `TabManager.addTab`/`addBlock`) fires its own
+  `onChange`/`onSlideChange` hook — and therefore the render that reads
+  the "newly added id" flag — *before* the method returns that id to its
+  caller. Setting the flag from the caller's return value is therefore
+  always one render too late. Fix: the flag (`lastAddedSlideId`,
+  `lastAddedTabId`, `lastAddedBlockId`) lives **on the manager itself**
+  (`SlideManager`/`TabManager`), set internally right before the
+  onChange-triggering call, not by the caller in `index.html`. A second,
+  subtler trap: Tabbed Panels' "add block" flow triggers **two**
+  `renderBlockList()` calls back-to-back in one synchronous burst
+  (`addBlock()`'s own `onChange`, then `selectBlock()`'s explicit
+  re-render to show the new selection) — clearing the flag synchronously
+  at the end of the first render wipes it before the second (the one
+  actually painted) ever sees it, so the entrance animation silently
+  never plays. Fixed by deferring the clear to the next
+  `requestAnimationFrame` instead of clearing inline — see the comment
+  above `renderBlockList()`'s clear in `tools/tabbed-panels/index.html`
+  for the concrete case, and `renderSlideTabs()`/`renderTabBar()` for the
+  same defensive pattern applied even where only one render currently
+  happens. Also reset the flag to `null` in each manager's `setState()`
+  — a fresh load/undo/redo is never itself an "add" and shouldn't carry
+  over a stale animation target.
 - **Every drag-derived numeric value gets `Math.round()`'d.** No
   fractional pixel positions.
 - **Shared mutable state (`elements`, `nodes`, `canvasSettings`,

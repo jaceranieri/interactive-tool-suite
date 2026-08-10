@@ -497,7 +497,7 @@
       wrap.className = 'tab-thumb-wrap';
 
       const thumbContainer = document.createElement('div');
-      thumbContainer.className = 'tab-thumb-container';
+      thumbContainer.className = 'tab-thumb-container' + (tab.id === tabManager.lastAddedTabId ? ' thumb-enter' : '');
       thumbContainer.draggable = true;
       thumbContainer.dataset.tabId = tab.id;
 
@@ -568,6 +568,16 @@
       wrap.appendChild(nameEl);
       container.appendChild(wrap);
     });
+
+    // One-shot — deferred to the next animation frame rather than cleared
+    // immediately, since adding a tab can trigger more than one render
+    // back-to-back within the same synchronous burst (see addBlock's
+    // equivalent case in renderBlockList for why an immediate clear would
+    // lose the flag before the final render of the burst gets to use it).
+    if (tabManager.lastAddedTabId) {
+      const consumedId = tabManager.lastAddedTabId;
+      requestAnimationFrame(() => { if (tabManager.lastAddedTabId === consumedId) tabManager.lastAddedTabId = null; });
+    }
   }
 
   function startRenameTab(wrap, nameEl, tabId) {
@@ -620,6 +630,7 @@
     tab.blocks.forEach((data) => {
       const el = renderBlock(data, tabManager.styles); // block-renderer.js — authoring-unaware
       el.classList.toggle('selected', data.id === selectedBlockId);
+      if (data.id === tabManager.lastAddedBlockId) el.classList.add('row-enter');
       el.draggable = true;
 
       const controls = document.createElement('div');
@@ -654,6 +665,18 @@
 
       container.appendChild(el);
     });
+
+    // One-shot — deferred to the next animation frame rather than cleared
+    // immediately: adding a block triggers two renderBlockList() calls
+    // back-to-back in the same synchronous burst (once via addBlock()'s
+    // own onChange, once via selectBlock()'s explicit re-render to show
+    // the selection). Clearing synchronously here would wipe the flag
+    // after the first render, so the second (the one actually painted)
+    // would never see it and the animation would never visibly play.
+    if (tabManager.lastAddedBlockId) {
+      const consumedId = tabManager.lastAddedBlockId;
+      requestAnimationFrame(() => { if (tabManager.lastAddedBlockId === consumedId) tabManager.lastAddedBlockId = null; });
+    }
   }
 
   /* ---- Layers panel: lists the active tab's blocks, reorderable by drag

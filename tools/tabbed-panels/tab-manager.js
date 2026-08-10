@@ -74,6 +74,13 @@ class TabManager {
     this.activeTabId = this.tabs[0].id;
     this.styles = styles || defaultStyles(); // mutated in place — see setState
     this.onChange = () => {}; // hook for UI (tab strip, block list, property panel) to refresh
+    // One-shot "just created" markers, set BEFORE onChange() fires inside
+    // addTab/duplicateTab/addBlock — a UI entrance animation reads these
+    // to target the right row. Setting this from the caller's return
+    // value instead would be one render too late, since onChange (and
+    // therefore the render it triggers) runs before these methods return.
+    this.lastAddedTabId = null;
+    this.lastAddedBlockId = null;
   }
 
   getActiveTab() {
@@ -93,6 +100,7 @@ class TabManager {
     const i = this.tabs.findIndex((t) => t.id === afterId);
     this.tabs.splice(i + 1, 0, tab);
     this.activeTabId = tab.id;
+    this.lastAddedTabId = tab.id; // set before onChange() triggers the render — see constructor comment
     this.onChange();
     return tab.id;
   }
@@ -108,7 +116,9 @@ class TabManager {
     };
     this.tabs.splice(i + 1, 0, copy);
     this.activeTabId = copy.id;
+    this.lastAddedTabId = copy.id; // set before onChange() triggers the render — see constructor comment
     this.onChange();
+    return copy.id;
   }
 
   renameTab(id, title) {
@@ -150,6 +160,7 @@ class TabManager {
     const block = makeDefaultBlock(type, id);
     const i = afterBlockId ? tab.blocks.findIndex((b) => b.id === afterBlockId) : tab.blocks.length - 1;
     tab.blocks.splice(i + 1, 0, block);
+    this.lastAddedBlockId = id; // set before onChange() triggers the render — see constructor comment
     this.onChange();
     return id;
   }
@@ -218,6 +229,8 @@ class TabManager {
     this.tabs.length = 0;
     snap.tabs.forEach((t) => this.tabs.push({ id: t.id, title: t.title, blocks: t.blocks.map(cloneBlock) }));
     this.activeTabId = this.tabs.some((t) => t.id === snap.activeTabId) ? snap.activeTabId : this.tabs[0].id;
+    this.lastAddedTabId = null; // a fresh load/undo/redo is never itself an "add" — don't carry over a stale entrance-animation target
+    this.lastAddedBlockId = null;
 
     // Same in-place-mutation reasoning for `styles`. Backfill any keys
     // missing from an older saved project (e.g. a group added after that

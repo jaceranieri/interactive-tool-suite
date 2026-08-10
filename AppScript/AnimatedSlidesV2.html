@@ -512,7 +512,7 @@
       wrap.className = 'slide-tab-wrap';
 
       const thumbContainer = document.createElement('div');
-      thumbContainer.className = 'slide-thumb-container';
+      thumbContainer.className = 'slide-thumb-container' + (s.id === slideManager.lastAddedSlideId ? ' thumb-enter' : '');
       thumbContainer.draggable = true;
 
       const thumb = document.createElement('div');
@@ -581,6 +581,17 @@
       wrap.appendChild(nameEl);
       tabs.appendChild(wrap);
     });
+
+    // One-shot — deferred to the next animation frame rather than cleared
+    // immediately, in case a future change makes addSlide/duplicateSlide
+    // trigger more than one render in the same synchronous burst (see
+    // Tabbed Panels' renderBlockList() for the concrete case that bit
+    // this pattern — an immediate clear can wipe the flag before the
+    // render that actually gets painted has a chance to use it).
+    if (slideManager.lastAddedSlideId) {
+      const consumedId = slideManager.lastAddedSlideId;
+      requestAnimationFrame(() => { if (slideManager.lastAddedSlideId === consumedId) slideManager.lastAddedSlideId = null; });
+    }
   }
 
   function startRenameSlide(wrap, nameEl, index) {

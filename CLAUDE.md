@@ -546,6 +546,22 @@ top-level style key that's a plain object (and, for variant maps like
 see the comment above the backfill loop if this needs touching again
 for a future style field.
 
+`styles.pageBackground` (`{ color, transparent }`) controls the
+*exported page's* outer background — the area behind `#player-card`,
+not the card itself, which stays white. Styles drawer renders it as a
+colour swatch plus a "Transparent" toggle (`renderPageBackgroundSection()`
+in `index.html`) so an author can drop the embed onto any Articulate
+slide colour without a mismatched box around it. `applyPageBackground()`
+mirrors the choice onto the authoring `#stage` for live WYSIWYG preview,
+except when `transparent` is on — true transparency has nothing
+meaningful to show inside the app's own chrome, so the editor falls back
+to its normal sunken-surface colour and only the exported HTML's
+`openExportModal()` actually emits `background: transparent` (computed
+once as `pageBg` before the export template string, substituted into the
+`html, body { ... }` rule the same way `modules`/`tabsJSON` already are).
+This backfills into old projects for free via the existing one-level-deep
+loop above, since `pageBackground` is a plain object like `h2`/`subtitle`.
+
 Blocks are laid out via `#block-list`'s `flex-flow: row wrap` (not a
 plain column) specifically so **multiple Badge blocks can sit side by
 side** instead of one per line: every `.tp-block` defaults to

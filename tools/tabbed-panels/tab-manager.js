@@ -57,6 +57,10 @@ function defaultStyles() {
     },
     blockSpacing: 12, // gap between stacked blocks in the player body, px
     tabLabel: { fontSize: 15, paddingX: 24, paddingY: 16, activeColor: '#0C5E82' }, // tab-nav.js's .tp-tabnav-tab
+    // The exported page's outer background (behind the card) — `color` is
+    // ignored when `transparent` is true, so an author can drop the embed
+    // onto any Articulate slide background without a mismatched box.
+    pageBackground: { color: '#F1F0EB', transparent: false },
   };
 }
 

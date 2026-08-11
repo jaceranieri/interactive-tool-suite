@@ -92,12 +92,22 @@ database.
     schema-driven element system, undo/redo, cross-slide element linking,
     multi-select. As of this writing, considered feature-complete enough
     that active development has paused (see "Current status").
-  - `tabbed-panels/` — new tool, scaffolding stage: authoring UI works in
-    local preview (add/edit/delete/reorder tabs and blocks, undo/redo,
-    Save/Open/New wired to Storage), but not yet deployed to Apps Script
-    (no `AppScript/TabbedPanels*.html` files exist yet, and its `Code.gs`
-    `PAGES` entry is still commented out) and has no Export yet. See
-    "Tabbed Panels" below for its architecture and what's left.
+  - `tabbed-panels/` — schema-driven tab/block authoring tool (flowed
+    content, not the SVG canvas the other two tools use). Deployed to
+    Apps Script (`AppScript/TabbedPanels*.html`, `Code.gs`'s `PAGES` entry
+    uncommented) with a working Export, though the real Apps Script
+    save/load round-trip is still unverified end to end — see "What's NOT
+    built yet" under "Tabbed Panels" below. See that section for its
+    architecture.
+  - `toggle-slides/` — new tool, scaffolding stage: a single SVG canvas
+    (reuses Animated Slides v2's element engine, not Tabbed Panels' block
+    model) where nav buttons independently toggle groups of elements on
+    and off, any number on at once, instead of v2's mutually-exclusive
+    slide switching. Authoring UI, Preview mode, and Export all work in
+    local preview; not yet deployed to Apps Script (no
+    `AppScript/ToggleSlides*.html` files exist yet, and its `Code.gs`
+    `PAGES` entry is commented out). See "Toggle Slides" below for its
+    architecture and what's left.
 
 ## Animated Slides v2's internal architecture
 
@@ -546,6 +556,22 @@ top-level style key that's a plain object (and, for variant maps like
 see the comment above the backfill loop if this needs touching again
 for a future style field.
 
+`styles.pageBackground` (`{ color, transparent }`) controls the
+*exported page's* outer background — the area behind `#player-card`,
+not the card itself, which stays white. Styles drawer renders it as a
+colour swatch plus a "Transparent" toggle (`renderPageBackgroundSection()`
+in `index.html`) so an author can drop the embed onto any Articulate
+slide colour without a mismatched box around it. `applyPageBackground()`
+mirrors the choice onto the authoring `#stage` for live WYSIWYG preview,
+except when `transparent` is on — true transparency has nothing
+meaningful to show inside the app's own chrome, so the editor falls back
+to its normal sunken-surface colour and only the exported HTML's
+`openExportModal()` actually emits `background: transparent` (computed
+once as `pageBg` before the export template string, substituted into the
+`html, body { ... }` rule the same way `modules`/`tabsJSON` already are).
+This backfills into old projects for free via the existing one-level-deep
+loop above, since `pageBackground` is a plain object like `h2`/`subtitle`.
+
 Blocks are laid out via `#block-list`'s `flex-flow: row wrap` (not a
 plain column) specifically so **multiple Badge blocks can sit side by
 side** instead of one per line: every `.tp-block` defaults to
@@ -617,3 +643,144 @@ export ships its own hardcoded copy rather than reusing
 - Table cells are plain text only (a deliberate scope decision, not an
   oversight — see "Content model" above); revisit only if an author
   specifically asks for rich text inside table cells.
+
+## Toggle Slides
+
+An adaptation of Animated Slides v2 for a genuinely different interaction:
+instead of navigating between mutually-exclusive slides, nav buttons each
+independently toggle a group of elements on or off, on ONE persistent
+canvas. Any number of buttons can be on at once. Worked example: with
+buttons A/B/C, pressing A shows Element-A; then pressing C leaves
+Element-A shown and also shows Element-C; then pressing B leaves both and
+adds Element-B; then pressing C again leaves A and B shown and hides C.
+Despite the tool's name there are no "slides" at all — see the four
+scoping decisions this was built against (structure/grouping/animation/
+initial-state), settled up front before any code was written:
+single canvas (not multiple pages each with their own toggle nav), a
+button can own a group of several elements (not just one), toggling
+fades in/out with GSAP (not an instant show/hide), and each button's
+starting on/off state is author-configurable per button (not a single
+global default).
+
+### Internal architecture (`tools/toggle-slides/`)
+
+Reuses Animated Slides v2's SVG canvas + element engine wholesale, since
+the element model (x/y/width/height, text/rect/arrow/icon) is exactly
+what this tool needs too — unlike Tabbed Panels, which needed a different
+content model entirely. `element-types.js`, `element-renderer.js`,
+`canvas-editor.js`, and `history.js` are copied verbatim from
+`animated-slides-v2/` (only their header comments were touched); v2's
+`slide-manager.js` and `nav-bar.js` are NOT reused, since both are built
+around exactly the mutually-exclusive-slide mechanic this tool replaces.
+
+- `toggle-manager.js` — `ToggleManager` is the single-canvas analogue of
+  v2's `SlideManager`: owns `elements`/`nodes` (one flat set, no
+  per-slide grouping) and `canvasSettings` (artboard/grid/nav style,
+  same shape as v2's), plus the toggle mechanic itself: a `buttons` array
+  (`{ id, label, elementIds: [...], defaultOn }`). An element with no
+  owning button is always visible (static content, e.g. a title); one
+  with 1+ owning buttons is visible whenever ANY of them is on ("any-of"
+  — most elements will only ever have one owning button in practice, but
+  this stays correct if an author deliberately assigns the same element
+  to two). Layer ordering (`reorderLayer`/`moveLayerBefore`/
+  `getLayerOrder`) is copied over near-verbatim from `SlideManager`,
+  since "one flat bottom-to-top array" is exactly the same problem with
+  or without slides.
+  **EDIT vs PREVIEW is the one genuinely new state-management problem
+  here, with no v2 equivalent**: v2 can just always show whatever slide
+  is active, since only one slide is ever "the truth" at a time. Here,
+  the SAME canvas needs to serve two different truths — "everything
+  editable and visible so an author can work with it" vs. "only currently
+  -on elements visible, exactly what a learner would see" — and showing
+  real on/off opacity WHILE also allowing normal drag/select editing
+  would make it impossible to tell "this is off" from "I haven't looked
+  at it yet." Resolved by never running both at once:
+  `applyVisibility(animate)` (opacity + `pointerEvents` per element, from
+  `visibleState`) is ONLY ever called while in Preview mode;
+  `showAllElements()` (forces every element back to opacity 1,
+  interactive) is what runs the rest of the time, including immediately
+  on exiting preview. `visibleState` itself (buttonId -> boolean) is
+  runtime-only, seeded from each button's `defaultOn` via
+  `resetVisibleState()` on every preview entry — it is NOT part of
+  `getState()`/`setState()`, since "which buttons are currently on" is
+  playback state, not project data.
+- `toggle-nav.js` — copied from v2's `nav-bar.js` (same pagination-by-
+  page, GSAP page-swap-animation, styling code) with exactly one
+  substantive change: v2 tracks a single `activeIndexRef` (one active
+  slide); this tracks a whole `Set` of on button ids (`activeIdsRef`),
+  and a click always means "flip THIS button, leave every other one
+  alone" rather than "switch to this one." Buttons are matched by `id`
+  in the active/inactive check, not index, since (unlike v2) the set of
+  "on" ids doesn't shift just because the button list was reordered. See
+  the file's header comment for the full v2 diff.
+- `layer-panel.js` — copied from v2's, with the "linked across slides"
+  badge (meaningless here — there's no second canvas to be linked to)
+  replaced by a small pill showing which button(s), if any, currently own
+  the row's element (via `toggleManager.buttonsForElement()`).
+- `index.html` — page shell + UI glue. Left rail: the same 4
+  add-element buttons as v2, then Layers/Settings drawer-openers — no
+  "add linked element" button, since there's no cross-canvas linking
+  concept to link from. Bottom bar (`#editor-button-bar`) is the toggle-
+  button equivalent of v2's slide bar: one chip per button (label,
+  double-click rename, drag-to-reorder, hover-reveal duplicate/delete),
+  plus a small dot toggling that button's `defaultOn`. Assigning an
+  element to buttons is a checkbox list (`renderAssignButtonsSection()`)
+  rendered into the Layers side-panel below the layer list, reacting to
+  `CanvasEditor`'s `onSelect` hook — shows a placeholder when 0 or 2+
+  elements are selected, checkboxes (one per current button) when
+  exactly 1 is. A top-bar **Preview** button (`togglePreview()`) is the
+  only thing that flips between the edit/preview split described above:
+  entering preview closes both side panels, deselects, sets
+  `#canvas-wrapper` to `pointer-events: none` (blocks direct
+  drag/select while a learner-facing preview is live), and calls
+  `resetVisibleState()` + `applyVisibility(false)`; exiting reverses all
+  of that via `showAllElements()`. The nav bar's `onToggle` callback is
+  gated on `previewMode` — clicking a button while NOT previewing is a
+  no-op, since `showAllElements()` would just mask it anyway and a
+  silent state change armed for the next preview would be confusing.
+  Export reuses `element-types.js`/`element-renderer.js`/
+  `toggle-manager.js`/`toggle-nav.js` verbatim (same "one engine, no
+  second copy to drift" rule as v2 and Tabbed Panels) — the exported
+  player is effectively always in "preview mode": it calls
+  `resetVisibleState()` + `applyVisibility(false)` once on load, then
+  wires the nav bar straight to `toggleManager.toggleButton(id)`, with no
+  edit-mode branch to speak of since a learner never edits anything.
+  "Load from code" parses `const elements = ...` / `const buttons = ...`
+  / `const canvasSettings = ...` back out of a pasted export — same
+  approach as v2's import, adapted for the extra `buttons` array.
+
+### Apps Script deployment
+
+Deployed via the same 5-substitution pipeline as v2/Tabbed Panels (see
+"The Apps Script deployment pipeline" above), and `Code.gs`'s `PAGES`
+entry is uncommented, so it's reachable from the hub once redeployed.
+Four of the seven `.js`/module files this tool needs already existed as
+reusable AppScript includes from Animated Slides v2 — `ElementTypesJs.html`,
+`ElementRendererJs.html`, `CanvasEditorJs.html`, `HistoryJs.html` — byte-
+identical to `tools/toggle-slides/`'s copies, so nothing new was created
+for those, just referenced via `include()`. Three genuinely new files were
+needed for the parts with no v2 equivalent: `ToggleManagerJs.html`,
+`ToggleNavJs.html`, and `ToggleLayerPanelJs.html` — note the "Toggle"
+prefix on the last one specifically to avoid colliding with v2's own
+existing `LayerPanelJs.html` (Apps Script's file namespace is flat across
+the whole project, unlike `tools/{tool-id}/` folders). Export's
+module-fetching code was swapped for an embedded `MODULE_SOURCES` object
+(substitution 2), generated programmatically from the real source files
+(byte-for-byte, verified via direct comparison) rather than hand-typed,
+same approach Tabbed Panels used, to avoid escaping mistakes.
+**Still unverified end to end**: none of this has actually been pasted
+into a live Apps Script project yet — do a real Save/Load round-trip
+(same as Tabbed Panels' own open item) before treating this as fully done.
+
+### What's NOT built yet
+
+- **Touch/tablet drag-and-drop** — the button bar's reorder uses native
+  HTML5 drag-and-drop, same known touchscreen gap as v2's slide/layer
+  reordering.
+- No accessibility pass, no narrow-window layout testing — same standing
+  gaps as v2 and Tabbed Panels.
+- No thumbnail preview on the button chips (v2's slide tabs render a
+  live mini-SVG per slide; a button chip here has no single "the content"
+  to thumbnail, since a button's elements sit among everyone else's on
+  the same canvas) — revisit only if authors report losing track of
+  which button owns what without opening the Layers panel.

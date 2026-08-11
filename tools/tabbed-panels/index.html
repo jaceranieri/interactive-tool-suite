@@ -1051,6 +1051,7 @@
     });
     body.appendChild(typeSection);
 
+    body.appendChild(renderPageBackgroundSection());
     body.appendChild(renderLayoutSection());
     body.appendChild(renderTabLabelSection());
 
@@ -1102,6 +1103,69 @@
     input.addEventListener('blur', () => history.commitAction());
     wrap.appendChild(input);
     return wrap;
+  }
+
+  /** The exported page's outer background — behind the card, not the card
+   *  itself. Colour picker plus a "Transparent" toggle (so the embed can
+   *  blend into whatever Articulate slide it's dropped onto). #stage keeps
+   *  showing the chosen colour while authoring even when transparent is on
+   *  — true transparency has nothing meaningful to preview inside the
+   *  app's own chrome, so applyPageBackground() falls back to the editor's
+   *  default sunken-surface colour in that case; only the exported HTML
+   *  actually sets `background: transparent`. */
+  function renderPageBackgroundSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    section.innerHTML = '<h3>Page background</h3>';
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
+
+    const colorWrap = document.createElement('div');
+    colorWrap.className = 'popup-field';
+    colorWrap.innerHTML = '<label>Colour</label>';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.title = 'Page background colour';
+    colorInput.value = tabManager.styles.pageBackground.color;
+    colorInput.disabled = tabManager.styles.pageBackground.transparent;
+    colorInput.addEventListener('input', () => {
+      history.beginAction();
+      tabManager.styles.pageBackground.color = colorInput.value;
+      history.commitAction();
+      markUnsaved(); applyPageBackground();
+    });
+    colorWrap.appendChild(colorInput);
+    grid.appendChild(colorWrap);
+
+    const toggleWrap = document.createElement('div');
+    toggleWrap.className = 'popup-field toggle-field';
+    toggleWrap.innerHTML = '<label>Transparent</label>';
+    const switchLabel = document.createElement('label');
+    switchLabel.className = 'switch';
+    const toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.checked = tabManager.styles.pageBackground.transparent;
+    toggleInput.addEventListener('change', () => {
+      history.beginAction();
+      tabManager.styles.pageBackground.transparent = toggleInput.checked;
+      history.commitAction();
+      colorInput.disabled = toggleInput.checked;
+      markUnsaved(); applyPageBackground();
+    });
+    const slider = document.createElement('span');
+    slider.className = 'switch-slider';
+    switchLabel.appendChild(toggleInput);
+    switchLabel.appendChild(slider);
+    toggleWrap.appendChild(switchLabel);
+    grid.appendChild(toggleWrap);
+
+    section.appendChild(grid);
+    return section;
+  }
+
+  function applyPageBackground() {
+    const bg = tabManager.styles.pageBackground;
+    document.getElementById('stage').style.background = bg.transparent ? '' : bg.color;
   }
 
   function renderLayoutSection() {
@@ -1217,6 +1281,7 @@
     renderTabStrip();
     renderTabBar();
     renderBlockList();
+    applyPageBackground();
     if (activePanel === 'styles') renderStylesPanel();
     if (activePanel === 'layers') renderLayersPanel();
     if (selectedBlockId && !tabManager.getActiveTab().blocks.some((b) => b.id === selectedBlockId)) closePanel();
@@ -1444,6 +1509,7 @@
     const state = tabManager.getState();
     const tabsJSON = JSON.stringify(state.tabs);
     const stylesJSON = JSON.stringify(state.styles);
+    const pageBg = state.styles.pageBackground.transparent ? 'transparent' : state.styles.pageBackground.color;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1476,7 +1542,7 @@
 const playerStyle = document.createElement('style');
 playerStyle.textContent = \`
   * { box-sizing: border-box; }
-  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: #F1F0EB; }
+  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: ${pageBg}; }
   #player-card { max-width: 860px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(28,35,33,0.08); overflow: hidden; }
   .tp-tabnav { display: flex; align-items: stretch; background: #FAFAF8; border-bottom: 1px solid #E3E1DA; }
   .tp-tabnav-chevron { flex-shrink: 0; width: 40px; border: none; background: transparent; color: #8A9291; cursor: pointer; font-size: 13px; }

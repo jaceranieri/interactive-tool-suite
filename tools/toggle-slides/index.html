@@ -115,6 +115,21 @@
   .assign-button-row { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); }
   .assign-button-row input { width: auto; }
 
+  .override-row { padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+  .override-row:last-child { border-bottom: none; }
+  .override-row-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .override-row-head i { color: var(--ink-soft); width: 14px; text-align: center; }
+  .override-row-name { font-size: var(--text-sm); font-weight: 600; color: var(--ink); flex: 1; }
+  .override-segmented { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .override-segmented button { border: none; background: var(--surface); font-family: var(--font-ui); font-size: 11px; font-weight: 600; padding: 4px 9px; cursor: pointer; color: var(--ink-soft); border-right: 1px solid var(--border); }
+  .override-segmented button:last-child { border-right: none; }
+  .override-segmented button.active { background: var(--accent); color: #fff; }
+  .override-position-row { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); padding-left: 20px; }
+  .override-position-row input[type=number] { width: 70px; }
+  .override-position-row label { display: flex; align-items: center; gap: var(--space-2); flex: 1; }
+  .override-position-row .checkbox-label { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+  .override-position-row .checkbox-label input { width: auto; }
+
   .element-popup { position: absolute; z-index: 50; width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--space-4); }
   .popup-name { display: block; width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 700; color: var(--ink); border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 var(--space-2); margin-bottom: var(--space-3); outline: none; background: transparent; }
   .popup-name:focus { border-bottom-color: var(--accent); }
@@ -265,6 +280,28 @@
   </div>
 </div>
 
+<!-- Button overrides panel: slide-out, non-blocking. Opened by clicking a
+     toggle-button chip in the bottom bar. Lets an author say, for THIS
+     button and ANY element, whether it shows/hides/is untouched while
+     the button is on, and (independently) where it should sit — see
+     renderButtonOverridesPanel(). -->
+<div class="side-panel" id="button-overrides-panel">
+  <div class="side-panel-header">
+    <div><div class="title-block">Toggle button</div><h2 id="button-overrides-title">Button</h2></div>
+    <button class="modal-close" onclick="closeButtonOverridesPanel()">&times;</button>
+  </div>
+  <div class="side-panel-body">
+    <label class="popup-field toggle-field" style="margin-bottom: var(--space-5);">
+      <span>Preview this button ON</span>
+      <span class="switch">
+        <input type="checkbox" id="button-override-preview-toggle" onchange="toggleButtonOverridePreview(this.checked)">
+        <span class="switch-slider"></span>
+      </span>
+    </label>
+    <div id="button-overrides-list"></div>
+  </div>
+</div>
+
 <!-- Open project modal -->
 <div class="modal-overlay" id="open-modal">
   <div class="modal-dialog">
@@ -404,6 +441,7 @@
     renderLayerPanel(layerListEl, toggleManager, editor);
     renderAssignButtonsSection();
     renderButtonChips();
+    if (editingButtonId) renderButtonOverridesPanel();
     navBar.refresh(toggleManager.buttons, toggleManager.getActiveButtonIds());
     document.getElementById('unsaved-dot').style.display = hasUnsavedChanges() ? '' : 'none';
   }
@@ -526,6 +564,9 @@
         toggleManager.duplicateButton(i);
         history.commitAction();
       });
+
+      chip.title = 'Click to edit what this button shows, hides, and moves';
+      chip.addEventListener('click', () => openButtonOverridesPanel(b.id));
 
       wrap.appendChild(chip);
       wrap.appendChild(dup);
@@ -895,6 +936,7 @@
 
   function openSettingsPanel() {
     closeLayersPanel();
+    closeButtonOverridesPanel();
     renderSettingsModal();
     document.getElementById('settings-panel').classList.add('active');
     document.getElementById('settings-toggle-btn').classList.add('btn-active');
@@ -910,6 +952,7 @@
 
   function openLayersPanel() {
     closeSettingsPanel();
+    closeButtonOverridesPanel();
     document.getElementById('layers-panel').classList.add('active');
     document.getElementById('layers-toggle-btn').classList.add('btn-active');
   }
@@ -920,6 +963,154 @@
   function toggleLayersPanel() {
     const isOpen = document.getElementById('layers-panel').classList.contains('active');
     if (isOpen) closeLayersPanel(); else openLayersPanel();
+  }
+
+  /* ---- Button overrides panel (per-button show/hide/position for ANY
+     element — see toggle-manager.js's OVERRIDES class comment) ---- */
+
+  let editingButtonId = null;
+  let buttonOverridePreviewActive = false;
+
+  function openButtonOverridesPanel(buttonId) {
+    if (previewMode) togglePreview(); // editing needs the canvas in edit state, not learner-preview state
+    closeSettingsPanel();
+    closeLayersPanel();
+    editingButtonId = buttonId;
+    buttonOverridePreviewActive = false;
+    document.getElementById('button-override-preview-toggle').checked = false;
+    renderButtonOverridesPanel();
+    document.getElementById('button-overrides-panel').classList.add('active');
+  }
+
+  function closeButtonOverridesPanel() {
+    document.getElementById('button-overrides-panel').classList.remove('active');
+    if (buttonOverridePreviewActive) {
+      buttonOverridePreviewActive = false;
+      canvasWrapperEl.classList.remove('preview-active');
+      toggleManager.showAllElements();
+    }
+    editingButtonId = null;
+  }
+
+  function toggleButtonOverridePreview(on) {
+    buttonOverridePreviewActive = on;
+    if (!editingButtonId) return;
+    if (on) {
+      editor.deselect();
+      canvasWrapperEl.classList.add('preview-active');
+      toggleManager.previewButtonOverrides(editingButtonId);
+    } else {
+      canvasWrapperEl.classList.remove('preview-active');
+      toggleManager.showAllElements();
+    }
+  }
+
+  /** Re-runs the live preview (if active) after an override edit, so
+   *  typing a new X/Y or flipping show/hide reflects immediately instead
+   *  of only on the next toggle. */
+  function refreshButtonOverridePreviewIfActive() {
+    if (buttonOverridePreviewActive && editingButtonId) toggleManager.previewButtonOverrides(editingButtonId);
+  }
+
+  function renderButtonOverridesPanel() {
+    const btn = toggleManager.buttons.find((b) => b.id === editingButtonId);
+    const list = document.getElementById('button-overrides-list');
+    list.innerHTML = '';
+    if (!btn) return;
+
+    document.getElementById('button-overrides-title').textContent = btn.label;
+
+    const order = [...toggleManager.getLayerOrder()].reverse(); // top-of-stack first, same display convention as the layer panel
+    if (order.length === 0) {
+      list.innerHTML = '<div class="layer-empty">No elements on the canvas yet.</div>';
+      return;
+    }
+
+    order.forEach((id) => {
+      const data = toggleManager.elements[id];
+      if (!data) return;
+      const schema = ELEMENT_TYPES[data.type];
+
+      const row = document.createElement('div');
+      row.className = 'override-row';
+
+      const head = document.createElement('div');
+      head.className = 'override-row-head';
+      const icon = document.createElement('i');
+      icon.className = 'fa-solid ' + (schema.icon || 'fa-shapes');
+      const name = document.createElement('span');
+      name.className = 'override-row-name';
+      name.textContent = data.name || schema.label;
+      head.appendChild(icon);
+      head.appendChild(name);
+
+      const seg = document.createElement('div');
+      seg.className = 'override-segmented';
+      const mode = (btn.hideElementIds || []).includes(id) ? 'hide' : btn.elementIds.includes(id) ? 'show' : null;
+      [['none', 'No override'], ['show', 'Show'], ['hide', 'Hide']].forEach(([val, text]) => {
+        const b = document.createElement('button');
+        b.textContent = text;
+        b.type = 'button';
+        if ((val === 'none' && mode === null) || val === mode) b.classList.add('active');
+        b.addEventListener('click', () => {
+          history.beginAction();
+          toggleManager.setElementVisibilityOverride(btn.id, id, val === 'none' ? null : val);
+          history.commitAction();
+          renderButtonOverridesPanel();
+          refreshButtonOverridePreviewIfActive();
+        });
+        seg.appendChild(b);
+      });
+      head.appendChild(seg);
+      row.appendChild(head);
+
+      const posRow = document.createElement('div');
+      posRow.className = 'override-position-row';
+      const posOverride = btn.positionOverrides && btn.positionOverrides[id];
+      const checkLabel = document.createElement('label');
+      checkLabel.className = 'checkbox-label';
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.checked = !!posOverride;
+      checkLabel.appendChild(check);
+      checkLabel.appendChild(document.createTextNode('Move'));
+      posRow.appendChild(checkLabel);
+
+      const xInput = document.createElement('input');
+      xInput.type = 'number';
+      xInput.disabled = !posOverride;
+      xInput.value = Math.round(posOverride ? posOverride.x : data.x);
+      const yInput = document.createElement('input');
+      yInput.type = 'number';
+      yInput.disabled = !posOverride;
+      yInput.value = Math.round(posOverride ? posOverride.y : data.y);
+      posRow.appendChild(xInput);
+      posRow.appendChild(yInput);
+
+      function commitPosition() {
+        history.beginAction();
+        toggleManager.setElementPositionOverride(btn.id, id, Number(xInput.value) || 0, Number(yInput.value) || 0);
+        history.commitAction();
+        refreshButtonOverridePreviewIfActive();
+      }
+      xInput.addEventListener('change', commitPosition);
+      yInput.addEventListener('change', commitPosition);
+
+      check.addEventListener('change', () => {
+        history.beginAction();
+        if (check.checked) {
+          toggleManager.setElementPositionOverride(btn.id, id, data.x, data.y);
+        } else {
+          toggleManager.clearElementPositionOverride(btn.id, id);
+        }
+        history.commitAction();
+        renderButtonOverridesPanel();
+        refreshButtonOverridePreviewIfActive();
+      });
+
+      row.appendChild(posRow);
+      list.appendChild(row);
+    });
   }
 
   /* ---- Storage ---- */

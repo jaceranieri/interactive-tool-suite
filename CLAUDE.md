@@ -99,15 +99,18 @@ database.
     save/load round-trip is still unverified end to end — see "What's NOT
     built yet" under "Tabbed Panels" below. See that section for its
     architecture.
-  - `toggle-slides/` — new tool, scaffolding stage: a single SVG canvas
-    (reuses Animated Slides v2's element engine, not Tabbed Panels' block
-    model) where nav buttons independently toggle groups of elements on
-    and off, any number on at once, instead of v2's mutually-exclusive
-    slide switching. Authoring UI, Preview mode, and Export all work in
-    local preview; not yet deployed to Apps Script (no
-    `AppScript/ToggleSlides*.html` files exist yet, and its `Code.gs`
-    `PAGES` entry is commented out). See "Toggle Slides" below for its
-    architecture and what's left.
+  - `toggle-slides/` — a single SVG canvas (reuses Animated Slides v2's
+    element engine, not Tabbed Panels' block model) where nav buttons
+    independently toggle groups of elements on and off, any number on at
+    once, instead of v2's mutually-exclusive slide switching; buttons can
+    also hide/reposition elements they don't own, so combinations of
+    buttons can read as content reflowing (see "Multi-button reflow"
+    under "Toggle Slides" below). Authoring UI, Preview mode, and Export
+    all work in local preview. `AppScript/ToggleSlides*.html` exist and
+    `Code.gs`'s `PAGES` entry is uncommented, but the round-trip has
+    never actually been verified against a live Apps Script deployment
+    — see "Toggle Slides" below for its architecture, the Apps Script
+    drift warning, and what's left.
 
 ## Animated Slides v2's internal architecture
 
@@ -662,6 +665,32 @@ fades in/out with GSAP (not an instant show/hide), and each button's
 starting on/off state is author-configurable per button (not a single
 global default).
 
+**Multi-button reflow (added in a second scoping round, after the base
+tool above already existed)**: the original scoping explicitly ruled out
+"multiple slides" — but a real request came in for something that reads
+like slides from the outside (elements sliding to new positions as
+buttons toggle) without actually needing separate slide objects. Worked
+through with a concrete example before any code was written: a visible
+sentence "A man jumped." with three buttons, Adverb/Adjective/Proper
+Noun. Pressing Adverb inserts "quickly" and slides "jumped." right to
+make room. Pressing Adjective too (on top) inserts "tall" and slides
+"man"/"quickly"/"jumped." right again. Un-pressing Adverb removes
+"quickly" and closes the gap **back to Adjective's own layout**, not all
+the way back to the original — i.e., whichever buttons are still on
+keep asserting their own positions for the elements they touch. Pressing
+Proper Noun replaces "A tall man" with "John" by explicitly hiding "A",
+"tall", and "man" (not just failing to show them) while showing "John".
+None of this needed real multiple slides: it's implemented as
+per-button **overrides** on top of the base single-canvas model above —
+see `toggle-manager.js`'s class comment (OVERRIDES / CONFLICT RULE) for
+the mechanism, and the "Button overrides panel" bullet below for how an
+author edits it. The one governing rule, settled explicitly before
+implementation: when more than one currently-on button has an override
+for the same element, **the most-recently-toggled-ON button wins** —
+never a fixed priority/slide order. This was verified against the
+worked sentence example end-to-end (see git history for the Playwright
+script used) before being considered done.
+
 ### Internal architecture (`tools/toggle-slides/`)
 
 Reuses Animated Slides v2's SVG canvas + element engine wholesale, since
@@ -677,12 +706,38 @@ around exactly the mutually-exclusive-slide mechanic this tool replaces.
   v2's `SlideManager`: owns `elements`/`nodes` (one flat set, no
   per-slide grouping) and `canvasSettings` (artboard/grid/nav style,
   same shape as v2's), plus the toggle mechanic itself: a `buttons` array
-  (`{ id, label, elementIds: [...], defaultOn }`). An element with no
-  owning button is always visible (static content, e.g. a title); one
-  with 1+ owning buttons is visible whenever ANY of them is on ("any-of"
-  — most elements will only ever have one owning button in practice, but
-  this stays correct if an author deliberately assigns the same element
-  to two). Layer ordering (`reorderLayer`/`moveLayerBefore`/
+  (`{ id, label, elementIds: [...], hideElementIds: [...],
+  positionOverrides: { elementId: {x,y} }, defaultOn }`). An element with
+  no owning button (not in any button's `elementIds`) is visible by
+  default (static content, e.g. a title); one with 1+ owning buttons is
+  visible whenever ANY of them is on ("any-of" — most elements will only
+  ever have one owning button in practice, but this stays correct if an
+  author deliberately assigns the same element to two). That's the base
+  case; `hideElementIds` and `positionOverrides` layer the "reflow"
+  mechanic on top (see the section above and the file's class comment)
+  — a button can hide or reposition ANY element, not just ones it owns.
+  `resolve(elementId, activeButtons?)` is the single place the "most
+  recently toggled ON wins" conflict rule lives: it walks `toggleOrder`
+  (buttonId[], oldest first) in reverse, returns the first show/hide and
+  first position override it finds among currently-active buttons, and
+  falls back to base ownership visibility / the element's own stored x,y
+  if none of the active buttons say anything about that element.
+  `toggleButton()` maintains `toggleOrder` (push to the end on ON, remove
+  on OFF); `resetVisibleState()` rebuilds it from each button's
+  `defaultOn`, in button-list order, whenever preview is (re-)entered —
+  same "runtime-only, not part of getState()/setState()" status as
+  `visibleState` itself, for the same reason (playback state, not
+  project data — only the overrides that PRODUCE it are project data).
+  `applyVisibility()` now animates x/y alongside opacity for exactly this
+  reason — GSAP's `x`/`y` shorthand on the element group already tweens a
+  transform natively (see `element-renderer.js`'s `createElementNode`),
+  so no proxy-object trick was needed here unlike the cases described
+  under "Animating something GSAP can't tween natively" further down
+  this file. `previewButtonOverrides(buttonId)` is a second, separate
+  entry point into the same `resolve()` — used only by the button
+  overrides panel below to show "what would this look like if only this
+  button were on", without touching real `visibleState`/`toggleOrder` at
+  all. Layer ordering (`reorderLayer`/`moveLayerBefore`/
   `getLayerOrder`) is copied over near-verbatim from `SlideManager`,
   since "one flat bottom-to-top array" is exactly the same problem with
   or without slides.
@@ -748,6 +803,34 @@ around exactly the mutually-exclusive-slide mechanic this tool replaces.
   "Load from code" parses `const elements = ...` / `const buttons = ...`
   / `const canvasSettings = ...` back out of a pasted export — same
   approach as v2's import, adapted for the extra `buttons` array.
+- **Button overrides panel** (`#button-overrides-panel`, a fourth
+  `.side-panel` alongside Layers/Settings — same slide-out mechanism,
+  same "only one open at a time" rule: opening it closes the other two
+  and vice versa, via `closeButtonOverridesPanel()` calls added into
+  `openLayersPanel()`/`openSettingsPanel()`). Opened by clicking a
+  button chip in the bottom bar (not its dot/duplicate/delete
+  sub-buttons, which `stopPropagation()`). Lists every element on the
+  canvas (`renderButtonOverridesPanel()`) with a three-way segmented
+  control (No override / Show / Hide, backed by
+  `ToggleManager.setElementVisibilityOverride()`) and a "Move" checkbox
+  + X/Y number inputs (backed by `setElementPositionOverride()` /
+  `clearElementPositionOverride()`) — deliberately numeric fields, not
+  drag-on-canvas, since redirecting `CanvasEditor`'s existing drag
+  handler to write into a button's override object instead of the
+  element's base `x`/`y` would have meant forking its drag-handling
+  code; revisit only if numeric-only editing turns out to be a real
+  friction point in practice. A **"Preview this button ON"** switch at
+  the top of the panel calls `toggleManager.previewButtonOverrides()`
+  (same `#canvas-wrapper.preview-active` pointer-events-none treatment
+  as the main learner-facing Preview button) so an author can see the
+  effect of their overrides without leaving the panel; every edit made
+  while it's on calls `refreshButtonOverridePreviewIfActive()`
+  afterward so typing a new number or flipping Show/Hide updates the
+  live preview immediately rather than only on the next real toggle.
+  Opening the panel force-exits the main Preview mode first
+  (`if (previewMode) togglePreview();`) since the two are different
+  "what does the canvas mean right now" states and were never meant to
+  run simultaneously.
 
 ### Apps Script deployment
 
@@ -771,6 +854,20 @@ same approach Tabbed Panels used, to avoid escaping mistakes.
 **Still unverified end to end**: none of this has actually been pasted
 into a live Apps Script project yet — do a real Save/Load round-trip
 (same as Tabbed Panels' own open item) before treating this as fully done.
+
+**Drift warning from the multi-button-overrides work above**:
+`AppScript/ToggleManagerJs.html` was re-synced byte-for-byte from the
+updated `tools/toggle-slides/toggle-manager.js` in the same session
+(pure `<script>` wrap, substitution 1 only — nothing else in that file
+needed the other four substitutions). `AppScript/ToggleSlides.html`
+was **not** — the new button-overrides panel (HTML/CSS/JS added to
+`tools/toggle-slides/index.html`) has not been hand-applied there yet.
+Since this tool was already "unverified end to end" before this round,
+that's one more reason not to treat it as deployment-ready; redo the
+5-substitution pass on `index.html` → `ToggleSlides.html` (or hand-sync
+just the new panel, same "day-to-day" approach described under "The
+Apps Script deployment pipeline" above) before it's pasted into a real
+Apps Script project.
 
 ### What's NOT built yet
 

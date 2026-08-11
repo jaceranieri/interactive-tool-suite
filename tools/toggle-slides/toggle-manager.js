@@ -13,14 +13,35 @@
    holds a direct reference to both from construction time, same reference-
    identity rule v2's SlideManager follows for the same reason.
 
-   VISIBILITY MODEL: an element belongs to zero or more buttons
-   (`button.elementIds`). Zero buttons = always visible (static content,
-   e.g. a title or background shape). One or more = visible whenever ANY
-   of its owning buttons is currently on ("any-of", not "all-of" — the
-   common case is exactly one owning button, but this stays correct if an
-   author ever assigns the same element to two buttons deliberately).
-   Applying that opacity is `applyVisibility()`, driven by `visibleState`
-   (buttonId -> boolean), which callers only ever touch through
+   VISIBILITY MODEL (base case): an element belongs to zero or more
+   buttons (`button.elementIds`). Zero buttons = always visible (static
+   content, e.g. a title or background shape). One or more = visible
+   whenever ANY of its owning buttons is currently on ("any-of", not
+   "all-of" — the common case is exactly one owning button, but this
+   stays correct if an author ever assigns the same element to two
+   buttons deliberately).
+
+   OVERRIDES (the "reflowing sentence" mechanic): beyond plain
+   ownership, a button can carry, for ANY element (owned or not):
+     - `hideElementIds`: force that element hidden while this button is
+       on, even if another active button (or base ownership) would
+       otherwise show it. Needed for e.g. a "Proper Noun" button that
+       hides "A"/"tall"/"man" while showing "John" in their place.
+     - `positionOverrides`: `{ elementId: {x, y} }` — moves that element
+       (owned or not) to a specific spot while this button is on, so a
+       shared/static element (e.g. "jumped") can slide over to make room
+       for another button's element without being owned by that button.
+   CONFLICT RULE: when more than one currently-on button has an override
+   (show/hide or position) for the same element, the most-recently-
+   toggled-ON button wins — never a fixed priority order. `toggleOrder`
+   tracks this (oldest first, most recent last); `resolve()` is the one
+   place this rule is implemented, walking it most-recent-first. If no
+   active button has an override for an element, it falls back to base
+   ownership visibility / the element's own stored x,y.
+
+   Applying the resolved state to node opacity/position is
+   `applyVisibility()`, driven by `visibleState` (buttonId -> boolean)
+   and `toggleOrder`, which callers only ever touch through
    `toggleButton()`.
 
    EDIT vs PREVIEW: `applyVisibility()` is deliberately never called
@@ -58,6 +79,7 @@ class ToggleManager {
     this.editor = null; // set via attachEditor()
     this.onChange = () => {}; // hook for UI (canvas, button bar, layer panel) to refresh
     this.visibleState = {}; // buttonId -> boolean, runtime-only (not part of getState()) — see class comment
+    this.toggleOrder = []; // buttonId[], oldest-on first / most-recent-on last, runtime-only — drives the "most recent wins" conflict rule, see class comment
     this.lastAddedButtonId = null; // one-shot, same pattern as v2's lastAddedSlideId — set BEFORE onChange fires
     this._order = null; // stacking order of element ids, same role as v2's _activeOrder
 
@@ -136,7 +158,10 @@ class ToggleManager {
   /* ---- Toggle buttons (CRUD) ---- */
 
   addButton(afterIndex = this.buttons.length - 1) {
-    const btn = { id: 'btn-' + Date.now(), label: 'Button ' + (this.buttons.length + 1), elementIds: [], defaultOn: false };
+    const btn = {
+      id: 'btn-' + Date.now(), label: 'Button ' + (this.buttons.length + 1),
+      elementIds: [], hideElementIds: [], positionOverrides: {}, defaultOn: false,
+    };
     this.buttons.splice(afterIndex + 1, 0, btn);
     this.lastAddedButtonId = btn.id; // set BEFORE onChange, which triggers the render synchronously
     this.onChange();
@@ -149,6 +174,8 @@ class ToggleManager {
       id: 'btn-' + Date.now(),
       label: original.label + ' copy',
       elementIds: [...original.elementIds],
+      hideElementIds: [...(original.hideElementIds || [])],
+      positionOverrides: Object.fromEntries(Object.entries(original.positionOverrides || {}).map(([k, v]) => [k, { ...v }])),
       defaultOn: original.defaultOn,
     };
     this.buttons.splice(index + 1, 0, btn);
@@ -159,7 +186,9 @@ class ToggleManager {
 
   deleteButton(index) {
     if (this.buttons.length <= 1) return; // never delete the last button
-    delete this.visibleState[this.buttons[index].id];
+    const id = this.buttons[index].id;
+    delete this.visibleState[id];
+    this.toggleOrder = this.toggleOrder.filter((bid) => bid !== id);
     this.buttons.splice(index, 1);
     this.onChange();
   }
@@ -192,21 +221,66 @@ class ToggleManager {
     this.onChange();
   }
 
-  /* ---- Visibility (preview / export runtime only — see class comment) ---- */
+  /* ---- Per-button overrides (show/hide/position for ANY element,
+     owned or not — see class comment) ---- */
 
-  /** Resets visibleState from each button's authored defaultOn — called
-   *  whenever (re-)entering preview/playback, never during normal editing. */
-  resetVisibleState() {
-    this.visibleState = {};
-    this.buttons.forEach((b) => { this.visibleState[b.id] = !!b.defaultOn; });
+  /** mode: 'show' | 'hide' | null (no override — falls back to base
+   *  ownership visibility). Mutually exclusive: setting one clears the
+   *  other for this (button, element) pair. */
+  setElementVisibilityOverride(buttonId, elementId, mode) {
+    const btn = this.buttons.find((b) => b.id === buttonId);
+    if (!btn) return;
+    if (!btn.hideElementIds) btn.hideElementIds = [];
+    const showIdx = btn.elementIds.indexOf(elementId);
+    const hideIdx = btn.hideElementIds.indexOf(elementId);
+    if (showIdx !== -1) btn.elementIds.splice(showIdx, 1);
+    if (hideIdx !== -1) btn.hideElementIds.splice(hideIdx, 1);
+    if (mode === 'show') btn.elementIds.push(elementId);
+    else if (mode === 'hide') btn.hideElementIds.push(elementId);
+    this.onChange();
   }
 
-  /** Flips one button's on/off state and re-applies visibility. Multiple
-   *  buttons can be on simultaneously — this never touches any button
-   *  other than the one pressed, which is the entire difference from v2's
-   *  goToSlide() (exclusive) that this tool exists to replace. */
+  setElementPositionOverride(buttonId, elementId, x, y) {
+    const btn = this.buttons.find((b) => b.id === buttonId);
+    if (!btn) return;
+    if (!btn.positionOverrides) btn.positionOverrides = {};
+    btn.positionOverrides[elementId] = { x: Math.round(x), y: Math.round(y) };
+    this.onChange();
+  }
+
+  clearElementPositionOverride(buttonId, elementId) {
+    const btn = this.buttons.find((b) => b.id === buttonId);
+    if (!btn || !btn.positionOverrides) return;
+    delete btn.positionOverrides[elementId];
+    this.onChange();
+  }
+
+  /* ---- Visibility (preview / export runtime only — see class comment) ---- */
+
+  /** Resets visibleState (and toggleOrder) from each button's authored
+   *  defaultOn — called whenever (re-)entering preview/playback, never
+   *  during normal editing. Buttons that default on are ordered by their
+   *  position in the button list (no click history exists yet). */
+  resetVisibleState() {
+    this.visibleState = {};
+    this.toggleOrder = [];
+    this.buttons.forEach((b) => {
+      this.visibleState[b.id] = !!b.defaultOn;
+      if (b.defaultOn) this.toggleOrder.push(b.id);
+    });
+  }
+
+  /** Flips one button's on/off state, updates `toggleOrder` (moves it to
+   *  the "most recent" end when turning on, drops it when turning off),
+   *  and re-applies visibility. Multiple buttons can be on simultaneously
+   *  — this never touches any button other than the one pressed, which is
+   *  the entire difference from v2's goToSlide() (exclusive) that this
+   *  tool exists to replace. */
   toggleButton(id, animate = true) {
-    this.visibleState[id] = !this.visibleState[id];
+    const turningOn = !this.visibleState[id];
+    this.visibleState[id] = turningOn;
+    this.toggleOrder = this.toggleOrder.filter((bid) => bid !== id);
+    if (turningOn) this.toggleOrder.push(id);
     this.applyVisibility(animate);
     this.onChange();
   }
@@ -222,34 +296,83 @@ class ToggleManager {
     return new Set(Object.keys(this.visibleState).filter((id) => this.visibleState[id]));
   }
 
-  /** Applies visibleState to every element's node opacity/pointer-events.
-   *  An element with no owning buttons is always visible. Safe to call
-   *  freely (e.g. after a button/assignment edit while already in
-   *  preview) — recomputes every element from scratch rather than
-   *  diffing, since this canvas is small enough that it's not worth the
-   *  bookkeeping a diff would need. */
+  /** The "most recent active button wins" conflict rule, in one place.
+   *  `activeButtons` defaults to the real toggleOrder (most-recent-last,
+   *  so reversed here to walk most-recent-first) but can be overridden —
+   *  `previewButtonOverrides()` passes a single synthetic button so the
+   *  overrides panel can preview "as if only this button were on". */
+  resolve(elementId, activeButtons) {
+    const order = activeButtons || [...this.toggleOrder].reverse().map((bid) => this.buttons.find((b) => b.id === bid)).filter(Boolean);
+    let visible = null;
+    let pos = null;
+    for (const btn of order) {
+      if (visible === null) {
+        if ((btn.hideElementIds || []).includes(elementId)) visible = false;
+        else if (btn.elementIds.includes(elementId)) visible = true;
+      }
+      if (pos === null && btn.positionOverrides && btn.positionOverrides[elementId]) {
+        pos = btn.positionOverrides[elementId];
+      }
+      if (visible !== null && pos !== null) break;
+    }
+    if (visible === null) visible = this.buttonsForElement(elementId).length === 0;
+    const data = this.elements[elementId];
+    return { visible, x: pos ? pos.x : data.x, y: pos ? pos.y : data.y };
+  }
+
+  /** Applies the resolved state to every element's node
+   *  opacity/position/pointer-events. Safe to call freely (e.g. after a
+   *  button/assignment edit while already in preview) — recomputes every
+   *  element from scratch rather than diffing, since this canvas is small
+   *  enough that it's not worth the bookkeeping a diff would need. */
   applyVisibility(animate = true) {
     Object.keys(this.elements).forEach((id) => {
-      const owners = this.buttonsForElement(id);
-      const visible = owners.length === 0 || owners.some((b) => this.visibleState[b.id]);
+      const { visible, x, y } = this.resolve(id);
       const node = this.nodes[id];
       if (!node) return;
       node.group.style.pointerEvents = visible ? '' : 'none';
+      const target = { opacity: visible ? 1 : 0, x, y };
       if (animate) {
-        gsap.to(node.group, { opacity: visible ? 1 : 0, duration: 0.4 });
+        gsap.to(node.group, { ...target, duration: 0.6, ease: 'power3.inOut' });
       } else {
-        gsap.set(node.group, { opacity: visible ? 1 : 0 });
+        gsap.set(node.group, target);
       }
     });
   }
 
-  /** Undoes applyVisibility for normal editing — every element back to
-   *  fully visible and interactive, regardless of button assignment or
-   *  on/off state. Called whenever leaving preview mode. */
+  /** Preview-only: resolves and applies state as if `buttonId` were the
+   *  sole active button (ignoring real visibleState/toggleOrder), for the
+   *  button-overrides panel's live preview toggle. Never touches
+   *  visibleState/toggleOrder, so exiting preview via
+   *  `applyVisibility()`/`showAllElements()` cleanly restores whatever
+   *  was true before. */
+  previewButtonOverrides(buttonId, animate = true) {
+    const btn = this.buttons.find((b) => b.id === buttonId);
+    if (!btn) return;
+    Object.keys(this.elements).forEach((id) => {
+      const { visible, x, y } = this.resolve(id, [btn]);
+      const node = this.nodes[id];
+      if (!node) return;
+      node.group.style.pointerEvents = visible ? '' : 'none';
+      const target = { opacity: visible ? 1 : 0, x, y };
+      if (animate) {
+        gsap.to(node.group, { ...target, duration: 0.5, ease: 'power3.inOut' });
+      } else {
+        gsap.set(node.group, target);
+      }
+    });
+  }
+
+  /** Undoes applyVisibility/previewButtonOverrides for normal editing —
+   *  every element back to fully visible, interactive, and at its own
+   *  base (x, y), regardless of button assignment, on/off state, or any
+   *  position override currently in effect. Called whenever leaving
+   *  preview mode or the button-overrides panel's preview toggle. */
   showAllElements() {
-    Object.values(this.nodes).forEach((node) => {
+    Object.entries(this.nodes).forEach(([id, node]) => {
       node.group.style.pointerEvents = '';
-      gsap.set(node.group, { opacity: 1 });
+      const data = this.elements[id];
+      gsap.set(node.group, { opacity: 1, x: data.x, y: data.y });
     });
   }
 
@@ -259,7 +382,12 @@ class ToggleManager {
     return {
       canvasSettings: { ...this.canvasSettings, nav: { ...this.canvasSettings.nav } },
       elements: this._currentOrder().filter((id) => this.elements[id]).map((id) => ({ ...this.elements[id] })),
-      buttons: this.buttons.map((b) => ({ ...b, elementIds: [...b.elementIds] })),
+      buttons: this.buttons.map((b) => ({
+        ...b,
+        elementIds: [...b.elementIds],
+        hideElementIds: [...(b.hideElementIds || [])],
+        positionOverrides: Object.fromEntries(Object.entries(b.positionOverrides || {}).map(([k, v]) => [k, { ...v }])),
+      })),
     };
   }
 
@@ -275,7 +403,10 @@ class ToggleManager {
 
     this.buttons.length = 0;
     (snap.buttons || []).forEach((b) => this.buttons.push({
-      id: b.id, label: b.label, elementIds: [...(b.elementIds || [])], defaultOn: !!b.defaultOn,
+      id: b.id, label: b.label, elementIds: [...(b.elementIds || [])],
+      hideElementIds: [...(b.hideElementIds || [])],
+      positionOverrides: Object.fromEntries(Object.entries(b.positionOverrides || {}).map(([k, v]) => [k, { ...v }])),
+      defaultOn: !!b.defaultOn,
     }));
 
     this.lastAddedButtonId = null; // a fresh load/undo/redo is never itself an "add"

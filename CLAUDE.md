@@ -749,15 +749,31 @@ around exactly the mutually-exclusive-slide mechanic this tool replaces.
   / `const canvasSettings = ...` back out of a pasted export — same
   approach as v2's import, adapted for the extra `buttons` array.
 
+### Apps Script deployment
+
+Deployed via the same 5-substitution pipeline as v2/Tabbed Panels (see
+"The Apps Script deployment pipeline" above), and `Code.gs`'s `PAGES`
+entry is uncommented, so it's reachable from the hub once redeployed.
+Four of the seven `.js`/module files this tool needs already existed as
+reusable AppScript includes from Animated Slides v2 — `ElementTypesJs.html`,
+`ElementRendererJs.html`, `CanvasEditorJs.html`, `HistoryJs.html` — byte-
+identical to `tools/toggle-slides/`'s copies, so nothing new was created
+for those, just referenced via `include()`. Three genuinely new files were
+needed for the parts with no v2 equivalent: `ToggleManagerJs.html`,
+`ToggleNavJs.html`, and `ToggleLayerPanelJs.html` — note the "Toggle"
+prefix on the last one specifically to avoid colliding with v2's own
+existing `LayerPanelJs.html` (Apps Script's file namespace is flat across
+the whole project, unlike `tools/{tool-id}/` folders). Export's
+module-fetching code was swapped for an embedded `MODULE_SOURCES` object
+(substitution 2), generated programmatically from the real source files
+(byte-for-byte, verified via direct comparison) rather than hand-typed,
+same approach Tabbed Panels used, to avoid escaping mistakes.
+**Still unverified end to end**: none of this has actually been pasted
+into a live Apps Script project yet — do a real Save/Load round-trip
+(same as Tabbed Panels' own open item) before treating this as fully done.
+
 ### What's NOT built yet
 
-- **No Apps Script deployment at all yet** — no `AppScript/ToggleSlides*.html`
-  files exist, and `Code.gs`'s `PAGES` entry is commented out. Follow the
-  same 5-substitution pipeline used for Animated Slides v2 (see that
-  section above) before it's reachable from the hub; Tabbed Panels'
-  programmatically-generated `MODULE_SOURCES` approach (rather than hand-
-  escaping module source into a JS string) is worth reusing for
-  substitution 2 here too.
 - **Touch/tablet drag-and-drop** — the button bar's reorder uses native
   HTML5 drag-and-drop, same known touchscreen gap as v2's slide/layer
   reordering.

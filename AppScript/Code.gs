@@ -37,9 +37,13 @@ const PAGES = {
     description: 'Build tabbed content with headings, text, lists, and linking buttons.',
     status: 'in development',
   },
+  'toggle-slides': {
+    file: 'ToggleSlides', title: 'Toggle Slides',
+    description: 'A single canvas where nav buttons independently toggle groups of elements on and off.',
+    status: 'in development',
+  },
   // 'tabbed-container': { file: 'TabbedContainer', title: 'Tabbed Container', description: '...', status: 'stable' },  <- add once migrated
   // 'worked-example': { file: 'WorkedExample', title: 'Worked Example', description: '...', status: 'stable' },        <- add once migrated
-  // 'toggle-slides': { file: 'ToggleSlides', title: 'Toggle Slides', description: 'A single canvas where nav buttons independently toggle groups of elements on/off.', status: 'in development' },  <- add once deployed, see CLAUDE.md's Toggle Slides section
 };
 
 function doGet(e) {

@@ -831,6 +831,39 @@ around exactly the mutually-exclusive-slide mechanic this tool replaces.
   (`if (previewMode) togglePreview();`) since the two are different
   "what does the canvas mean right now" states and were never meant to
   run simultaneously.
+  **Override ghosts** (`#override-ghost-layer`, a `<g>` sibling of
+  `elements-layer` inside the authoring SVG only — never present in the
+  exported player): numeric X/Y fields alone turned out to be hard to
+  reason about spatially, so while the overrides panel is open (and NOT
+  live-previewing — the real elements already show the resolved state
+  then, a ghost on top would be redundant) `renderOverrideGhosts()` draws
+  a translucent (opacity 0.45) duplicate of every element that has a
+  `positionOverride` for the button being edited, sitting AT that
+  override position, plus a dashed line back to the element's own base
+  `(x, y)` — so an author can see where something is going without
+  reading coordinates. The ghost is a real, separate SVG node built via
+  `createElementNode()` (given `id: 'ghost-' + elementId` so an arrow
+  ghost's `<marker>` id never collides with the real element's), NOT
+  registered with `CanvasEditor` — dragging it is a small self-contained
+  pointerdown/pointermove/pointerup handler in `index.html`
+  (`attachGhostDrag()`) using the same `screenToSVGPoint()` helper
+  `canvas-editor.js` uses, rather than routing through
+  `CanvasEditor`'s own drag machinery (which only ever knows how to
+  write to an element's base position — forking it to redirect into a
+  button's override object would have meant duplicating its drag-state
+  handling for one field). Dragging writes directly into
+  `btn.positionOverrides[elementId]` (mutated in place, same convention
+  as everywhere else) and updates the ghost/line/number-inputs live via
+  direct DOM refs (`panelInputRefs`, populated by
+  `renderButtonOverridesPanel()`) rather than a full panel re-render on
+  every pointermove — same reasoning as `CanvasEditor`'s own drag loop
+  not wanting to rebuild unrelated UI every frame, just applied to a
+  smaller surface. `history.beginAction()`/`commitAction()` bracket the
+  whole drag (one undo step per drag, not one per frame), and
+  `refreshUI()` on pointerup does one clean full re-render — this is
+  also what makes the numeric fields still work as a precision fallback:
+  typing a value re-renders the panel, which re-renders the ghosts from
+  the committed state, same as a drag would have.
 
 ### Apps Script deployment
 
@@ -865,10 +898,12 @@ against the exact anchor text shared by both files — the new code
 doesn't touch `<link>`/`<script src>` tags, the module-fetching/
 `MODULE_SOURCES` code, the hub link, `<base target>`, or
 `STORAGE_API_KEY`, so none of the other four substitutions were
-affected or needed redoing. This tool is still otherwise "unverified
-end to end" — the Save/Load round-trip against a real Apps Script
-project hasn't been exercised yet — so a real deploy is the next thing
-to confirm, not something already checked off here.
+affected or needed redoing. The follow-up override-ghosts work (see
+"Override ghosts" above) was synced the same way, same-session, same
+patch-against-shared-anchor-text approach. This tool is still otherwise
+"unverified end to end" — the Save/Load round-trip against a real Apps
+Script project hasn't been exercised yet — so a real deploy is the next
+thing to confirm, not something already checked off here.
 
 ### What's NOT built yet
 

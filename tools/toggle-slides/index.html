@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Toggle Slides</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/design-tokens.css">
+<link rel="stylesheet" href="../../shared/app-shell.css">
+<style>
+  #shell-main { min-height: 0; }
+  /* Left rail: 4 "add element" actions, a divider, then Layers/Settings
+     drawer-openers — same narrow icon-only stack as Animated Slides v2,
+     minus its "add linked element" button, since Toggle Slides has only
+     one canvas and no cross-canvas linking mechanic to link FROM. */
+  #left-rail {
+    width: 64px; background: var(--surface); border-right: 1px solid var(--border);
+    padding: var(--space-4) var(--space-2); overflow-y: auto; flex-shrink: 0;
+    display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+  }
+  .add-element-grid { display: flex; flex-direction: column; gap: var(--space-2); }
+  .rail-divider { width: 28px; height: 1px; background: var(--border); margin: var(--space-1) 0; flex-shrink: 0; }
+  .add-element-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex-shrink: 0;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+  }
+  .add-element-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .add-element-btn i { font-size: 16px; color: var(--accent); }
+  .add-element-btn.btn-active { border-color: var(--accent); background: var(--accent-soft); }
+  .layer-row { display: flex; align-items: center; gap: var(--space-2); padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--text-sm); border-top: 2px solid transparent; }
+  .layer-row.dragging { opacity: 0.4; }
+  .layer-row.drag-over { border-top-color: var(--accent); }
+  .layer-row:hover { background: var(--paper); }
+  .layer-row.active { background: var(--accent-soft); }
+  .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer-button-badge { font-size: 10px; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .layer-controls { display: flex; gap: 2px; }
+  .layer-controls button { border: none; background: none; color: var(--ink-soft); cursor: pointer; padding: 2px 4px; font-size: 10px; }
+  .layer-controls button:hover { color: var(--accent); }
+  .layer-empty { font-size: var(--text-xs); color: var(--ink-soft); font-style: italic; }
+
+  #canvas-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-6); min-height: 0; }
+  #player-root { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: var(--space-4); }
+  #canvas-wrapper { position: relative; width: 100%; aspect-ratio: 16/9; background: white; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+  #canvas-wrapper svg { width: 100%; height: 100%; display: block; }
+  #canvas-wrapper.preview-active { pointer-events: none; }
+  #empty-state-hint {
+    position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; pointer-events: none; color: var(--ink-faint); text-align: center;
+  }
+  #empty-state-hint i { font-size: 32px; margin-bottom: var(--space-2); }
+  #empty-state-hint p { margin: 0; font-weight: 600; font-size: var(--text-base); color: var(--ink-soft); }
+  #empty-state-hint span { font-size: var(--text-sm); }
+
+  #editor-button-bar { flex-shrink: 0; padding: var(--space-3) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-3); }
+  #editor-button-bar .title-block { margin-right: var(--space-2); }
+  #button-chips { display: flex; gap: var(--space-2); flex: 1; overflow-x: auto; padding: 8px 10px; margin: -8px -10px; }
+  .button-chip-wrap { position: relative; flex-shrink: 0; }
+  .button-chip {
+    display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: var(--radius-md);
+    border: 2px solid var(--border); background: var(--surface); cursor: pointer; user-select: none;
+  }
+  .button-chip.active { border-color: var(--ink); }
+  .button-chip-label { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink); white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  .button-chip-rename-input { font-family: var(--font-mono); font-size: var(--text-xs); padding: 2px 6px; border-radius: var(--radius-sm); border: 1px solid var(--accent); outline: none; width: 90px; }
+  .button-chip-default-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; }
+  .button-chip-default-dot.on { background: var(--accent); }
+  .button-chip-wrap.dragging { opacity: 0.4; }
+  .button-chip-wrap.drag-over .button-chip { border-color: var(--accent); }
+  .button-chip-delete, .button-chip-duplicate {
+    display: none; position: absolute; top: -6px; width: 16px; height: 16px;
+    border-radius: 50%; border: 1px solid var(--border); background: white; color: var(--ink-soft);
+    font-size: 10px; line-height: 1; cursor: pointer; align-items: center; justify-content: center;
+  }
+  .button-chip-delete { right: -6px; }
+  .button-chip-duplicate { left: -6px; font-size: 9px; }
+  .button-chip-wrap:hover .button-chip-delete, .button-chip-wrap:hover .button-chip-duplicate { display: flex; }
+  .button-chip-delete:hover { background: var(--danger); color: white; border-color: var(--danger); }
+  .button-chip-duplicate:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+  .shortcuts-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  .shortcuts-table td { padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+  .shortcuts-table td:last-child { color: var(--ink-soft); text-align: right; }
+  .shortcuts-table tr:last-child td { border-bottom: none; }
+  kbd {
+    font-family: var(--font-mono); font-size: 11px; background: var(--paper); border: 1px solid var(--border-strong);
+    border-radius: 4px; padding: 1px 5px; box-shadow: 0 1px 0 var(--border-strong);
+  }
+
+  .side-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 90vw;
+    background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow-lg);
+    display: flex; flex-direction: column; z-index: 90;
+    transform: translateX(100%); transition: transform var(--duration-base) var(--ease-standard);
+    pointer-events: none;
+  }
+  .side-panel.active { transform: translateX(0); pointer-events: auto; }
+  .side-panel-header { display: flex; align-items: flex-start; justify-content: space-between; padding: var(--space-5); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .side-panel-header h2 { margin: var(--space-1) 0 0; font-size: var(--text-lg); font-weight: 600; }
+  .side-panel-body { flex: 1; overflow-y: auto; padding: var(--space-5); }
+  #settings-fields { display: flex; flex-direction: column; gap: var(--space-5); }
+  .top-bar-divider { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
+  .settings-section h3 { font-size: var(--text-sm); font-weight: 600; margin: 0 0 var(--space-4); color: var(--ink); }
+  .settings-section + .settings-section { border-top: 1px solid var(--border); padding-top: var(--space-5); }
+  .settings-section .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .settings-section .field-grid .popup-field { margin-bottom: 0; }
+
+  #assign-buttons-section { border-top: 1px solid var(--border); margin-top: var(--space-5); padding-top: var(--space-5); }
+  #assign-buttons-section h3 { font-size: var(--text-sm); font-weight: 600; margin: 0 0 var(--space-3); color: var(--ink); }
+  .assign-button-row { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); }
+  .assign-button-row input { width: auto; }
+
+  .element-popup { position: absolute; z-index: 50; width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--space-4); }
+  .popup-name { display: block; width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 700; color: var(--ink); border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 var(--space-2); margin-bottom: var(--space-3); outline: none; background: transparent; }
+  .popup-name:focus { border-bottom-color: var(--accent); }
+  .popup-fields .popup-field { margin-bottom: var(--space-3); }
+  .settings-section .popup-field { margin-bottom: var(--space-5); }
+  .popup-field:last-child { margin-bottom: 0; }
+  .popup-field label { display: block; font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
+  .popup-field input, .popup-field select, .popup-field textarea { width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
+  .popup-field textarea { resize: vertical; max-width: 100%; }
+  .popup-field input[type=color], .colour-table input[type=color] { width: 40px; height: 40px; padding: 0; border-radius: var(--radius-sm); cursor: pointer; overflow: hidden; }
+  .popup-field input[type=color]::-webkit-color-swatch-wrapper, .colour-table input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  .popup-field input[type=color]::-webkit-color-swatch, .colour-table input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
+  .popup-field input[type=color]::-moz-color-swatch, .colour-table input[type=color]::-moz-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
+  .popup-more-toggle { width: 100%; margin-top: 4px; padding: 6px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
+  .popup-field.toggle-field { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .popup-field.toggle-field label { margin-bottom: 0; }
+  .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch-slider { position: absolute; inset: 0; background: var(--border-strong); border-radius: 999px; cursor: pointer; transition: background var(--duration-fast) var(--ease-standard); }
+  .switch-slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; box-shadow: var(--shadow-sm); transition: transform var(--duration-fast) var(--ease-standard); }
+  .switch input:checked + .switch-slider { background: var(--accent); }
+  .switch input:checked + .switch-slider::before { transform: translateX(16px); }
+  .switch input:focus-visible + .switch-slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .colour-table { display: grid; grid-template-columns: auto 1fr 1fr; column-gap: var(--space-4); row-gap: var(--space-3); align-items: center; }
+  .colour-table-head { font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; text-align: left; }
+  .colour-table-row-label { font-size: var(--text-sm); color: var(--ink); margin: 0; white-space: nowrap; }
+  .popup-fields + .popup-more-toggle { margin-top: var(--space-3); }
+  .popup-more-toggle + .popup-fields { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<div id="shell">
+  <div id="top-bar">
+    <div class="top-bar-left">
+      <a href="#" class="hub-link" title="Back to hub">&larr;</a>
+      <div class="tool-identity">
+        <div class="title-block">Tool &middot; Toggle Slides</div>
+        <h1 id="display-project-name">Untitled project</h1>
+        <span id="unsaved-dot" title="Unsaved changes" style="display:none; width:8px; height:8px; border-radius:50%; background:var(--warn); margin-left:8px; vertical-align:middle;"></span>
+      </div>
+    </div>
+    <div class="top-bar-right">
+      <span id="shell-status" class="status-pill"><span class="dot"></span>Not connected</span>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" onclick="newProject()">New</button>
+      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); browseFolder=''; refreshProjectList();">Open</button>
+      <button class="btn btn-secondary" onclick="openImportModal()">Load from code</button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" id="undo-btn" onclick="history.undo()">Undo</button>
+      <button class="btn btn-secondary" id="redo-btn" onclick="history.redo()">Redo</button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" id="preview-btn" onclick="togglePreview()" title="Preview the toggle buttons as a learner would see them">
+        <i class="fa-solid fa-play"></i> Preview
+      </button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" onclick="Shell.openModal('shortcuts-modal')" title="Keyboard shortcuts"><i class="fa-regular fa-circle-question"></i></button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-primary" onclick="saveProject()"><i class="fa-solid fa-cloud-arrow-up"></i> Save</button>
+    </div>
+  </div>
+
+  <div id="shell-main" style="display:flex;">
+    <div id="left-rail">
+      <div class="add-element-grid" id="add-element-grid"></div>
+      <div class="rail-divider"></div>
+      <button class="add-element-btn" id="layers-toggle-btn" onclick="toggleLayersPanel()" title="Layers" aria-label="Toggle layers panel"><i class="fa-solid fa-layer-group"></i></button>
+      <button class="add-element-btn" id="settings-toggle-btn" onclick="toggleSettingsPanel()" title="Settings" aria-label="Toggle canvas settings"><i class="fa-solid fa-gear"></i></button>
+    </div>
+    <div id="canvas-col">
+      <div id="stage">
+        <div id="player-root">
+          <div id="canvas-wrapper">
+            <svg id="canvas-svg" viewBox="0 0 1920 1080">
+              <defs>
+                <pattern id="grid-pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+                  <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#000" stroke-opacity="0.08" stroke-width="1"/>
+                </pattern>
+              </defs>
+              <rect id="grid-overlay" x="0" y="0" width="100%" height="100%" fill="url(#grid-pattern)" style="display:none; pointer-events:none;"></rect>
+              <g id="elements-layer"></g>
+            </svg>
+            <div id="empty-state-hint">
+              <i class="fa-regular fa-image"></i>
+              <p>Nothing on the canvas yet</p>
+              <span>Add an element from the panel on the left to get started</span>
+            </div>
+          </div>
+          <div id="player-nav-bar"></div>
+        </div>
+      </div>
+      <div id="editor-button-bar">
+        <div class="title-block">Toggle buttons (editor)</div>
+        <div id="button-chips"></div>
+        <button class="btn btn-secondary" onclick="addButton()">+ Button</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Keyboard shortcuts modal -->
+<div class="modal-overlay" id="shortcuts-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div><div class="title-block">Help</div><h2>Keyboard shortcuts</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('shortcuts-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <table class="shortcuts-table">
+        <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete selection</td></tr>
+        <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>D</kbd></td><td>Duplicate selection</td></tr>
+        <tr><td><kbd>Arrow keys</kbd></td><td>Nudge 1px</td></tr>
+        <tr><td><kbd>Shift</kbd> + <kbd>Arrow keys</kbd></td><td>Nudge 10px</td></tr>
+        <tr><td><kbd>Shift</kbd> / <kbd>Cmd/Ctrl</kbd> + click</td><td>Add/remove from selection</td></tr>
+        <tr><td>Drag on empty canvas</td><td>Select multiple (marquee)</td></tr>
+        <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>Z</kbd></td><td>Undo</td></tr>
+        <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></td><td>Redo</td></tr>
+        <tr><td>Double-click a button chip's name</td><td>Rename button</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Layers panel: slide-out, non-blocking. Also carries the "assign to
+     buttons" section for whichever single element is selected — see
+     renderAssignButtonsSection(). -->
+<div class="side-panel" id="layers-panel">
+  <div class="side-panel-header">
+    <div><div class="title-block">Layers</div><h2>Canvas layers</h2></div>
+    <button class="modal-close" onclick="closeLayersPanel()">&times;</button>
+  </div>
+  <div class="side-panel-body">
+    <div id="layer-list"></div>
+    <div id="assign-buttons-section"></div>
+  </div>
+</div>
+
+<!-- Canvas settings panel: slide-out, non-blocking -->
+<div class="side-panel" id="settings-panel">
+  <div class="side-panel-header">
+    <div><div class="title-block">Settings</div><h2>Canvas settings</h2></div>
+    <button class="modal-close" onclick="closeSettingsPanel()">&times;</button>
+  </div>
+  <div class="side-panel-body">
+    <div id="settings-fields"></div>
+  </div>
+</div>
+
+<!-- Open project modal -->
+<div class="modal-overlay" id="open-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div><div class="title-block">Open</div><h2>Your projects</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('open-modal')">&times;</button>
+    </div>
+    <div class="modal-body"><div id="project-list-container"></div></div>
+  </div>
+</div>
+
+<!-- Import from code modal -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Load from code</div><h2>Paste a previous export</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('import-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--ink-soft); margin-bottom: var(--space-4);">Paste the full HTML from a previous Export below. This rebuilds the project as an editable, unsaved copy — nothing is overwritten until you hit Save.</p>
+      <textarea id="import-textarea" class="code-view" placeholder="Paste exported HTML here..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="importFromCode()">Load</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Export</div><h2>Code for Articulate</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('export-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--ink-soft); margin-bottom: var(--space-4);">Copy the code below and paste it into a Web Object or HTML code block in your Articulate course.</p>
+      <textarea id="export-textarea" class="code-view" readonly></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="copyExportCode()"><i class="fa-regular fa-copy"></i> Copy code</button>
+    </div>
+  </div>
+</div>
+
+<script src="../../shared/app-shell.js"></script>
+<script src="../../shared/storage-connector.js"></script>
+<script src="element-types.js"></script>
+<script src="element-renderer.js"></script>
+<script src="canvas-editor.js"></script>
+<script src="history.js"></script>
+<script src="toggle-manager.js"></script>
+<script src="layer-panel.js"></script>
+<script src="toggle-nav.js"></script>
+<script>
+  /**
+   * STORAGE BACKEND (Apps Script -> GitHub)
+   * Same endpoint pattern as every other tool in the suite, distinguished
+   * by TOOL_ID.
+   */
+  const STORAGE_ENDPOINT = "https://script.google.com/a/macros/syd.catholic.edu.au/s/AKfycbwj2Yk2R8o0ffnPBCO6gi-rRxfB1ETeZ6Rm61IeWXjQumpE0PUCfiPQrxDyXpe_HHK5Xw/exec";
+  const STORAGE_API_KEY = "PASTE_YOUR_API_KEY_HERE";
+  const TOOL_ID = "toggle-slides";
+
+  const svg = document.getElementById('canvas-svg');
+  const layer = document.getElementById('elements-layer');
+  const popupHost = document.getElementById('canvas-wrapper');
+  const layerListEl = document.getElementById('layer-list');
+
+  let currentProjectName = "Untitled project";
+  let currentProjectFolder = "";
+  let browseFolder = "";
+  let lastSavedStateJSON = null;
+  let previewMode = false;
+
+  function hasUnsavedChanges() {
+    return JSON.stringify(toggleManager.getState()) !== lastSavedStateJSON;
+  }
+
+  function defaultElements() { return []; }
+  function defaultButtons() {
+    return [
+      { id: 'btn-' + Date.now() + '-a', label: 'A', elementIds: [], defaultOn: false },
+      { id: 'btn-' + Date.now() + '-b', label: 'B', elementIds: [], defaultOn: false },
+      { id: 'btn-' + Date.now() + '-c', label: 'C', elementIds: [], defaultOn: false },
+    ];
+  }
+
+  const toggleManager = new ToggleManager({ svg, layer, elements: defaultElements(), buttons: defaultButtons() });
+  const playerNavBarEl = document.getElementById('player-nav-bar');
+  const playerRootEl = document.getElementById('player-root');
+  const canvasWrapperEl = document.getElementById('canvas-wrapper');
+
+  // navStyle here IS toggleManager.canvasSettings.nav — mutated in place
+  // everywhere, never reassigned, same as v2's nav bar wiring.
+  const navBar = setupNavBar(playerNavBarEl, toggleManager.canvasSettings.nav, (id) => {
+    // Buttons only actually toggle visibility in Preview mode — while
+    // editing, every element is forced fully visible (see
+    // ToggleManager.showAllElements()), so a click here would have
+    // nothing visible to demonstrate and would just leave stale on/off
+    // state armed for the next preview.
+    if (!previewMode) return;
+    toggleManager.toggleButton(id);
+  });
+
+  function applyCanvasSizing() {
+    const cs = toggleManager.canvasSettings;
+    svg.setAttribute('viewBox', `0 0 ${cs.width} ${cs.height}`);
+    canvasWrapperEl.style.aspectRatio = `${cs.width} / ${cs.height}`;
+    canvasWrapperEl.style.background = cs.backgroundColor;
+  }
+
+  // Visual grid — authoring canvas only, never part of the export.
+  function applyGridOverlay() {
+    const cs = toggleManager.canvasSettings;
+    const pattern = document.getElementById('grid-pattern');
+    const overlay = document.getElementById('grid-overlay');
+    pattern.setAttribute('width', cs.gridSize);
+    pattern.setAttribute('height', cs.gridSize);
+    pattern.querySelector('path').setAttribute('d', `M ${cs.gridSize} 0 L 0 0 0 ${cs.gridSize}`);
+    overlay.style.display = cs.snapToGrid ? '' : 'none';
+  }
+
+  function applyNavPosition() {
+    if (toggleManager.canvasSettings.nav.navPosition === 'top') {
+      playerRootEl.insertBefore(playerNavBarEl, canvasWrapperEl);
+    } else {
+      playerRootEl.appendChild(playerNavBarEl);
+    }
+  }
+
+  function refreshUI() {
+    applyCanvasSizing();
+    applyGridOverlay();
+    applyNavPosition();
+    document.getElementById('empty-state-hint').style.display = Object.keys(toggleManager.elements).length === 0 ? 'flex' : 'none';
+    renderLayerPanel(layerListEl, toggleManager, editor);
+    renderAssignButtonsSection();
+    renderButtonChips();
+    navBar.refresh(toggleManager.buttons, toggleManager.getActiveButtonIds());
+    document.getElementById('unsaved-dot').style.display = hasUnsavedChanges() ? '' : 'none';
+  }
+
+  const undoBtn = document.getElementById('undo-btn');
+  const redoBtn = document.getElementById('redo-btn');
+  const history = new History({
+    getState: () => toggleManager.getState(),
+    setState: (s) => toggleManager.setState(s),
+    onChange: () => {
+      undoBtn.disabled = !history.canUndo();
+      redoBtn.disabled = !history.canRedo();
+    },
+  });
+  undoBtn.disabled = true; redoBtn.disabled = true;
+  window.addEventListener('keydown', (e) => {
+    const cmd = e.metaKey || e.ctrlKey;
+    if (!cmd || e.key.toLowerCase() !== 'z') return;
+    e.preventDefault();
+    if (e.shiftKey) history.redo(); else history.undo();
+  });
+
+  const editor = new CanvasEditor({
+    svg, elements: toggleManager.elements, nodes: toggleManager.nodes, popupHost, history,
+    onSelect: () => { renderLayerPanel(layerListEl, toggleManager, editor); renderAssignButtonsSection(); },
+    onChange: () => { renderLayerPanel(layerListEl, toggleManager, editor); renderAssignButtonsSection(); },
+    getCanvasSettings: () => toggleManager.canvasSettings,
+  });
+  toggleManager.attachEditor(editor);
+  toggleManager.onChange = refreshUI;
+
+  /* ---- Preview mode ----
+     Toggling this is the only thing that makes the nav bar's buttons
+     actually change what's visible — see the setupNavBar callback above.
+     Entering preview: close the side panels (nothing to edit while
+     previewing), disable direct canvas interaction, and start every
+     button from its authored defaultOn state. Exiting: put every element
+     back to fully visible/interactive for editing, same as before preview
+     was ever entered. */
+  function togglePreview() {
+    previewMode = !previewMode;
+    const btn = document.getElementById('preview-btn');
+    if (previewMode) {
+      closeLayersPanel();
+      closeSettingsPanel();
+      editor.deselect();
+      canvasWrapperEl.classList.add('preview-active');
+      toggleManager.resetVisibleState();
+      toggleManager.applyVisibility(false);
+      btn.classList.add('btn-active');
+      btn.innerHTML = '<i class="fa-solid fa-stop"></i> Exit preview';
+    } else {
+      canvasWrapperEl.classList.remove('preview-active');
+      toggleManager.showAllElements();
+      toggleManager.resetVisibleState(); // nav bar reflects the authored default look again while editing
+      btn.classList.remove('btn-active');
+      btn.innerHTML = '<i class="fa-solid fa-play"></i> Preview';
+    }
+    navBar.refresh(toggleManager.buttons, toggleManager.getActiveButtonIds());
+  }
+
+  /* ---- Toggle buttons (editor bottom bar) ---- */
+
+  function addButton() {
+    history.beginAction();
+    toggleManager.addButton();
+    history.commitAction();
+  }
+
+  function renderButtonChips() {
+    const chips = document.getElementById('button-chips');
+    chips.innerHTML = '';
+    let draggedIndex = null;
+
+    toggleManager.buttons.forEach((b, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'button-chip-wrap' + (b.id === toggleManager.lastAddedButtonId ? ' row-enter' : '');
+      wrap.draggable = true;
+
+      const chip = document.createElement('div');
+      chip.className = 'button-chip' + (previewMode && toggleManager.isButtonOn(b.id) ? ' active' : '');
+
+      const dot = document.createElement('span');
+      dot.className = 'button-chip-default-dot' + (b.defaultOn ? ' on' : '');
+      dot.title = b.defaultOn ? 'Starts ON by default' : 'Starts OFF by default — click to change';
+      dot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        b.defaultOn = !b.defaultOn;
+        history.commitAction();
+        refreshUI();
+      });
+
+      const label = document.createElement('span');
+      label.className = 'button-chip-label';
+      label.textContent = b.label;
+      label.addEventListener('dblclick', () => startRenameButton(wrap, chip, label, dot, i));
+
+      chip.appendChild(dot);
+      chip.appendChild(label);
+
+      const del = document.createElement('button');
+      del.className = 'button-chip-delete';
+      del.innerHTML = '&times;';
+      del.title = 'Delete button';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        toggleManager.deleteButton(i);
+        history.commitAction();
+      });
+
+      const dup = document.createElement('button');
+      dup.className = 'button-chip-duplicate';
+      dup.innerHTML = '<i class="fa-regular fa-copy"></i>';
+      dup.title = 'Duplicate button (assigned elements come with it)';
+      dup.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        toggleManager.duplicateButton(i);
+        history.commitAction();
+      });
+
+      wrap.appendChild(chip);
+      wrap.appendChild(dup);
+      if (toggleManager.buttons.length > 1) wrap.appendChild(del);
+
+      wrap.addEventListener('dragstart', (e) => {
+        draggedIndex = i;
+        wrap.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      wrap.addEventListener('dragend', () => {
+        wrap.classList.remove('dragging');
+        chips.querySelectorAll('.button-chip-wrap').forEach((c) => c.classList.remove('drag-over'));
+      });
+      wrap.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (draggedIndex !== null && draggedIndex !== i) wrap.classList.add('drag-over');
+      });
+      wrap.addEventListener('dragleave', () => wrap.classList.remove('drag-over'));
+      wrap.addEventListener('drop', (e) => {
+        e.preventDefault();
+        wrap.classList.remove('drag-over');
+        if (draggedIndex === null || draggedIndex === i) return;
+        history.beginAction();
+        toggleManager.reorderButton(draggedIndex, i);
+        history.commitAction();
+      });
+
+      chips.appendChild(wrap);
+    });
+
+    // Deferred one-shot clear — same pattern as v2's slide tabs / Tabbed
+    // Panels' block list, in case addButton/duplicateButton ever trigger
+    // more than one render in the same synchronous burst.
+    if (toggleManager.lastAddedButtonId) {
+      const consumedId = toggleManager.lastAddedButtonId;
+      requestAnimationFrame(() => { if (toggleManager.lastAddedButtonId === consumedId) toggleManager.lastAddedButtonId = null; });
+    }
+  }
+
+  function startRenameButton(wrap, chip, labelEl, dot, index) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'button-chip-rename-input';
+    input.value = toggleManager.buttons[index].label;
+    chip.replaceChild(input, labelEl);
+    input.focus();
+    input.select();
+
+    let committed = false;
+    function commit() {
+      if (committed) return;
+      committed = true;
+      const newLabel = input.value.trim();
+      if (newLabel && newLabel !== toggleManager.buttons[index].label) {
+        history.beginAction();
+        toggleManager.buttons[index].label = newLabel;
+        history.commitAction();
+        refreshUI();
+      } else {
+        renderButtonChips();
+      }
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+      if (e.key === 'Escape') { committed = true; renderButtonChips(); }
+    });
+  }
+
+  /* ---- Assign-to-buttons section (Layers drawer) ---- */
+
+  function renderAssignButtonsSection() {
+    const section = document.getElementById('assign-buttons-section');
+    section.innerHTML = '';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'Assign to buttons';
+    section.appendChild(h3);
+
+    const selected = [...editor.selectedIds];
+    if (selected.length !== 1) {
+      const hint = document.createElement('div');
+      hint.className = 'layer-empty';
+      hint.textContent = selected.length === 0
+        ? 'Select an element to choose which buttons show it.'
+        : 'Select a single element to edit its button assignment.';
+      section.appendChild(hint);
+      return;
+    }
+
+    const id = selected[0];
+    const owned = new Set(toggleManager.buttonsForElement(id).map((b) => b.id));
+
+    if (toggleManager.buttons.length === 0) {
+      section.appendChild(Object.assign(document.createElement('div'), { className: 'layer-empty', textContent: 'No toggle buttons yet.' }));
+      return;
+    }
+
+    const hint = document.createElement('div');
+    hint.className = 'layer-empty';
+    hint.style.marginBottom = 'var(--space-2)';
+    hint.textContent = owned.size === 0 ? 'Not assigned — always visible.' : '';
+    if (owned.size === 0) section.appendChild(hint);
+
+    toggleManager.buttons.forEach((b) => {
+      const row = document.createElement('label');
+      row.className = 'assign-button-row';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = owned.has(b.id);
+      checkbox.addEventListener('change', () => {
+        const next = new Set(owned);
+        if (checkbox.checked) next.add(b.id); else next.delete(b.id);
+        history.beginAction();
+        toggleManager.setElementButtons(id, [...next]);
+        history.commitAction();
+        renderAssignButtonsSection();
+      });
+      const span = document.createElement('span');
+      span.textContent = b.label;
+      row.appendChild(checkbox);
+      row.appendChild(span);
+      section.appendChild(row);
+    });
+  }
+
+  /* ---- Add element ---- */
+
+  function renderAddElementButtons() {
+    const container = document.getElementById('add-element-grid');
+    container.innerHTML = '';
+    Object.entries(ELEMENT_TYPES).forEach(([type, schema]) => {
+      const btn = document.createElement('button');
+      btn.className = 'add-element-btn';
+      btn.title = schema.label;
+      btn.setAttribute('aria-label', 'Add ' + schema.label);
+      btn.innerHTML = `<i class="fa-solid ${schema.icon}"></i>`;
+      btn.addEventListener('click', () => addElement(type));
+      container.appendChild(btn);
+    });
+  }
+
+  function addElement(type) {
+    history.beginAction();
+    const id = 'el-' + Date.now();
+    const count = Object.keys(toggleManager.elements).length;
+    const offset = (count % 6) * 24;
+    const data = makeDefaultElement(type, id, 200 + offset, 150 + offset);
+    const node = createElementNode(data);
+    layer.appendChild(node.group);
+    gsap.to(node.group, { opacity: 1, duration: 0.4 });
+    toggleManager.elements[id] = data;
+    toggleManager.nodes[id] = node;
+    editor.registerNode(node);
+    history.commitAction();
+    refreshUI();
+    editor.select(id);
+  }
+
+  async function newProject() {
+    if (hasUnsavedChanges()) {
+      const proceed = await Shell.confirm('Starting a new project will discard them.', { heading: 'Unsaved changes', okLabel: 'Discard and continue', danger: true });
+      if (!proceed) return;
+    }
+    currentProjectName = "Untitled project";
+    currentProjectFolder = "";
+    document.getElementById('display-project-name').innerText = currentProjectName;
+    toggleManager.setState({ elements: defaultElements(), buttons: defaultButtons() });
+    history.undoStack = [];
+    history.redoStack = [];
+    history.onChange();
+    lastSavedStateJSON = JSON.stringify(toggleManager.getState());
+    refreshUI();
+    Shell.toast('New project started', 'success');
+  }
+
+  /* ---- Import from a previous export ---- */
+
+  function openImportModal() {
+    document.getElementById('import-textarea').value = '';
+    Shell.openModal('import-modal');
+  }
+
+  async function importFromCode() {
+    const pasted = document.getElementById('import-textarea').value;
+    const elementsMatch = pasted.match(/^const elements = (.+);$/m);
+    const buttonsMatch = pasted.match(/^const buttons = (.+);$/m);
+    const canvasSettingsMatch = pasted.match(/^const canvasSettings = (.+);$/m);
+    if (!elementsMatch || !buttonsMatch || !canvasSettingsMatch) {
+      Shell.toast("Couldn't find project data in that code — paste the full HTML from an Export.", 'danger');
+      return;
+    }
+
+    let elements, buttons, canvasSettings;
+    try {
+      elements = JSON.parse(elementsMatch[1]);
+      buttons = JSON.parse(buttonsMatch[1]);
+      canvasSettings = JSON.parse(canvasSettingsMatch[1]);
+    } catch (error) {
+      Shell.toast(`Couldn't parse that code: ${error.message}`, 'danger');
+      return;
+    }
+
+    if (hasUnsavedChanges()) {
+      const proceed = await Shell.confirm('Loading from code will discard them.', { heading: 'Unsaved changes', okLabel: 'Discard and continue', danger: true });
+      if (!proceed) return;
+    }
+
+    Shell.closeModal('import-modal');
+    currentProjectName = "Untitled project";
+    currentProjectFolder = "";
+    document.getElementById('display-project-name').innerText = currentProjectName;
+    toggleManager.setState({ canvasSettings, elements, buttons });
+    history.undoStack = [];
+    history.redoStack = [];
+    history.onChange();
+    refreshUI();
+    Shell.toast('Project loaded from code — remember to Save it.', 'success');
+  }
+
+  /* ---- Canvas settings ---- */
+
+  const CANVAS_SETTING_FIELDS = [
+    { group: 'Artboard', key: 'width', label: 'Width', type: 'number', root: true },
+    { group: 'Artboard', key: 'height', label: 'Height', type: 'number', root: true },
+    { group: 'Artboard', key: 'backgroundColor', label: 'Background', type: 'color', root: true },
+    { group: 'Grid', key: 'gridSize', label: 'Size', type: 'number', root: true },
+    { group: 'Grid', key: 'snapToGrid', label: 'Snap to Grid', type: 'boolean-select', root: true },
+    { group: 'Navigation', key: 'navPosition', label: 'Position', type: 'select', options: [['bottom', 'Bottom'], ['top', 'Top']] },
+    { group: 'Navigation', key: 'buttonRadius', label: 'Corner Radius', type: 'number' },
+    { group: 'Navigation', key: 'buttonFontSize', label: 'Size', type: 'number' },
+    { group: 'Navigation', key: 'buttonFontWeight', label: 'Weight', type: 'select',
+      options: [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extra bold']] },
+    { group: 'Navigation', key: 'buttonPaddingX', label: 'Padding X', type: 'number' },
+    { group: 'Navigation', key: 'buttonPaddingY', label: 'Padding Y', type: 'number' },
+  ];
+
+  const NAV_COLOUR_ROWS = [
+    { label: 'Background', activeKey: 'buttonColor', inactiveKey: 'buttonInactiveColor' },
+    { label: 'Text', activeKey: 'buttonTextColor', inactiveKey: 'buttonInactiveTextColor' },
+    { label: 'Border', activeKey: 'buttonBottomColor', inactiveKey: 'buttonInactiveBottomColor' },
+  ];
+
+  function getSettingValue(field) {
+    return field.root ? toggleManager.canvasSettings[field.key] : toggleManager.canvasSettings.nav[field.key];
+  }
+  function setSettingValue(field, value) {
+    if (field.root) toggleManager.canvasSettings[field.key] = value;
+    else toggleManager.canvasSettings.nav[field.key] = value;
+  }
+  function bindSettingInput(input, field, type) {
+    input.addEventListener('focus', () => { if (history) history.beginAction(); });
+    input.addEventListener('input', () => {
+      let val = type === 'toggle' ? input.checked : input.value;
+      if (type === 'boolean-select') val = val === 'true';
+      else if (type === 'number') val = parseFloat(val) || 0;
+      setSettingValue(field, val);
+      refreshUI();
+    });
+    input.addEventListener('change', () => { if (history) history.commitAction(); });
+  }
+
+  function renderColoursSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    const h3 = document.createElement('h3');
+    h3.textContent = 'Colours';
+    section.appendChild(h3);
+
+    const table = document.createElement('div');
+    table.className = 'colour-table';
+
+    table.appendChild(document.createElement('span'));
+    ['Active', 'Inactive'].forEach((text) => {
+      const head = document.createElement('span');
+      head.className = 'colour-table-head';
+      head.textContent = text;
+      table.appendChild(head);
+    });
+
+    NAV_COLOUR_ROWS.forEach((row) => {
+      const rowLabel = document.createElement('label');
+      rowLabel.className = 'colour-table-row-label';
+      rowLabel.textContent = row.label;
+      table.appendChild(rowLabel);
+
+      [row.activeKey, row.inactiveKey].forEach((key) => {
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.value = toggleManager.canvasSettings.nav[key];
+        bindSettingInput(colorInput, { key }, 'color');
+        table.appendChild(colorInput);
+      });
+    });
+
+    section.appendChild(table);
+    return section;
+  }
+
+  function renderSettingsModal() {
+    const navDefaults = defaultNavStyle();
+    Object.keys(navDefaults).forEach((k) => {
+      if (toggleManager.canvasSettings.nav[k] === undefined) toggleManager.canvasSettings.nav[k] = navDefaults[k];
+    });
+
+    const container = document.getElementById('settings-fields');
+    container.innerHTML = '';
+    const groups = {};
+    CANVAS_SETTING_FIELDS.forEach((f) => { (groups[f.group] = groups[f.group] || []).push(f); });
+
+    Object.entries(groups).forEach(([groupName, fields]) => {
+      const section = document.createElement('div');
+      section.className = 'settings-section';
+      const h3 = document.createElement('h3');
+      h3.textContent = groupName;
+      section.appendChild(h3);
+
+      const grid = document.createElement('div');
+      grid.className = 'field-grid';
+
+      fields.forEach((field) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'popup-field';
+        const label = document.createElement('label');
+        label.textContent = field.label;
+        wrap.appendChild(label);
+
+        let input, appendEl;
+        if (field.type === 'select') {
+          input = document.createElement('select');
+          field.options.forEach(([val, text]) => {
+            const opt = document.createElement('option');
+            opt.value = val; opt.textContent = text;
+            if (val === getSettingValue(field)) opt.selected = true;
+            input.appendChild(opt);
+          });
+          appendEl = input;
+        } else if (field.type === 'boolean-select') {
+          input = document.createElement('select');
+          [[true, 'On'], [false, 'Off']].forEach(([val, text]) => {
+            const opt = document.createElement('option');
+            opt.value = String(val); opt.textContent = text;
+            if (val === !!getSettingValue(field)) opt.selected = true;
+            input.appendChild(opt);
+          });
+          appendEl = input;
+        } else {
+          input = document.createElement('input');
+          input.type = field.type;
+          input.value = getSettingValue(field);
+          appendEl = input;
+        }
+
+        bindSettingInput(input, field, field.type);
+
+        wrap.appendChild(appendEl);
+        grid.appendChild(wrap);
+      });
+
+      section.appendChild(grid);
+      container.appendChild(section);
+    });
+
+    container.appendChild(renderColoursSection());
+  }
+
+  function openSettingsPanel() {
+    closeLayersPanel();
+    renderSettingsModal();
+    document.getElementById('settings-panel').classList.add('active');
+    document.getElementById('settings-toggle-btn').classList.add('btn-active');
+  }
+  function closeSettingsPanel() {
+    document.getElementById('settings-panel').classList.remove('active');
+    document.getElementById('settings-toggle-btn').classList.remove('btn-active');
+  }
+  function toggleSettingsPanel() {
+    const isOpen = document.getElementById('settings-panel').classList.contains('active');
+    if (isOpen) closeSettingsPanel(); else openSettingsPanel();
+  }
+
+  function openLayersPanel() {
+    closeSettingsPanel();
+    document.getElementById('layers-panel').classList.add('active');
+    document.getElementById('layers-toggle-btn').classList.add('btn-active');
+  }
+  function closeLayersPanel() {
+    document.getElementById('layers-panel').classList.remove('active');
+    document.getElementById('layers-toggle-btn').classList.remove('btn-active');
+  }
+  function toggleLayersPanel() {
+    const isOpen = document.getElementById('layers-panel').classList.contains('active');
+    if (isOpen) closeLayersPanel(); else openLayersPanel();
+  }
+
+  /* ---- Storage ---- */
+
+  function getApiUrl() { return STORAGE_ENDPOINT.trim(); }
+
+  async function saveProject() {
+    if (!currentProjectName || currentProjectName === "Untitled project") {
+      const name = await Shell.prompt('', '', { heading: 'Name this project', okLabel: 'Save' });
+      if (!name) return;
+      currentProjectName = name;
+      currentProjectFolder = browseFolder;
+      document.getElementById('display-project-name').innerText = currentProjectName;
+    }
+    const pending = Shell.toast('Saving to GitHub…', 'pending');
+    try {
+      await Storage.saveProject(TOOL_ID, currentProjectName, toggleManager.getState(), currentProjectFolder);
+      pending.remove();
+      lastSavedStateJSON = JSON.stringify(toggleManager.getState());
+      Shell.toast(`Project "${currentProjectName}" saved!`, 'success');
+      Shell.setStatus('Connected', '');
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Save failed: ${error.message}`, 'danger');
+      Shell.setStatus('Error', 'error');
+    }
+  }
+
+  async function refreshProjectList() {
+    const pending = Shell.toast('Fetching projects…', 'pending');
+    try {
+      Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
+      const result = await Storage.listProjects(TOOL_ID, browseFolder);
+      pending.remove();
+      Shell.renderProjectList(
+        document.getElementById('project-list-container'),
+        result.projects,
+        (name) => loadProject(name, browseFolder),
+        {
+          onRename: (oldName, newName) => renameProjectAction(oldName, newName),
+          onDelete: (name) => deleteProjectAction(name),
+          folders: result.folders,
+          currentFolder: browseFolder,
+          onOpenFolder: (folder) => { browseFolder = folder; refreshProjectList(); },
+          onNewFolder: (parentFolder) => newFolderAction(parentFolder),
+          onDeleteFolder: (folder) => deleteFolderAction(folder),
+        }
+      );
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Fetch failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function newFolderAction(parentFolder) {
+    const name = await Shell.prompt('', '', { heading: 'New folder name', okLabel: 'Create' });
+    if (!name) return;
+    const target = parentFolder ? `${parentFolder}/${name}` : name;
+    const pending = Shell.toast('Creating folder…', 'pending');
+    try {
+      await Storage.createFolder(TOOL_ID, target);
+      pending.remove();
+      Shell.toast(`Folder "${name}" created`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Create folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function deleteFolderAction(folder) {
+    const pending = Shell.toast('Deleting folder…', 'pending');
+    try {
+      await Storage.deleteFolder(TOOL_ID, folder);
+      pending.remove();
+      Shell.toast('Folder deleted', 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Delete folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function renameProjectAction(oldName, newName) {
+    const pending = Shell.toast(`Renaming "${oldName}"…`, 'pending');
+    try {
+      await Storage.renameProject(TOOL_ID, oldName, newName, browseFolder);
+      pending.remove();
+      Shell.toast(`Renamed to "${newName}"`, 'success');
+      if (currentProjectName === oldName && currentProjectFolder === browseFolder) {
+        currentProjectName = newName;
+        document.getElementById('display-project-name').innerText = newName;
+      }
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Rename failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function deleteProjectAction(name) {
+    const pending = Shell.toast(`Deleting "${name}"…`, 'pending');
+    try {
+      await Storage.deleteProject(TOOL_ID, name, browseFolder);
+      pending.remove();
+      Shell.toast(`Deleted "${name}"`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Delete failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function loadProject(name, folder = '') {
+    Shell.closeModal('open-modal');
+    const pending = Shell.toast(`Loading "${name}"...`, 'pending');
+    try {
+      const result = await Storage.loadProject(TOOL_ID, name, folder);
+      pending.remove();
+      currentProjectName = name;
+      currentProjectFolder = folder;
+      document.getElementById('display-project-name').innerText = currentProjectName;
+      toggleManager.setState(result.content);
+      history.undoStack = [];
+      history.redoStack = [];
+      history.onChange();
+      lastSavedStateJSON = JSON.stringify(toggleManager.getState());
+      Shell.toast(`Project "${name}" loaded!`, 'success');
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Load failed: ${error.message}`, 'danger');
+    }
+  }
+
+  /* ---- Export ----
+     Reuses element-types.js / element-renderer.js / toggle-manager.js /
+     toggle-nav.js VERBATIM inside the exported file — same engine that
+     just rendered the authoring preview renders the exported player. */
+
+  async function fetchModuleSources() {
+    const files = ['element-types.js', 'element-renderer.js', 'toggle-manager.js', 'toggle-nav.js'];
+    const texts = await Promise.all(files.map((f) => fetch(f).then((r) => r.text())));
+    return texts.join('\n\n');
+  }
+
+  async function openExportModal() {
+    const modules = await fetchModuleSources();
+    const elementsJSON = JSON.stringify(toggleManager.getState().elements);
+    const buttonsJSON = JSON.stringify(toggleManager.buttons.map((b) => ({ ...b, elementIds: [...b.elementIds] })));
+    const canvasSettingsJSON = JSON.stringify(toggleManager.canvasSettings);
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${currentProjectName}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"><\/script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: 'IBM Plex Sans', sans-serif; }
+  #player-root { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+  #canvas-wrapper { position: relative; flex: 1; min-height: 0; }
+  #canvas-wrapper svg { width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<div id="player-root">
+  <div id="canvas-wrapper">
+    <svg id="canvas-svg"><g id="elements-layer"></g></svg>
+  </div>
+  <div id="player-nav-bar"></div>
+</div>
+<script>
+${modules}
+
+const elements = ${elementsJSON};
+const buttons = ${buttonsJSON};
+const canvasSettings = ${canvasSettingsJSON};
+const svg = document.getElementById('canvas-svg');
+const layer = document.getElementById('elements-layer');
+const canvasWrapperEl = document.getElementById('canvas-wrapper');
+svg.setAttribute('viewBox', \`0 0 \${canvasSettings.width} \${canvasSettings.height}\`);
+canvasWrapperEl.style.background = canvasSettings.backgroundColor;
+
+const toggleManager = new ToggleManager({ svg, layer, elements, buttons, canvasSettings });
+const navBarEl = document.getElementById('player-nav-bar');
+const playerRootEl = document.getElementById('player-root');
+if (canvasSettings.nav.navPosition === 'top') {
+  playerRootEl.insertBefore(navBarEl, canvasWrapperEl);
+} else {
+  playerRootEl.appendChild(navBarEl);
+}
+const navBar = setupNavBar(navBarEl, canvasSettings.nav, (id) => toggleManager.toggleButton(id));
+toggleManager.onChange = () => navBar.refresh(toggleManager.buttons, toggleManager.getActiveButtonIds());
+toggleManager.resetVisibleState();
+toggleManager.applyVisibility(false);
+navBar.refresh(toggleManager.buttons, toggleManager.getActiveButtonIds());
+<\/script>
+</body>
+</html>`;
+
+    document.getElementById('export-textarea').value = html;
+    Shell.openModal('export-modal');
+  }
+
+  function copyExportCode() {
+    const textarea = document.getElementById('export-textarea');
+    textarea.select();
+    navigator.clipboard.writeText(textarea.value).then(() => {
+      Shell.toast('Code copied to clipboard', 'success');
+    }).catch(() => {
+      document.execCommand('copy');
+      Shell.toast('Code copied to clipboard', 'success');
+    });
+  }
+
+  /* ---- Init ---- */
+  Shell.init({ toolName: 'Toggle Slides' });
+  Shell.bindOverlayDismiss();
+  Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
+  renderAddElementButtons();
+  refreshUI();
+  lastSavedStateJSON = JSON.stringify(toggleManager.getState());
+</script>
+</body>
+</html>

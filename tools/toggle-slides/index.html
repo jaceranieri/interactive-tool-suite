@@ -115,6 +115,25 @@
   .assign-button-row { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); }
   .assign-button-row input { width: auto; }
 
+  .override-row { padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+  .override-row:last-child { border-bottom: none; }
+  .override-row-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+  .override-row-head i { color: var(--ink-soft); width: 14px; text-align: center; }
+  .override-row-name { font-size: var(--text-sm); font-weight: 600; color: var(--ink); flex: 1; }
+  .override-segmented { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .override-segmented button { border: none; background: var(--surface); font-family: var(--font-ui); font-size: 11px; font-weight: 600; padding: 4px 9px; cursor: pointer; color: var(--ink-soft); border-right: 1px solid var(--border); }
+  .override-segmented button:last-child { border-right: none; }
+  .override-segmented button.active { background: var(--accent); color: #fff; }
+  .override-position-row { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); padding-left: 20px; }
+  .override-position-row input[type=number] { width: 70px; }
+  .override-position-row label { display: flex; align-items: center; gap: var(--space-2); flex: 1; }
+  .override-position-row .checkbox-label { display: flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+  .override-position-row .checkbox-label input { width: auto; }
+
+  #override-ghost-layer .override-ghost-node { cursor: grab; }
+  #override-ghost-layer .override-ghost-node:active { cursor: grabbing; }
+  .override-ghost-path { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 10 8; fill: none; opacity: 0.6; pointer-events: none; }
+
   .element-popup { position: absolute; z-index: 50; width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--space-4); }
   .popup-name { display: block; width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 700; color: var(--ink); border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 var(--space-2); margin-bottom: var(--space-3); outline: none; background: transparent; }
   .popup-name:focus { border-bottom-color: var(--accent); }
@@ -198,6 +217,7 @@
               </defs>
               <rect id="grid-overlay" x="0" y="0" width="100%" height="100%" fill="url(#grid-pattern)" style="display:none; pointer-events:none;"></rect>
               <g id="elements-layer"></g>
+              <g id="override-ghost-layer"></g>
             </svg>
             <div id="empty-state-hint">
               <i class="fa-regular fa-image"></i>
@@ -262,6 +282,28 @@
   </div>
   <div class="side-panel-body">
     <div id="settings-fields"></div>
+  </div>
+</div>
+
+<!-- Button overrides panel: slide-out, non-blocking. Opened by clicking a
+     toggle-button chip in the bottom bar. Lets an author say, for THIS
+     button and ANY element, whether it shows/hides/is untouched while
+     the button is on, and (independently) where it should sit — see
+     renderButtonOverridesPanel(). -->
+<div class="side-panel" id="button-overrides-panel">
+  <div class="side-panel-header">
+    <div><div class="title-block">Toggle button</div><h2 id="button-overrides-title">Button</h2></div>
+    <button class="modal-close" onclick="closeButtonOverridesPanel()">&times;</button>
+  </div>
+  <div class="side-panel-body">
+    <label class="popup-field toggle-field" style="margin-bottom: var(--space-5);">
+      <span>Preview this button ON</span>
+      <span class="switch">
+        <input type="checkbox" id="button-override-preview-toggle" onchange="toggleButtonOverridePreview(this.checked)">
+        <span class="switch-slider"></span>
+      </span>
+    </label>
+    <div id="button-overrides-list"></div>
   </div>
 </div>
 
@@ -331,6 +373,7 @@
 
   const svg = document.getElementById('canvas-svg');
   const layer = document.getElementById('elements-layer');
+  const ghostLayerEl = document.getElementById('override-ghost-layer');
   const popupHost = document.getElementById('canvas-wrapper');
   const layerListEl = document.getElementById('layer-list');
 
@@ -404,6 +447,7 @@
     renderLayerPanel(layerListEl, toggleManager, editor);
     renderAssignButtonsSection();
     renderButtonChips();
+    if (editingButtonId) renderButtonOverridesPanel();
     navBar.refresh(toggleManager.buttons, toggleManager.getActiveButtonIds());
     document.getElementById('unsaved-dot').style.display = hasUnsavedChanges() ? '' : 'none';
   }
@@ -526,6 +570,9 @@
         toggleManager.duplicateButton(i);
         history.commitAction();
       });
+
+      chip.title = 'Click to edit what this button shows, hides, and moves';
+      chip.addEventListener('click', () => openButtonOverridesPanel(b.id));
 
       wrap.appendChild(chip);
       wrap.appendChild(dup);
@@ -895,6 +942,7 @@
 
   function openSettingsPanel() {
     closeLayersPanel();
+    closeButtonOverridesPanel();
     renderSettingsModal();
     document.getElementById('settings-panel').classList.add('active');
     document.getElementById('settings-toggle-btn').classList.add('btn-active');
@@ -910,6 +958,7 @@
 
   function openLayersPanel() {
     closeSettingsPanel();
+    closeButtonOverridesPanel();
     document.getElementById('layers-panel').classList.add('active');
     document.getElementById('layers-toggle-btn').classList.add('btn-active');
   }
@@ -920,6 +969,245 @@
   function toggleLayersPanel() {
     const isOpen = document.getElementById('layers-panel').classList.contains('active');
     if (isOpen) closeLayersPanel(); else openLayersPanel();
+  }
+
+  /* ---- Button overrides panel (per-button show/hide/position for ANY
+     element — see toggle-manager.js's OVERRIDES class comment) ---- */
+
+  let editingButtonId = null;
+  let buttonOverridePreviewActive = false;
+
+  function openButtonOverridesPanel(buttonId) {
+    if (previewMode) togglePreview(); // editing needs the canvas in edit state, not learner-preview state
+    closeSettingsPanel();
+    closeLayersPanel();
+    editingButtonId = buttonId;
+    buttonOverridePreviewActive = false;
+    document.getElementById('button-override-preview-toggle').checked = false;
+    renderButtonOverridesPanel();
+    document.getElementById('button-overrides-panel').classList.add('active');
+  }
+
+  function closeButtonOverridesPanel() {
+    document.getElementById('button-overrides-panel').classList.remove('active');
+    if (buttonOverridePreviewActive) {
+      buttonOverridePreviewActive = false;
+      canvasWrapperEl.classList.remove('preview-active');
+      toggleManager.showAllElements();
+    }
+    editingButtonId = null;
+    renderOverrideGhosts();
+  }
+
+  function toggleButtonOverridePreview(on) {
+    buttonOverridePreviewActive = on;
+    if (!editingButtonId) return;
+    if (on) {
+      editor.deselect();
+      canvasWrapperEl.classList.add('preview-active');
+      toggleManager.previewButtonOverrides(editingButtonId);
+    } else {
+      canvasWrapperEl.classList.remove('preview-active');
+      toggleManager.showAllElements();
+    }
+    renderOverrideGhosts();
+  }
+
+  /** Re-runs the live preview (if active) after an override edit, so
+   *  typing a new X/Y or flipping show/hide reflects immediately instead
+   *  of only on the next toggle. */
+  function refreshButtonOverridePreviewIfActive() {
+    if (buttonOverridePreviewActive && editingButtonId) toggleManager.previewButtonOverrides(editingButtonId);
+  }
+
+  // elementId -> { xInput, yInput } for the CURRENTLY rendered overrides
+  // panel — lets a ghost drag (see renderOverrideGhosts()) keep the number
+  // fields live in sync every pointermove without a full panel re-render
+  // (which would rebuild these inputs from under the drag every frame).
+  let panelInputRefs = {};
+
+  function renderButtonOverridesPanel() {
+    const btn = toggleManager.buttons.find((b) => b.id === editingButtonId);
+    const list = document.getElementById('button-overrides-list');
+    list.innerHTML = '';
+    panelInputRefs = {};
+    if (!btn) { renderOverrideGhosts(); return; }
+
+    document.getElementById('button-overrides-title').textContent = btn.label;
+
+    const order = [...toggleManager.getLayerOrder()].reverse(); // top-of-stack first, same display convention as the layer panel
+    if (order.length === 0) {
+      list.innerHTML = '<div class="layer-empty">No elements on the canvas yet.</div>';
+      renderOverrideGhosts();
+      return;
+    }
+
+    order.forEach((id) => {
+      const data = toggleManager.elements[id];
+      if (!data) return;
+      const schema = ELEMENT_TYPES[data.type];
+
+      const row = document.createElement('div');
+      row.className = 'override-row';
+
+      const head = document.createElement('div');
+      head.className = 'override-row-head';
+      const icon = document.createElement('i');
+      icon.className = 'fa-solid ' + (schema.icon || 'fa-shapes');
+      const name = document.createElement('span');
+      name.className = 'override-row-name';
+      name.textContent = data.name || schema.label;
+      head.appendChild(icon);
+      head.appendChild(name);
+
+      const seg = document.createElement('div');
+      seg.className = 'override-segmented';
+      const mode = (btn.hideElementIds || []).includes(id) ? 'hide' : btn.elementIds.includes(id) ? 'show' : null;
+      [['none', 'No override'], ['show', 'Show'], ['hide', 'Hide']].forEach(([val, text]) => {
+        const b = document.createElement('button');
+        b.textContent = text;
+        b.type = 'button';
+        if ((val === 'none' && mode === null) || val === mode) b.classList.add('active');
+        b.addEventListener('click', () => {
+          history.beginAction();
+          toggleManager.setElementVisibilityOverride(btn.id, id, val === 'none' ? null : val);
+          history.commitAction();
+          renderButtonOverridesPanel();
+          refreshButtonOverridePreviewIfActive();
+        });
+        seg.appendChild(b);
+      });
+      head.appendChild(seg);
+      row.appendChild(head);
+
+      const posRow = document.createElement('div');
+      posRow.className = 'override-position-row';
+      const posOverride = btn.positionOverrides && btn.positionOverrides[id];
+      const checkLabel = document.createElement('label');
+      checkLabel.className = 'checkbox-label';
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.checked = !!posOverride;
+      checkLabel.appendChild(check);
+      checkLabel.appendChild(document.createTextNode('Move'));
+      posRow.appendChild(checkLabel);
+
+      const xInput = document.createElement('input');
+      xInput.type = 'number';
+      xInput.disabled = !posOverride;
+      xInput.value = Math.round(posOverride ? posOverride.x : data.x);
+      const yInput = document.createElement('input');
+      yInput.type = 'number';
+      yInput.disabled = !posOverride;
+      yInput.value = Math.round(posOverride ? posOverride.y : data.y);
+      posRow.appendChild(xInput);
+      posRow.appendChild(yInput);
+      panelInputRefs[id] = { xInput, yInput };
+
+      function commitPosition() {
+        history.beginAction();
+        toggleManager.setElementPositionOverride(btn.id, id, Number(xInput.value) || 0, Number(yInput.value) || 0);
+        history.commitAction();
+        refreshButtonOverridePreviewIfActive();
+      }
+      xInput.addEventListener('change', commitPosition);
+      yInput.addEventListener('change', commitPosition);
+
+      check.addEventListener('change', () => {
+        history.beginAction();
+        if (check.checked) {
+          toggleManager.setElementPositionOverride(btn.id, id, data.x, data.y);
+        } else {
+          toggleManager.clearElementPositionOverride(btn.id, id);
+        }
+        history.commitAction();
+        renderButtonOverridesPanel();
+        refreshButtonOverridePreviewIfActive();
+      });
+
+      row.appendChild(posRow);
+      list.appendChild(row);
+    });
+
+    renderOverrideGhosts();
+  }
+
+  /* ---- Override ghosts (canvas visualisation of position overrides) ----
+     While the button-overrides panel is open (and NOT live-previewing —
+     the real elements already show the resolved state then, a ghost on
+     top would be redundant), every element with a positionOverride for
+     the button being edited gets a translucent duplicate drawn AT that
+     override position, plus a dashed line back to the element's own base
+     (x, y) — so an author can see where something is going without
+     reading coordinates. The ghost is directly draggable: dragging it
+     writes into the override instead of the element's base position,
+     the same "drag on canvas, not type numbers" interaction as normal
+     editing, just targeting a different field. ---- */
+
+  function renderOverrideGhosts() {
+    ghostLayerEl.innerHTML = '';
+    if (!editingButtonId || buttonOverridePreviewActive) return;
+    const btn = toggleManager.buttons.find((b) => b.id === editingButtonId);
+    if (!btn || !btn.positionOverrides) return;
+
+    Object.keys(btn.positionOverrides).forEach((id) => {
+      const data = toggleManager.elements[id];
+      const override = btn.positionOverrides[id];
+      if (!data || !override) return;
+      const w = data.width || 0, h = data.height || 0;
+
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('class', 'override-ghost-path');
+      line.setAttribute('x1', data.x + w / 2);
+      line.setAttribute('y1', data.y + h / 2);
+      line.setAttribute('x2', override.x + w / 2);
+      line.setAttribute('y2', override.y + h / 2);
+      ghostLayerEl.appendChild(line);
+
+      const ghostNode = createElementNode({ ...data, id: 'ghost-' + id, x: override.x, y: override.y });
+      ghostNode.group.classList.add('override-ghost-node');
+      gsap.set(ghostNode.group, { opacity: 0.45, x: override.x, y: override.y });
+      ghostLayerEl.appendChild(ghostNode.group);
+
+      attachGhostDrag(ghostNode, line, id, btn, data);
+    });
+  }
+
+  function attachGhostDrag(ghostNode, line, elementId, btn, data) {
+    let dragState = null;
+    const w = data.width || 0, h = data.height || 0;
+
+    function onMove(e) {
+      if (!dragState) return;
+      const svgPt = screenToSVGPoint(svg, e.clientX, e.clientY);
+      const newX = Math.round(dragState.startOverride.x + (svgPt.x - dragState.startSVG.x));
+      const newY = Math.round(dragState.startOverride.y + (svgPt.y - dragState.startSVG.y));
+      btn.positionOverrides[elementId] = { x: newX, y: newY };
+      gsap.set(ghostNode.group, { x: newX, y: newY });
+      line.setAttribute('x2', newX + w / 2);
+      line.setAttribute('y2', newY + h / 2);
+      const refs = panelInputRefs[elementId];
+      if (refs) { refs.xInput.value = newX; refs.yInput.value = newY; }
+    }
+
+    function onUp() {
+      if (!dragState) return;
+      dragState = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      history.commitAction();
+      refreshButtonOverridePreviewIfActive();
+      refreshUI(); // clean re-render: rebuilds the panel + ghosts from the now-committed state
+    }
+
+    ghostNode.group.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation(); // don't let this reach the canvas's own marquee/select handling
+      history.beginAction();
+      dragState = { startSVG: screenToSVGPoint(svg, e.clientX, e.clientY), startOverride: { ...btn.positionOverrides[elementId] } };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
   }
 
   /* ---- Storage ---- */

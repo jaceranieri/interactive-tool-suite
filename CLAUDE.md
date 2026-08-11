@@ -768,9 +768,48 @@ module-fetching code was swapped for an embedded `MODULE_SOURCES` object
 (substitution 2), generated programmatically from the real source files
 (byte-for-byte, verified via direct comparison) rather than hand-typed,
 same approach Tabbed Panels used, to avoid escaping mistakes.
-**Still unverified end to end**: none of this has actually been pasted
-into a live Apps Script project yet — do a real Save/Load round-trip
-(same as Tabbed Panels' own open item) before treating this as fully done.
+**Real deployment surfaced a paste-corruption bug worth knowing about if
+this happens again**: after pasting the generated files into a live Apps
+Script project, the whole main `<script>` tag threw
+`Uncaught SyntaxError: Invalid or unexpected token` in the browser, and
+every function it defined (`newProject`, `saveProject`,
+`toggleLayersPanel`, etc.) came back as "not defined" — a syntax error
+anywhere in a classic `<script>` tag means NOTHING in it gets defined,
+not even hoisted function declarations, which is why one bad token broke
+every button at once. Root-caused via the browser's own console: select
+the tool's iframe context (not `top`, not the `userCodeAppPanel` OAuth
+wrapper — both are decoys `Sources` shows alongside the real frame),
+then `document.scripts[N].textContent` on the actual failing script and
+diff it against the known-good source. That diff showed several whole
+comment blocks silently missing from the live page — not present in the
+repo file, not caused by GitHub's raw-file copy (re-copying from
+`raw.githubusercontent.com` reproduced the identical missing bytes) — so
+something in the paste-into-Apps-Script-editor path is selectively
+eating specific comments (mechanism not identified; not consistent
+between single-line and multi-line comments, so it isn't a simple
+delimiter-matching bug on our end). **Fix**: strip all comments from the
+Toggle-Slides-specific deployment files before pasting — the readable
+source of truth already lives in `tools/toggle-slides/*.js`, so nothing
+is lost by making the deployed copies comment-free. Done via
+`esbuild --minify --minify-identifiers=false` (minifies syntax/
+whitespace and drops every comment, but leaves top-level function/class
+names alone, which matters since separate `<script>` tags in a classic
+multi-file Apps Script page all share one global scope and reference
+each other by name — full identifier-mangling minification would break
+that). Verified the escape-sensitive parts survive minification
+correctly (the export template's `<\/script>` escapes stay intact, not
+"cleaned up" into a real `</script>` that would truncate the page) before
+trusting it here. Applies to `ToggleSlides.html`'s own inline script,
+`ToggleManagerJs.html`, `ToggleNavJs.html`, `ToggleLayerPanelJs.html`,
+and the `MODULE_SOURCES` module text embedded inside `ToggleSlides.html`
+— the four shared v2 includes (`ElementTypesJs.html` etc.) were left
+alone since they're already proven working, unminified, elsewhere.
+If a future tool's deployment hits the same "buttons don't work, syntax
+error in console" symptom, minifying-but-not-mangling the affected file
+before pasting is the fastest fix, whatever the exact corruption
+mechanism turns out to be.
+Still do a real Save/Load round-trip against live `google.script.run`
+before treating this as fully verified — that part remains untested.
 
 ### What's NOT built yet
 

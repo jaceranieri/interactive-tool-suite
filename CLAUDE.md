@@ -855,19 +855,20 @@ same approach Tabbed Panels used, to avoid escaping mistakes.
 into a live Apps Script project yet — do a real Save/Load round-trip
 (same as Tabbed Panels' own open item) before treating this as fully done.
 
-**Drift warning from the multi-button-overrides work above**:
-`AppScript/ToggleManagerJs.html` was re-synced byte-for-byte from the
-updated `tools/toggle-slides/toggle-manager.js` in the same session
-(pure `<script>` wrap, substitution 1 only — nothing else in that file
-needed the other four substitutions). `AppScript/ToggleSlides.html`
-was **not** — the new button-overrides panel (HTML/CSS/JS added to
-`tools/toggle-slides/index.html`) has not been hand-applied there yet.
-Since this tool was already "unverified end to end" before this round,
-that's one more reason not to treat it as deployment-ready; redo the
-5-substitution pass on `index.html` → `ToggleSlides.html` (or hand-sync
-just the new panel, same "day-to-day" approach described under "The
-Apps Script deployment pipeline" above) before it's pasted into a real
-Apps Script project.
+**Multi-button-overrides work is now hand-synced into both deployed
+files**: `AppScript/ToggleManagerJs.html` was re-synced byte-for-byte
+from `tools/toggle-slides/toggle-manager.js` (pure `<script>` wrap,
+substitution 1 only). `AppScript/ToggleSlides.html` got the same
+button-overrides panel (HTML/CSS/JS) added from `tools/toggle-slides/
+index.html`, applied as a pure additive patch (191 lines, 0 deletions)
+against the exact anchor text shared by both files — the new code
+doesn't touch `<link>`/`<script src>` tags, the module-fetching/
+`MODULE_SOURCES` code, the hub link, `<base target>`, or
+`STORAGE_API_KEY`, so none of the other four substitutions were
+affected or needed redoing. This tool is still otherwise "unverified
+end to end" — the Save/Load round-trip against a real Apps Script
+project hasn't been exercised yet — so a real deploy is the next thing
+to confirm, not something already checked off here.
 
 ### What's NOT built yet
 

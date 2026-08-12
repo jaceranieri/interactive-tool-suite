@@ -133,6 +133,19 @@ database.
   is the one place a `draw` element's `points` array becomes an SVG path
   `d` string — used both when a stroke is first drawn and on every later
   resize, so it never needs a second copy in the exported player.
+  `FONT_FAMILIES` is text's font-choice map (currently `sans` → IBM Plex
+  Sans, `handwriting` → Caveat) — same "add an entry, it's wired up
+  everywhere" pattern as `ICON_PATHS` just below it: `element-types.js`'s
+  `fontFamily` field uses a `fontpicker` type (handled generically in
+  `canvas-editor.js`'s `_buildField`, same as `iconpicker`) rather than a
+  hardcoded `options` list, so a new font only needs adding here. A new
+  font entry here also needs the actual webfont added to the Google Fonts
+  `<link>` in both `index.html`'s `<head>` AND the Export modal's own
+  embedded template `<link>` (`openExportModal()`) — CSS text measurement
+  (`measureTextWidth`/`wrapTextLines`, used for line-wrapping) silently
+  falls back to the browser's generic font for that family if the webfont
+  never actually loaded, which reads as "wrapping looks slightly off" far
+  more often than as an obvious error.
 - `canvas-editor.js` — selection (including multi-select and marquee),
   drag/resize, the contextual popup, and freehand-stroke capture (see
   "Free draw" below). Sits on top of the renderer, never modifies it.
@@ -396,7 +409,10 @@ There's no automated test suite. What exists:
   directly on the canvas with the stroke automatically simplified
   (Ramer-Douglas-Peucker) and curve-fit (Catmull-Rom-to-Bezier) so it
   reads as a smooth line rather than a jittery mouse trace, resizable
-  like any other element.
+  like any other element; and a second Text font — a "Font" picker
+  (Sans / Handwriting, the latter Google's Caveat) alongside the
+  existing size/weight/colour fields, extensible via `FONT_FAMILIES` in
+  `element-renderer.js` (see that bullet above).
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7

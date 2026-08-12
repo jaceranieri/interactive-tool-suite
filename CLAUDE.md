@@ -199,6 +199,89 @@ code, not later cuts.
   left-rail button's active state — same pattern as `onSelect` already
   syncing the layer panel.
 
+### Uploaded SVGs (the `svg` element type)
+
+Lets an author upload their own SVG asset (a logo, a custom icon) rather
+than being limited to the built-in 7-icon library. Four scope decisions
+were settled up front, before any code was written, the same way Free
+draw's were: **single accent colour** recolour (every fill/stroke in the
+uploaded markup is flattened to one author-chosen colour, not a per-shape
+palette — multi-colour source art gets flattened on purpose), **inline-
+in-JSON storage** (the sanitized markup lives directly on the element's
+data, same as everything else in a project file — no separate asset-file
+API), **strict allowlist sanitization** (not a blocklist — see below), and
+a **new element type** rather than folding uploads into `icon` (icon
+stays a small curated built-in set; `svg` is the escape hatch for
+arbitrary author-supplied art).
+
+- **Data shape**: like `draw`'s `points`, `svgMarkup` (the sanitized
+  markup) and `originalViewBox` are type-specific data set directly on
+  the object rather than declared in `ELEMENT_TYPES.svg.fields` — no sane
+  form-input type for raw SVG source. Also like `draw`, an `svg` element
+  is never placed via `makeDefaultElement()`/`addElement()` alone — it
+  has no meaningful default shape until an author picks a file — so its
+  left-rail button opens a hidden `<input type="file">` instead
+  (`#svg-upload-input` in `index.html`) rather than instant-placing.
+  `handleSvgUpload()` reads the file, runs it through the sanitizer, and
+  calls `addSvgElement()` (the `svg`-specific sibling of `addElement()`)
+  on success — a rejected file (invalid SVG, or over
+  `SVG_UPLOAD_MAX_BYTES`, currently 500KB) shows a `Shell.toast` and
+  never creates an element.
+- **Why sanitize at all — read this before touching `svg-sanitizer.js`**:
+  `element-renderer.js`'s output is reused UNMODIFIED by the exported
+  learner-facing player (see that file's own header comment). An
+  unsanitized malicious SVG uploaded here would run its payload inside a
+  real Articulate course, not just inside this authoring tool — a
+  realistic threat, since "grab an icon off some site" is a normal author
+  workflow. `svg-sanitizer.js`'s `sanitizeSvgMarkup()` runs once, at
+  upload time, in the authoring UI only (not part of the shared renderer,
+  and not needed inside the exported player — by export time the stored
+  `svgMarkup` is already sanitized data, so this file is never one of
+  Export's fetched/embedded modules).
+- **Allowlist, not blocklist**: parses the uploaded text via `DOMParser`,
+  then rebuilds a clean tree element-by-element, keeping only tags in
+  `SVG_ALLOWED_TAGS` (shape/gradient/structural elements — no `<script>`,
+  no `<image>`, no `<a>`) and attributes in `SVG_ALLOWED_ATTRS` (geometry
+  and paint only — every `on*` handler, `style` — a `url(...)` inside a
+  style attribute is its own CSS-based injection vector, distinct from
+  the tag/handler-based ones the tag allowlist blocks — and
+  `href`/`xlink:href` are excluded). A disallowed tag drops itself AND
+  everything nested under it, so a `<script>` hidden inside an otherwise-
+  fine `<g>` doesn't survive just because its parent was allowed.
+  **Real bug caught during testing**: tag/attribute names were originally
+  compared after `.toLowerCase()`-ing both sides, which silently dropped
+  every camelCase SVG name (`linearGradient`, `viewBox`, `gradientUnits`)
+  since SVG tag/attribute names are case-sensitive — a gradient-filled
+  upload rendered as if the `<defs>` block were empty, no error, nothing
+  in the console. Fixed by comparing tag/attribute names as-authored,
+  with no case normalization on either side of the allowlist check — this
+  is still safe against a case-trick bypass (e.g. `<ScRiPt>`) precisely
+  *because* it's an allowlist: a name that doesn't exactly match one of
+  the deliberately-included spellings is dropped regardless of what case
+  it's in.
+- **Id rewriting**: every `id` attribute is rewritten with a prefix unique
+  to that upload (the new element's own id), and every `url(#id)`
+  reference (`fill`, `stroke`, `clip-path`) is rewritten alongside it —
+  needed so an uploaded SVG's internal ids (e.g. a gradient's `id="grad1"`)
+  can never collide with another `svg` element already on the same
+  canvas, or with the app's own DOM ids.
+- **Recolour application** (`applySvgAccentColor()` in
+  `element-renderer.js`): re-run on every render from the *original*
+  sanitized markup — not baked into stored `svgMarkup` — same as icon's
+  own `color` field re-applying `fill` on every render. An element with
+  an explicit `fill="none"` (an outline-only shape) is left alone so
+  stroke-only icons still read as outlines rather than gaining a fill; an
+  element with no `fill` attribute at all still defaults to black per the
+  SVG spec, so it's treated the same as an explicit non-`"none"` fill
+  (recoloured). `<stop stop-color>` (gradient stops) are recoloured too,
+  for consistency, even though a gradient's whole point is normally
+  multi-colour — a deliberate consequence of the single-accent-colour
+  scope call, not a special case.
+- Resize handles, the property panel's Colour/Opacity fields, layer panel
+  entry, undo/redo, and duplicate are all free from the existing schema-
+  driven system — the same payoff Free draw got from extending
+  `ELEMENT_TYPES` instead of hand-writing a new UI path.
+
 ## The Apps Script deployment pipeline — read this before touching v2
 
 `tools/animated-slides-v2/*.html` and `*.js` (repo source — plain
@@ -396,7 +479,23 @@ There's no automated test suite. What exists:
   directly on the canvas with the stroke automatically simplified
   (Ramer-Douglas-Peucker) and curve-fit (Catmull-Rom-to-Bezier) so it
   reads as a smooth line rather than a jittery mouse trace, resizable
-  like any other element.
+  like any other element; and an SVG upload element type (see "Uploaded
+  SVGs" above) — an author can bring their own SVG asset (a logo, a
+  custom icon) rather than being limited to the built-in icon library,
+  sanitized on upload against a strict allowlist and recoloured via a
+  single accent-colour override, verified in local preview (a Playwright
+  session confirmed a `<script>` tag and an `onclick` handler both get
+  stripped from an uploaded file, a gradient's internal ids get rewritten
+  correctly, and the property panel / undo-redo / duplicate all work
+  against the new type) but — same as everything else added to v2 —
+  **not yet hand-verified against a live Apps Script deployment**, only
+  hand-synced into `AppScript/AnimatedSlidesV2.html` +
+  `AppScript/ElementTypesJs.html` + `AppScript/ElementRendererJs.html` +
+  the new `AppScript/SvgSanitizerJs.html` via the usual 5-substitution
+  pipeline (an `<?!= include('SvgSanitizerJs'); ?>` scriptlet was added
+  alongside the existing includes — sanitization only runs at upload
+  time in the authoring UI, so this file is deliberately NOT one of
+  Export's embedded `MODULE_SOURCES` modules).
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7

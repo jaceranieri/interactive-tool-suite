@@ -275,6 +275,18 @@ function createElementNode(data) {
     return { group: g, iconSvg, iconPath };
   }
 
+  if (data.type === 'svg') {
+    const svgWrap = document.createElementNS(svgNS, "svg");
+    svgWrap.setAttribute("width", data.width);
+    svgWrap.setAttribute("height", data.height);
+    // svgMarkup is already-sanitized *inner* content (see svg-sanitizer.js)
+    // — safe to inject directly, no outer <svg> tag to strip.
+    svgWrap.innerHTML = data.svgMarkup || '';
+    g.appendChild(svgWrap);
+    applySvgStyle(svgWrap, data, false);
+    return { group: g, svgWrap };
+  }
+
   throw new Error(`Unknown element type: ${data.type}`);
 }
 
@@ -299,6 +311,8 @@ function updateElementNode(node, data, { animate = false, duration = 0.8 } = {})
     applyDrawStyle(node.shape, node.hitShape, data, animate, duration);
   } else if (data.type === 'icon') {
     applyIconStyle(node.iconSvg, node.iconPath, data, animate, duration);
+  } else if (data.type === 'svg') {
+    applySvgStyle(node.svgWrap, data, animate, duration);
   }
 }
 
@@ -482,6 +496,41 @@ function applyIconStyle(iconSvg, iconPath, data, animate, duration = 0.8) {
   iconSvg.setAttribute('fill', data.color || '#1f2937');
   const d = ICON_PATHS[data.iconName] || ICON_PATHS.star;
   if (iconPath.getAttribute('d') !== d) iconPath.setAttribute('d', d);
+}
+
+/**
+ * Flattens every fill/stroke/gradient-stop in an uploaded SVG to a single
+ * accent colour — the "single accent colour" recolour model this type
+ * deliberately settled on over a per-shape palette. An element with no
+ * `fill` attribute at all still defaults to black per the SVG spec, so it's
+ * treated the same as an explicit non-"none" fill (recoloured); an explicit
+ * `fill="none"` (an outline-only shape) is left alone so stroke-only icons
+ * still read as outlines rather than gaining a fill. Re-run on every style
+ * update rather than baked into the stored `svgMarkup`, same as icon's own
+ * `color` field re-applying `fill` on every render.
+ */
+function applySvgAccentColor(root, color) {
+  const FILLABLE_TAGS = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline']);
+  root.querySelectorAll('*').forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    const fill = el.getAttribute('fill');
+    if (fill !== 'none' && (fill || FILLABLE_TAGS.has(tag))) {
+      el.setAttribute('fill', color);
+    }
+    if (el.hasAttribute('stroke') && el.getAttribute('stroke') !== 'none') {
+      el.setAttribute('stroke', color);
+    }
+    if (tag === 'stop' && el.hasAttribute('stop-color')) {
+      el.setAttribute('stop-color', color);
+    }
+  });
+}
+
+function applySvgStyle(svgWrap, data, animate, duration = 0.8) {
+  const opacity = data.opacity !== undefined ? data.opacity : 1;
+  setOrTween(svgWrap, { width: data.width, height: data.height, opacity }, animate, duration);
+  if (data.originalViewBox) svgWrap.setAttribute('viewBox', data.originalViewBox);
+  applySvgAccentColor(svgWrap, data.accentColor || '#1f2937');
 }
 
 </script>

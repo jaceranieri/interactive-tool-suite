@@ -210,6 +210,8 @@
   <div id="shell-main" style="display:flex;">
     <div id="left-rail">
       <div class="add-element-grid" id="add-element-grid"></div>
+      <input type="file" id="svg-upload-input" accept=".svg,image/svg+xml" style="display:none;" onchange="handleSvgUpload(event)">
+
       <div class="rail-divider"></div>
       <button class="add-element-btn" onclick="openCrossSlideModal()" title="Add linked element" aria-label="Add linked element"><i class="fa-solid fa-link"></i></button>
       <button class="add-element-btn" id="layers-toggle-btn" onclick="toggleLayersPanel()" title="Layers" aria-label="Toggle layers panel"><i class="fa-solid fa-layer-group"></i></button>
@@ -363,6 +365,7 @@
 <script src="../../shared/storage-connector.js"></script>
 <script src="element-types.js"></script>
 <script src="element-renderer.js"></script>
+<script src="svg-sanitizer.js"></script>
 <script src="canvas-editor.js"></script>
 <script src="history.js"></script>
 <script src="slide-manager.js"></script>
@@ -651,6 +654,10 @@
         // addElement(). See CanvasEditor.setDrawMode / _finishFreehand.
         btn.id = 'draw-tool-btn';
         btn.addEventListener('click', () => editor.setDrawMode(!editor.drawMode));
+      } else if (type === 'svg') {
+        // Also has no meaningful default shape — opens a file picker
+        // instead of instant-placing. See handleSvgUpload/addSvgElement.
+        btn.addEventListener('click', () => document.getElementById('svg-upload-input').click());
       } else {
         btn.addEventListener('click', () => addElement(type));
       }
@@ -675,6 +682,50 @@
     history.commitAction();
     refreshUI();
     editor.select(id); // straight into editing — no reason to make an author hunt for what they just added
+  }
+
+  // A generous but real ceiling — inline-in-JSON storage means an uploaded
+  // SVG's markup rides along in every Save/Load payload for this project
+  // from now on, so an Illustrator-export-sized file is worth rejecting up
+  // front rather than discovering a bloated project the hard way later.
+  const SVG_UPLOAD_MAX_BYTES = 500 * 1024;
+
+  async function handleSvgUpload(event) {
+    const file = event.target.files[0];
+    event.target.value = ''; // reset so re-selecting the same file still fires 'change'
+    if (!file) return;
+
+    if (file.size > SVG_UPLOAD_MAX_BYTES) {
+      Shell.toast(`That SVG is too large (max ${Math.round(SVG_UPLOAD_MAX_BYTES / 1024)}KB).`, 'danger');
+      return;
+    }
+
+    const rawText = await file.text();
+    const id = 'el-' + Date.now();
+    const result = sanitizeSvgMarkup(rawText, id);
+    if (!result.ok) {
+      Shell.toast(result.error, 'danger');
+      return;
+    }
+    addSvgElement(id, result.markup, result.viewBox);
+  }
+
+  function addSvgElement(id, svgMarkup, viewBox) {
+    history.beginAction();
+    const count = Object.keys(slideManager.elements).length;
+    const offset = (count % 6) * 24;
+    const data = makeDefaultElement('svg', id, 200 + offset, 150 + offset);
+    data.svgMarkup = svgMarkup;
+    data.originalViewBox = viewBox;
+    const node = createElementNode(data);
+    layer.appendChild(node.group);
+    gsap.to(node.group, { opacity: 1, duration: 0.4 });
+    slideManager.elements[id] = data;
+    slideManager.nodes[id] = node;
+    editor.registerNode(node);
+    history.commitAction();
+    refreshUI();
+    editor.select(id);
   }
 
   async function newProject() {

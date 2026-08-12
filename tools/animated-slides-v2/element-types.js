@@ -91,6 +91,29 @@ const ELEMENT_TYPES = {
     },
   },
 
+  // An author-uploaded SVG asset. Like draw's `points`, `svgMarkup` (the
+  // sanitized markup — see svg-sanitizer.js) and `originalViewBox` are
+  // type-specific data set directly on the object rather than declared as
+  // `fields` — there's no sane form-input type for raw SVG source, so it
+  // bypasses the generic field-list UI same as points does. Also like draw,
+  // an `svg` element is never placed via makeDefaultElement()/addElement()
+  // alone — it has no meaningful default shape until an author picks a
+  // file — so its left-rail button opens a file picker instead (see
+  // index.html's renderAddElementButtons/addSvgElement). `accentColor` is a
+  // single recolour override applied to every fill/stroke in the uploaded
+  // markup at render time (see element-renderer.js's applySvgAccentColor) —
+  // a deliberate scope call: multi-colour source art gets flattened to one
+  // colour rather than exposing a per-shape palette.
+  svg: {
+    label: 'SVG',
+    icon: 'fa-shapes',
+    defaultSize: { width: 200, height: 200 },
+    fields: {
+      accentColor: { type: 'color', label: 'Colour',  default: '#1f2937', tier: 'primary' },
+      opacity:     { type: 'range', label: 'Opacity', default: 1, min: 0, max: 1, step: 0.05, tier: 'secondary' },
+    },
+  },
+
 };
 
 /**

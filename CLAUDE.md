@@ -115,9 +115,13 @@ database.
 ## Animated Slides v2's internal architecture
 
 - `element-types.js` — the `ELEMENT_TYPES` schema (field definitions per
-  element type: text/rect/arrow/icon). Adding a field here automatically
-  gets a property-panel input; adding a type automatically gets an "Add
-  element" button. Extend the schema rather than hand-writing per-type UI.
+  element type: text/rect/arrow/icon/draw). Adding a field here
+  automatically gets a property-panel input; adding a type automatically
+  gets an "Add element" button. Extend the schema rather than hand-writing
+  per-type UI. One exception to "every type gets an instant-place Add
+  element button": `draw` (see "Free draw" below) — its button arms a
+  tool instead of placing anything, since a freehand drawing has no
+  sane default shape.
 - `element-renderer.js` — the one rendering engine, used **unmodified** by
   both the authoring canvas and the exported player. Never make this
   authoring-aware — it only ever reads/writes plain element `data`
@@ -125,12 +129,16 @@ database.
   choices worth knowing: text is native SVG `<text>`/`<tspan>`, not
   `<foreignObject>` (opacity + foreignObject interact badly with the
   SVG viewBox scale); GSAP is only used for genuine animated transitions,
-  not instant edits.
+  not instant edits. `smoothedPathFromPoints()` (Catmull-Rom-to-Bezier)
+  is the one place a `draw` element's `points` array becomes an SVG path
+  `d` string — used both when a stroke is first drawn and on every later
+  resize, so it never needs a second copy in the exported player.
 - `canvas-editor.js` — selection (including multi-select and marquee),
-  drag/resize, the contextual popup. Sits on top of the renderer, never
-  modifies it. Shift-drag locks movement to whichever axis (horizontal or
-  vertical) has moved further from the drag's start point, re-evaluated
-  every frame.
+  drag/resize, the contextual popup, and freehand-stroke capture (see
+  "Free draw" below). Sits on top of the renderer, never modifies it.
+  Shift-drag locks movement to whichever axis (horizontal or vertical)
+  has moved further from the drag's start point, re-evaluated every
+  frame.
 - `slide-manager.js` — owns `slides`, `activeIndex`, `canvasSettings`, and
   the live `elements`/`nodes` maps for the active slide. Cross-slide
   element "linking" (the core mechanic of this tool) is just two elements
@@ -139,6 +147,57 @@ database.
   furthest back) — see the "Getting this wrong" bullet under Conventions.
 - `history.js`, `layer-panel.js`, `nav-bar.js` — undo/redo, the layer
   list, and the learner-facing nav bar (also reused verbatim by export).
+
+### Free draw (the `draw` element type)
+
+Lets an author sketch directly on the canvas instead of only placing
+pre-built shapes — a pencil-icon left-rail button (multi-stroke toggle,
+not one-shot: clicking it arms `CanvasEditor.drawMode` and it stays on
+across repeated strokes until clicked again or Escape is pressed).
+Deliberately scoped down from the start: stroke-only (colour/thickness/
+opacity, no closed-path fill option), resizable via the same 4-corner
+handles every other non-text/arrow type already gets for free, and a
+fixed (non-author-configurable) smoothing amount rather than an exposed
+slider — all three were explicit scope calls made before writing any
+code, not later cuts.
+
+- **Data shape**: like arrow's `length`/`angle`, `points` is a
+  type-specific property that isn't user-editable via a form control, so
+  it isn't declared in `ELEMENT_TYPES.draw.fields` — it's set directly
+  on the data object, the same way core x/y/width/height are. Each point
+  is normalized to the element's own bounding box (`x`/`y` both 0..1,
+  fraction of `data.width`/`data.height`) — exactly how rect's radius
+  fields relate to its box — specifically so plain corner-drag resize
+  (no draw-specific code in `_applyResize`/`_renderHandles`) scales the
+  whole drawing for free, same as rect/icon.
+- **Two-stage smoothing, split by file on purpose**: `canvas-editor.js`'s
+  `simplifyPoints()` (Ramer-Douglas-Peucker) runs once, in
+  `_finishFreehand()`, against the *raw* pointer trail — this is the
+  "de-jitter" step, and it's pointer-specific (only exists at
+  capture time), so it has no reason to live in the renderer.
+  `element-renderer.js`'s `smoothedPathFromPoints()` (Catmull-Rom-to-
+  Bezier) is the separate "how do these points become a curve" step,
+  and it only depends on `points` — no pointer data — so it's reused
+  identically by both a live authoring resize and the exported player.
+  While a stroke is still being drawn, the on-canvas preview is a plain
+  unsmoothed polyline (cheap, responsive); the real smoothed path is
+  only ever built once, in `_finishFreehand()`, from the simplified
+  points — there's no live-smoothing-while-dragging.
+- **Draw mode intercepts clicks everywhere, not just on empty canvas** —
+  an author needs to be able to draw on top of existing elements. Two
+  separate gates make this work: the SVG-level `pointerdown` listener
+  checks `drawMode` *before* its usual "only if `e.target === svg`"
+  marquee check, and each element node's own `pointerdown` handler (in
+  `_attachSelection`) bails out early without calling
+  `stopPropagation()` when `drawMode` is on, letting the event bubble up
+  to that SVG-level listener instead of starting a select/drag on
+  whatever's underneath the stroke.
+- Entering draw mode calls `deselect()` first (closes the properties
+  popup, which would otherwise sit on top of the canvas while drawing).
+  `setDrawMode()` takes a callback (`onDrawModeChange`, a constructor
+  option alongside `onSelect`/`onChange`) so `index.html` can toggle the
+  left-rail button's active state — same pattern as `onSelect` already
+  syncing the layer panel.
 
 ## The Apps Script deployment pipeline — read this before touching v2
 
@@ -324,15 +383,20 @@ There's no automated test suite. What exists:
   tool directly first); a fixed layer-order bug (reordering could
   silently revert after navigating slides); a fixed inverted
   bring-forward/send-backward chevron bug; shift-to-axis-lock dragging;
-  a redesigned left rail (vertical icon-only stack: 4 add-element icons,
-  a divider, then Link/Layers/Settings, each opening a non-blocking
+  a redesigned left rail (vertical icon-only stack: originally 4
+  add-element icons, now 5 with Draw — see "Free draw" above — a
+  divider, then Link/Layers/Settings, each opening a non-blocking
   slide-out drawer instead of a modal that covers the canvas); and a
   settings drawer rebuilt as a 2-column grid with a proper Active/
   Inactive colour table, matching a supplied design mockup; and
   folder support in Save/Open (see "Storage" above) — the Open modal
   now browses into folders via breadcrumbs, can create/delete folders,
   and a new project's first save lands in whichever folder was last
-  browsed.
+  browsed; and a freehand "Draw" tool (see "Free draw" above) — sketch
+  directly on the canvas with the stroke automatically simplified
+  (Ramer-Douglas-Peucker) and curve-fit (Catmull-Rom-to-Bezier) so it
+  reads as a smooth line rather than a jittery mouse trace, resizable
+  like any other element.
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7

@@ -155,6 +155,34 @@ function roundedRectPath(width, height, tl, tr, br, bl) {
     Z
   `.trim();
 }
+/**
+ * Turns a sequence of already-simplified points into a smooth SVG path `d`
+ * string via a Catmull-Rom-to-Bezier conversion (the standard tension-1/6
+ * form) — this is what actually removes the "jitter" a raw mouse trace has,
+ * by curving *through* every point rather than connecting them with
+ * straight segments. Runs identically at authoring time and inside the
+ * exported player, since it only depends on `points` — no live pointer
+ * data involved (that part is CanvasEditor's job, see simplifyPoints there).
+ */
+function smoothedPathFromPoints(points) {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
 function createElementNode(data) {
   const g = document.createElementNS(svgNS, "g");
   g.setAttribute("id", data.id);
@@ -214,6 +242,27 @@ function createElementNode(data) {
     return { group: g, line, markerPath, hitLine, visualGroup };
   }
 
+  if (data.type === 'draw') {
+    const shape = document.createElementNS(svgNS, "path");
+    shape.setAttribute('fill', 'none');
+    shape.setAttribute('stroke-linecap', 'round');
+    shape.setAttribute('stroke-linejoin', 'round');
+    g.appendChild(shape);
+
+    // Same "invisible wide stroke purely to catch pointer events" trick as
+    // the arrow's hitLine — a 1-6px smoothed stroke is otherwise very hard
+    // to click precisely.
+    const hitShape = document.createElementNS(svgNS, "path");
+    hitShape.setAttribute('fill', 'none');
+    hitShape.setAttribute('stroke', '#000');
+    hitShape.setAttribute('opacity', '0');
+    hitShape.setAttribute('pointer-events', 'stroke');
+    g.appendChild(hitShape);
+
+    applyDrawStyle(shape, hitShape, data, false);
+    return { group: g, shape, hitShape };
+  }
+
   if (data.type === 'icon') {
     const iconSvg = document.createElementNS(svgNS, "svg");
     iconSvg.setAttribute("viewBox", "0 0 24 24");
@@ -246,6 +295,8 @@ function updateElementNode(node, data, { animate = false, duration = 0.8 } = {})
     applyRectStyle(node.shape, data, animate, duration);
   } else if (data.type === 'arrow') {
     applyArrowStyle(node.line, node.markerPath, node.hitLine, node.visualGroup, data, animate, duration);
+  } else if (data.type === 'draw') {
+    applyDrawStyle(node.shape, node.hitShape, data, animate, duration);
   } else if (data.type === 'icon') {
     applyIconStyle(node.iconSvg, node.iconPath, data, animate, duration);
   }
@@ -395,6 +446,34 @@ function applyArrowStyle(line, markerPath, hitLine, visualGroup, data, animate, 
     applyGeometry(target.length, target.angle, target.strokeWidth);
   }
   line._lastGeom = target;
+}
+
+/**
+ * `data.points` are stored normalized to the element's own width/height
+ * (each x/y in 0..1) — exactly like rect reading data.width/height to build
+ * its path — so a plain corner-drag resize (no draw-specific resize code
+ * needed in canvas-editor.js) scales the whole drawing for free. The path
+ * shape itself is never tweened frame-by-frame during animate:true
+ * transitions (same "reflow is discrete" reasoning as text) — only opacity
+ * eases; a resized/linked drawing just snaps to its new scaled geometry
+ * while the group's x/y/opacity animate around it.
+ */
+function applyDrawStyle(shape, hitShape, data, animate, duration = 0.8) {
+  const color = data.color || '#1f2937';
+  const strokeWidth = data.strokeWidth || 6;
+  const opacity = data.opacity !== undefined ? data.opacity : 1;
+
+  const scaledPoints = (data.points || []).map(p => ({ x: p.x * data.width, y: p.y * data.height }));
+  const d = smoothedPathFromPoints(scaledPoints);
+  shape.setAttribute('d', d);
+  shape.setAttribute('stroke', color);
+  shape.setAttribute('stroke-width', strokeWidth);
+  if (hitShape) {
+    hitShape.setAttribute('d', d);
+    hitShape.setAttribute('stroke-width', Math.max(20, strokeWidth + 16));
+  }
+
+  setOrTween(shape, { opacity }, animate, duration);
 }
 
 function applyIconStyle(iconSvg, iconPath, data, animate, duration = 0.8) {

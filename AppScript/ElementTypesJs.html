@@ -69,6 +69,29 @@ const ELEMENT_TYPES = {
     },
   },
 
+  // Unlike every other type, a "draw" element is never placed via
+  // makeDefaultElement()/addElement() — it has no meaningful default shape,
+  // so its left-rail button arms freehand draw mode instead (see
+  // CanvasEditor.setDrawMode / index.html's renderAddElementButtons). The
+  // actual element is built directly in CanvasEditor._finishFreehand() once
+  // a stroke is drawn. `defaultSize` is unused but kept so nothing else
+  // that assumes every ELEMENT_TYPES entry has one needs a special case.
+  // `points` (the smoothed stroke geometry, normalized 0..1 against
+  // width/height so corner-resize scales it like any other type) is set
+  // directly on the data object rather than declared as a `fields` entry —
+  // there's no sane form-input type for an array of points, same reasoning
+  // that keeps x/y/width/height themselves out of `fields`.
+  draw: {
+    label: 'Draw',
+    icon: 'fa-pencil',
+    defaultSize: { width: 200, height: 200 },
+    fields: {
+      color:       { type: 'color',  label: 'Colour',    default: '#1f2937', tier: 'primary' },
+      strokeWidth: { type: 'number', label: 'Thickness', default: 6, min: 1, max: 60, tier: 'primary' },
+      opacity:     { type: 'range',  label: 'Opacity',   default: 1, min: 0, max: 1, step: 0.05, tier: 'secondary' },
+    },
+  },
+
 };
 
 /**

@@ -472,6 +472,10 @@
     onSelect: () => renderLayerPanel(layerListEl, slideManager, editor),
     onChange: () => renderLayerPanel(layerListEl, slideManager, editor),
     getCanvasSettings: () => slideManager.canvasSettings,
+    onDrawModeChange: (isOn) => {
+      const btn = document.getElementById('draw-tool-btn');
+      if (btn) btn.classList.toggle('btn-active', isOn);
+    },
   });
   slideManager.attachEditor(editor);
   slideManager.onSlideChange = refreshUI;
@@ -642,7 +646,15 @@
       btn.title = schema.label;
       btn.setAttribute('aria-label', 'Add ' + schema.label);
       btn.innerHTML = `<i class="fa-solid ${schema.icon}"></i>`;
-      btn.addEventListener('click', () => addElement(type));
+      if (type === 'draw') {
+        // Freehand drawing has no meaningful default shape to instant-place
+        // — this button arms/disarms draw mode instead of calling
+        // addElement(). See CanvasEditor.setDrawMode / _finishFreehand.
+        btn.id = 'draw-tool-btn';
+        btn.addEventListener('click', () => editor.setDrawMode(!editor.drawMode));
+      } else {
+        btn.addEventListener('click', () => addElement(type));
+      }
       container.appendChild(btn);
     });
   }

@@ -143,7 +143,6 @@
   .cross-slide-row button { font-size: 11px; padding: 5px 10px; flex-shrink: 0; }
   .linked-badge { color: var(--accent); font-size: 10px; margin-right: 4px; }
 
-  .element-popup { position: absolute; z-index: 50; width: 240px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--space-4); }
   .popup-name { display: block; width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); font-weight: 700; color: var(--ink); border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 var(--space-2); margin-bottom: var(--space-3); outline: none; background: transparent; }
   .popup-name:focus { border-bottom-color: var(--accent); }
   .popup-fields .popup-field { margin-bottom: var(--space-3); }
@@ -322,6 +321,21 @@
   </div>
 </div>
 
+<!-- Element properties panel: slide-out, non-blocking — see .side-panel
+     comment above. Replaces the old floating contextual popup that used
+     to sit beside the selected element; property editing now shares the
+     same side-panel system as Layers/Settings (and matches Tabbed
+     Panels' side-panel pattern), opening the instant something is
+     selected. See handleSelectionChange()/closeManualPanel() below for
+     how the one panel slot is shared between this and Layers/Settings. -->
+<div class="side-panel" id="property-panel">
+  <div class="side-panel-header">
+    <div><div class="title-block">Properties</div><h2 id="property-panel-title">Element settings</h2></div>
+    <button class="modal-close" onclick="editor.deselect()">&times;</button>
+  </div>
+  <div class="side-panel-body" id="property-panel-body"></div>
+</div>
+
 <!-- Open project modal -->
 <div class="modal-overlay" id="open-modal">
   <div class="modal-dialog">
@@ -390,7 +404,6 @@
 
   const svg = document.getElementById('canvas-svg');
   const layer = document.getElementById('elements-layer');
-  const popupHost = document.getElementById('canvas-wrapper');
   const layerListEl = document.getElementById('layer-list');
 
   let currentProjectName = "Untitled project";
@@ -476,9 +489,9 @@
   });
 
   const editor = new CanvasEditor({
-    svg, elements: slideManager.elements, nodes: slideManager.nodes, popupHost, history,
-    onSelect: () => renderLayerPanel(layerListEl, slideManager, editor),
-    onChange: () => renderLayerPanel(layerListEl, slideManager, editor),
+    svg, elements: slideManager.elements, nodes: slideManager.nodes, history,
+    onSelect: (ids, meta) => { handleSelectionChange(ids, meta); renderLayerPanel(layerListEl, slideManager, editor); },
+    onChange: () => { renderLayerPanel(layerListEl, slideManager, editor); syncPropertyPanelFields(); },
     getCanvasSettings: () => slideManager.canvasSettings,
     onDrawModeChange: (isOn) => {
       const btn = document.getElementById('draw-tool-btn');
@@ -969,35 +982,283 @@
     container.appendChild(renderColoursSection());
   }
 
-  // Both drawers dock to the same right edge, so only one makes sense open
-  // at a time — opening either one closes the other first.
+  /* ---- Side panel routing: Layers / Settings / Properties share one slot ----
+     All three dock to the same right edge (.side-panel), so only one is ever
+     shown. `activeSidePanel` tracks which; `panelBeforeProperty` remembers
+     what was open (Layers, Settings, or nothing) the moment a selection
+     auto-opened Properties on top of it, so deselecting restores it —
+     without that memory, selecting an element while Layers was open would
+     permanently bump Layers off screen. Layers/Settings can still be opened
+     manually on top of an active Properties panel (selection stays live
+     underneath); closing them then falls back to Properties, not to
+     panelBeforeProperty, since checking the live selection directly is
+     simpler and correct regardless of how many times Layers/Settings were
+     flipped between while a selection was active. */
+  let activeSidePanel = null; // 'layers' | 'settings' | 'property' | null
+  let panelBeforeProperty = null;
+
+  function applySidePanelUI() {
+    document.getElementById('layers-panel').classList.toggle('active', activeSidePanel === 'layers');
+    document.getElementById('settings-panel').classList.toggle('active', activeSidePanel === 'settings');
+    document.getElementById('property-panel').classList.toggle('active', activeSidePanel === 'property');
+    document.getElementById('layers-toggle-btn').classList.toggle('btn-active', activeSidePanel === 'layers');
+    document.getElementById('settings-toggle-btn').classList.toggle('btn-active', activeSidePanel === 'settings');
+  }
+
   function openSettingsPanel() {
-    closeLayersPanel();
     renderSettingsModal();
-    document.getElementById('settings-panel').classList.add('active');
-    document.getElementById('settings-toggle-btn').classList.add('btn-active');
+    activeSidePanel = 'settings';
+    applySidePanelUI();
   }
-  function closeSettingsPanel() {
-    document.getElementById('settings-panel').classList.remove('active');
-    document.getElementById('settings-toggle-btn').classList.remove('btn-active');
-  }
+  function closeSettingsPanel() { closeManualPanel(); }
   function toggleSettingsPanel() {
-    const isOpen = document.getElementById('settings-panel').classList.contains('active');
-    if (isOpen) closeSettingsPanel(); else openSettingsPanel();
+    if (activeSidePanel === 'settings') closeSettingsPanel(); else openSettingsPanel();
   }
 
   function openLayersPanel() {
-    closeSettingsPanel();
-    document.getElementById('layers-panel').classList.add('active');
-    document.getElementById('layers-toggle-btn').classList.add('btn-active');
+    activeSidePanel = 'layers';
+    applySidePanelUI();
   }
-  function closeLayersPanel() {
-    document.getElementById('layers-panel').classList.remove('active');
-    document.getElementById('layers-toggle-btn').classList.remove('btn-active');
-  }
+  function closeLayersPanel() { closeManualPanel(); }
   function toggleLayersPanel() {
-    const isOpen = document.getElementById('layers-panel').classList.contains('active');
-    if (isOpen) closeLayersPanel(); else openLayersPanel();
+    if (activeSidePanel === 'layers') closeLayersPanel(); else openLayersPanel();
+  }
+
+  /** Closing a manually-opened Layers/Settings panel (via its X button or
+   *  re-clicking its rail icon): if something is still selected, Properties
+   *  reclaims the slot; otherwise the slot just goes empty. */
+  function closeManualPanel() {
+    if (editor.selectedIds.size > 0) {
+      activeSidePanel = 'property';
+      renderPropertyPanel();
+    } else {
+      activeSidePanel = null;
+    }
+    applySidePanelUI();
+  }
+
+  /** CanvasEditor's onSelect hook. A real canvas selection (origin:
+   *  'canvas', the default — clicking/marqueeing/duplicating on the
+   *  canvas itself) instantly opens Properties, remembering whatever was
+   *  open before so deselecting can restore it. A selection made by
+   *  clicking a row in the Layers panel (origin: 'layers-panel') does
+   *  NOT do that — browsing layers shouldn't yank the panel away from
+   *  Layers — it only refreshes Properties' fields if Properties already
+   *  happens to be open (e.g. an element was selected on the canvas, then
+   *  the author clicked a different row in Layers without deselecting).
+   *  Deselecting to nothing always closes Properties if it's open,
+   *  regardless of origin — an empty selection has nothing to show. */
+  function handleSelectionChange(ids, meta = {}) {
+    const origin = meta.origin || 'canvas';
+
+    if (ids.length === 0) {
+      if (activeSidePanel === 'property') {
+        activeSidePanel = panelBeforeProperty;
+        panelBeforeProperty = null;
+        if (activeSidePanel === 'settings') renderSettingsModal();
+        applySidePanelUI();
+      }
+      return;
+    }
+
+    if (origin === 'canvas') {
+      if (activeSidePanel !== 'property') {
+        panelBeforeProperty = activeSidePanel;
+        activeSidePanel = 'property';
+      }
+      renderPropertyPanel();
+      applySidePanelUI();
+    } else if (activeSidePanel === 'property') {
+      renderPropertyPanel();
+    }
+  }
+
+  /* ---- Properties panel content (single- and multi-select) ---- */
+
+  function propertyActionsRow() {
+    const actionsRow = document.createElement('div');
+    actionsRow.style.display = 'flex';
+    actionsRow.style.gap = 'var(--space-2)';
+    actionsRow.style.marginTop = 'var(--space-3)';
+
+    const duplicateBtn = document.createElement('button');
+    duplicateBtn.className = 'btn btn-secondary';
+    duplicateBtn.style.flex = '1';
+    duplicateBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Duplicate';
+    duplicateBtn.title = 'Cmd/Ctrl + D';
+    duplicateBtn.addEventListener('click', () => editor.duplicateSelected());
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-danger';
+    deleteBtn.style.flex = '1';
+    deleteBtn.innerHTML = '<i class="fa-solid fa-trash"></i> Delete';
+    deleteBtn.title = 'Delete or Backspace';
+    deleteBtn.addEventListener('click', () => editor.deleteSelected());
+
+    actionsRow.appendChild(duplicateBtn);
+    actionsRow.appendChild(deleteBtn);
+    return actionsRow;
+  }
+
+  function renderPropertyPanel() {
+    const body = document.getElementById('property-panel-body');
+    const title = document.getElementById('property-panel-title');
+    body.innerHTML = '';
+    const ids = [...editor.selectedIds];
+    if (ids.length === 0) return;
+
+    if (ids.length > 1) {
+      title.textContent = `${ids.length} elements selected`;
+      renderMultiSelectPanelBody(body, ids);
+      return;
+    }
+
+    const id = ids[0];
+    const data = slideManager.elements[id];
+    const schema = ELEMENT_TYPES[data.type];
+    title.textContent = schema.label + ' settings';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'popup-name';
+    nameInput.value = data.name || schema.label;
+    nameInput.addEventListener('focus', () => history.beginAction());
+    nameInput.addEventListener('input', () => {
+      data.name = nameInput.value;
+      editor.onChange(data);
+      renderLayerPanel(layerListEl, slideManager, editor);
+    });
+    nameInput.addEventListener('change', () => history.commitAction());
+    body.appendChild(nameInput);
+
+    const primary = Object.entries(schema.fields).filter(([, f]) => (f.tier || 'primary') === 'primary');
+    const secondary = Object.entries(schema.fields).filter(([, f]) => f.tier === 'secondary');
+
+    const fieldsWrap = document.createElement('div');
+    fieldsWrap.className = 'popup-fields';
+    primary.forEach(([key, field]) => fieldsWrap.appendChild(editor.buildField(data, key, field)));
+    body.appendChild(fieldsWrap);
+
+    if (secondary.length) {
+      const more = document.createElement('button');
+      more.className = 'popup-more-toggle';
+      more.textContent = 'More options';
+      const moreWrap = document.createElement('div');
+      moreWrap.className = 'popup-fields';
+      moreWrap.style.display = 'none';
+      secondary.forEach(([key, field]) => moreWrap.appendChild(editor.buildField(data, key, field)));
+      more.addEventListener('click', () => {
+        const showing = moreWrap.style.display !== 'none';
+        moreWrap.style.display = showing ? 'none' : 'block';
+        more.textContent = showing ? 'More options' : 'Fewer options';
+      });
+      body.appendChild(more);
+      body.appendChild(moreWrap);
+    }
+
+    body.appendChild(propertyActionsRow());
+  }
+
+  /** Fields common to every selected element's type schema (same key AND
+   *  same field type) — what the multi-select panel offers, since editing
+   *  a field one of the selected types doesn't have would be meaningless
+   *  for that element. */
+  function commonFieldsForSelection(ids) {
+    const schemas = ids.map((id) => ELEMENT_TYPES[slideManager.elements[id].type]);
+    const [first, ...rest] = schemas;
+    return Object.entries(first.fields).filter(([key, field]) =>
+      rest.every((s) => s.fields[key] && s.fields[key].type === field.type));
+  }
+
+  /** Same shape as CanvasEditor.buildField, but reads/writes across every
+   *  selected element at once via setFieldOnSelection() — and shows a
+   *  "Mixed" placeholder when the selection doesn't already agree on a
+   *  value, rather than silently picking one element's value to display. */
+  function buildMultiField(ids, key, field) {
+    const wrap = document.createElement('div');
+    wrap.className = 'popup-field';
+    const label = document.createElement('label');
+    label.textContent = field.label;
+    wrap.appendChild(label);
+
+    const values = ids.map((id) => slideManager.elements[id][key]);
+    const mixed = values.some((v) => v !== values[0]);
+
+    let input;
+    if (field.type === 'select' || field.type === 'iconpicker') {
+      input = document.createElement('select');
+      if (mixed) {
+        const optMixed = document.createElement('option');
+        optMixed.value = ''; optMixed.textContent = 'Mixed'; optMixed.disabled = true; optMixed.selected = true;
+        input.appendChild(optMixed);
+      }
+      const options = field.type === 'select' ? field.options : Object.keys(ICON_PATHS).map((name) => [name, name]);
+      options.forEach(([val, text]) => {
+        const opt = document.createElement('option');
+        opt.value = val; opt.textContent = text;
+        if (!mixed && val === values[0]) opt.selected = true;
+        input.appendChild(opt);
+      });
+    } else if (field.type === 'color') {
+      // Native color inputs can't show a blank/"Mixed" state — falls back
+      // to the primary (most-recently-selected) element's value; editing
+      // still applies to the whole selection like every other field here.
+      input = document.createElement('input');
+      input.type = 'color';
+      input.value = values[values.length - 1];
+    } else if (field.type === 'range' || field.type === 'number') {
+      input = document.createElement('input');
+      input.type = field.type === 'range' ? 'range' : 'number';
+      if (field.min !== undefined) input.min = field.min;
+      if (field.max !== undefined) input.max = field.max;
+      if (field.step !== undefined) input.step = field.step;
+      if (!mixed) input.value = values[0];
+      else if (field.type === 'number') input.placeholder = 'Mixed';
+    } else if (field.type === 'textarea') {
+      input = document.createElement('textarea');
+      input.rows = 3;
+      if (!mixed) input.value = values[0];
+      else input.placeholder = 'Mixed';
+    }
+
+    input.addEventListener('focus', () => history.beginAction());
+    input.addEventListener('input', () => {
+      let val = input.value;
+      if (field.type === 'number' || field.type === 'range') val = parseFloat(val);
+      editor.setFieldOnSelection(key, val);
+    });
+    input.addEventListener('change', () => history.commitAction());
+
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  function renderMultiSelectPanelBody(body, ids) {
+    const fields = commonFieldsForSelection(ids);
+    if (fields.length) {
+      const fieldsWrap = document.createElement('div');
+      fieldsWrap.className = 'popup-fields';
+      fields.forEach(([key, field]) => fieldsWrap.appendChild(buildMultiField(ids, key, field)));
+      body.appendChild(fieldsWrap);
+    }
+    body.appendChild(propertyActionsRow());
+  }
+
+  /** Keeps the open property panel's fields in sync when a drag (not a
+   *  field edit) changed something they display, e.g. dragging the text
+   *  width handle — mirrors the old floating popup's _syncPopupFields().
+   *  Multi-select has no drag-derived fields, so this only applies to a
+   *  single-element selection. */
+  function syncPropertyPanelFields() {
+    if (activeSidePanel !== 'property') return;
+    const ids = [...editor.selectedIds];
+    if (ids.length !== 1) return;
+    const data = slideManager.elements[ids[0]];
+    if (!data) return;
+    document.querySelectorAll('#property-panel-body [data-field-key]').forEach((input) => {
+      const key = input.dataset.fieldKey;
+      if (document.activeElement !== input) input.value = data[key];
+    });
   }
 
   /* ---- Add from another slide (copy or link) ---- */

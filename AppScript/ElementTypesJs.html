@@ -18,9 +18,10 @@ const ELEMENT_TYPES = {
     icon: 'fa-font',
     defaultSize: { width: 400, height: 120 },
     fields: {
-      content:    { type: 'textarea', label: 'Text',       default: 'New text', tier: 'primary' },
-      fontSize:   { type: 'number',   label: 'Font size',   default: 52, min: 8, max: 200, tier: 'primary' },
-      fontWeight: { type: 'select',   label: 'Weight',      default: '700', tier: 'secondary',
+      content:    { type: 'textarea',   label: 'Text',       default: 'New text', tier: 'primary' },
+      fontFamily: { type: 'fontpicker', label: 'Font',       default: 'sans', tier: 'primary' },
+      fontSize:   { type: 'number',     label: 'Font size',   default: 52, min: 8, max: 200, tier: 'primary' },
+      fontWeight: { type: 'select',     label: 'Weight',      default: '700', tier: 'secondary',
                     options: [['400','Regular'], ['500','Medium'], ['600','Semibold'], ['700','Bold'], ['800','Extra bold']] },
       color:      { type: 'color',    label: 'Colour',       default: '#1f2937', tier: 'primary' },
       align:      { type: 'select',   label: 'Align',       default: 'center', tier: 'secondary',

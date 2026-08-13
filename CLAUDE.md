@@ -199,6 +199,31 @@ code, not later cuts.
   left-rail button's active state — same pattern as `onSelect` already
   syncing the layer panel.
 
+### Handwriting font (`fontFamily` on the `text` type)
+
+A second font choice for text elements — "Sans" (the existing IBM Plex
+Sans) or "Handwriting" (Caveat) — picked from a dropdown in the
+properties popup, same schema-driven pattern as icon's `iconpicker` or
+svg's colour swatch. `FONT_FAMILIES` (in `element-renderer.js`) maps a
+short key (`sans` / `handwriting`) to a `{ label, css }` pair; adding a
+third font choice means adding an entry there AND loading its Google
+Font in three places that must all move together — `index.html`'s own
+`<head>` (authoring canvas), the Export template's `<head>` inside
+`openExportModal()`, and (for the Apps Script deployment) the equivalent
+`<head>` `<link>` in `AppScript/AnimatedSlidesV2.html` twice (once for
+the authoring page itself, once inside its own copy of the Export
+template string) — four total spots, easy to update three of four and
+ship a font that measures/wraps correctly in the editor but silently
+falls back to the browser default in the exported output.
+`element-types.js` declares `fontFamily` as a `fontpicker` field type;
+`canvas-editor.js`'s `_buildField` renders it as a `<select>` whose
+options are previewed in their own font (`opt.style.fontFamily`) so an
+author can see roughly what each choice looks like before picking it.
+`measureTextWidth`/`wrapTextLines`/`layoutText` in `element-renderer.js`
+all take the resolved font-family CSS string as a parameter now (not a
+single hardcoded `TEXT_FONT_FAMILY` constant) so word-wrapping measures
+against whichever font the element actually uses.
+
 ### Uploaded SVGs (the `svg` element type)
 
 Lets an author upload their own SVG asset (a logo, a custom icon) rather
@@ -327,6 +352,34 @@ in its repo source** (`tools/animated-slides/index.html`) — specifically
 the hub link and `<base target="_top">`. If v1 is ever regenerated
 wholesale from repo source, those need reapplying, or patch the deployed
 file directly instead (as has been done so far).
+
+**A real, shipped bug from getting substitution 2 wrong**: the Draw
+feature (and, separately, the Handwriting font feature) were added to
+the deployed `ElementTypesJs.html`/`ElementRendererJs.html` without
+regenerating `MODULE_SOURCES` inside `AnimatedSlidesV2.html`'s
+`openExportModal()`. Since `MODULE_SOURCES` is a frozen string snapshot,
+not a live reference to those files, it kept an old copy of
+`element-renderer.js` with no `'draw'` case in `createElementNode()`.
+Any exported project containing a hand-drawn element then hit
+`throw new Error('Unknown element type: draw')` — thrown synchronously
+inside `SlideManager`'s constructor, which runs *before* `setupNavBar()`
+is ever called — so the entire exported `<script>` block died right
+there and the nav bar simply never got built. No console access inside
+an Articulate embed made this read as "the nav bar is hidden" rather
+than "the export threw an error," which is what made it hard to place at
+first. The fix is mechanical but easy to skip under time pressure:
+whenever `element-types.js` or `element-renderer.js` changes, regenerate
+`MODULE_SOURCES.elementTypes`/`.elementRenderer` from the real files
+(a small Node script does this — see git history for the exact one:
+`JSON.stringify` each file's contents and splice the result back into
+the `MODULE_SOURCES` object literal in `AnimatedSlidesV2.html`) and
+verify byte-for-byte against the source before considering the sync
+done, the same "generated programmatically, verified via direct
+comparison" approach Tabbed Panels and Toggle Slides already used for
+their own `MODULE_SOURCES`. **This is exactly the failure mode
+substitution 2 above warns about** — it just took a real incident to
+show how silent and structurally-separated-from-the-real-bug the
+symptom can be.
 
 ## Local preview (no Apps Script needed for most of it)
 
@@ -479,23 +532,40 @@ There's no automated test suite. What exists:
   directly on the canvas with the stroke automatically simplified
   (Ramer-Douglas-Peucker) and curve-fit (Catmull-Rom-to-Bezier) so it
   reads as a smooth line rather than a jittery mouse trace, resizable
-  like any other element; and an SVG upload element type (see "Uploaded
-  SVGs" above) — an author can bring their own SVG asset (a logo, a
-  custom icon) rather than being limited to the built-in icon library,
-  sanitized on upload against a strict allowlist and recoloured via a
-  single accent-colour override, verified in local preview (a Playwright
+  like any other element (deployed live and confirmed working in
+  authoring); a second "Handwriting" font choice for text elements (see
+  "Handwriting font" above), also deployed live and confirmed working in
+  authoring; and an SVG upload element type (see "Uploaded SVGs" above)
+  — an author can bring their own SVG asset (a logo, a custom icon)
+  rather than being limited to the built-in icon library, sanitized on
+  upload against a strict allowlist and recoloured via a single
+  accent-colour override, verified in local preview (a Playwright
   session confirmed a `<script>` tag and an `onclick` handler both get
   stripped from an uploaded file, a gradient's internal ids get rewritten
   correctly, and the property panel / undo-redo / duplicate all work
-  against the new type) but — same as everything else added to v2 —
-  **not yet hand-verified against a live Apps Script deployment**, only
-  hand-synced into `AppScript/AnimatedSlidesV2.html` +
-  `AppScript/ElementTypesJs.html` + `AppScript/ElementRendererJs.html` +
-  the new `AppScript/SvgSanitizerJs.html` via the usual 5-substitution
-  pipeline (an `<?!= include('SvgSanitizerJs'); ?>` scriptlet was added
-  alongside the existing includes — sanitization only runs at upload
-  time in the authoring UI, so this file is deliberately NOT one of
-  Export's embedded `MODULE_SOURCES` modules).
+  against the new type) but **not yet hand-verified against a live Apps
+  Script deployment**.
+  **Incident, now fixed**: the Draw and Handwriting-font features were
+  deployed to `ElementTypesJs.html`/`ElementRendererJs.html` without
+  regenerating Export's `MODULE_SOURCES` snapshot inside
+  `AnimatedSlidesV2.html` (see "A real, shipped bug from getting
+  substitution 2 wrong" above) — any exported project containing a
+  hand-drawn element crashed the exported script before its nav bar
+  ever got built, which read as "the nav bar is hidden" with no visible
+  error inside an Articulate embed. Fixed by regenerating
+  `MODULE_SOURCES` from the real, current `element-types.js` /
+  `element-renderer.js` (which now include Draw, Handwriting-font, AND
+  the new SVG-upload type together) and verifying byte-for-byte against
+  the source. Confirmed via a Playwright test that reconstructed the
+  exact exported-HTML shape (using the regenerated `MODULE_SOURCES`
+  content, not the local dev server's live `fetch()` path, since that's
+  what actually ships from Apps Script) with a slide containing a draw
+  element, an svg element, and a Handwriting-font text element all at
+  once — nav bar rendered correctly, no thrown errors. Still outstanding:
+  a real end-to-end Save/Load + Export round-trip against the live Apps
+  Script deployment itself (this Playwright check exercises the exact
+  file contents that would be pasted in, but not Apps Script's own
+  `google.script.run`/templating layer).
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7

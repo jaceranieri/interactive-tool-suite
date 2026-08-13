@@ -381,6 +381,37 @@ substitution 2 above warns about** — it just took a real incident to
 show how silent and structurally-separated-from-the-real-bug the
 symptom can be.
 
+**A second, separate "nav bar missing" cause — embed container sizing**:
+after the `MODULE_SOURCES` incident above was fixed, an author still saw
+no nav bar once embedded in Articulate. The exported page's `<style>`
+used to size `#canvas-wrapper` with `flex: 1` inside a `height: 100%`
+`#player-root` — meaning the canvas always claimed however much height
+the host container gave it, leaving nothing for the nav bar if that
+container was short. Fixed by dropping `height: 100%` on `html, body`
+entirely and giving `#canvas-wrapper` a fixed `aspect-ratio:
+${slideManager.canvasSettings.width} / ${slideManager.canvasSettings.height}`
+(interpolated into the template string at export time, same as
+`slidesJSON`/`canvasSettingsJSON`) instead — the canvas now sizes itself
+from its own *width* (which containers reliably provide) rather than a
+possibly-zero ancestor height, so the page reports its true natural
+content height (canvas + nav bar) instead of forcing itself into
+whatever height it was handed. **This only fully solves the problem if
+the host container can grow to fit that natural height** — Articulate's
+embed block has an "Auto Resize" option for exactly this case, and
+should be enabled. If a host container instead hard-clips at a fixed
+pixel height with `overflow: hidden` (author cannot enable auto-resize
+for whatever reason), no CSS inside the exported page can make content
+taller than that ceiling visible — the aspect-ratio fix narrows the
+canvas's own height to what its width actually needs, which helps a lot
+but isn't a hard guarantee in that specific case. Verified via a
+Playwright test that embedded the export inside a deliberately
+fixed-height, `overflow: hidden` iframe to confirm the fix's actual
+behavior (not just its intent) before shipping it — it reduced how
+often clipping happens but doesn't eliminate it outright; a genuine
+guarantee would need scaling the whole player down to fit available
+space via JS, not attempted here since it wasn't needed once Auto Resize
+was confirmed available.
+
 ## Local preview (no Apps Script needed for most of it)
 
 `tools/animated-slides-v2/index.html` loads its own engine as plain

@@ -1,0 +1,149 @@
+/* ==========================================================================
+   Animated Slides v2 — SVG Upload Sanitizer
+   Runs once, in the authoring UI, at upload time (see index.html's
+   addSvgElement) — never part of element-renderer.js, since it's a
+   preprocessing step, not a rendering concern, and has no reason to ship
+   inside the exported player (by export time, the stored `svgMarkup` is
+   already sanitized data).
+
+   Why this exists: element-renderer.js's output is reused UNMODIFIED by the
+   exported learner-facing player (see that file's header comment) — an
+   unsanitized malicious SVG uploaded here would run its payload inside a
+   real Articulate course, not just inside this authoring tool. So this
+   parses the uploaded markup into a real DOM tree and rebuilds a clean
+   version element-by-element from an explicit allowlist, rather than
+   trying to blacklist dangerous patterns out of the original string.
+   ========================================================================== */
+
+const SVG_ALLOWED_TAGS = new Set([
+  'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline',
+  'polygon', 'defs', 'clipPath', 'linearGradient', 'radialGradient', 'stop',
+]);
+
+// Geometry/paint attributes only — deliberately excludes `style` (a
+// `url(...)` inside a style attribute is its own CSS-based injection vector,
+// distinct from the tag/handler-based ones the allowlist above blocks) and
+// any `on*` handler, `xlink:href`/`href`, or `class` (no reason for an
+// uploaded asset to carry external references or hook into this app's own
+// CSS classes).
+const SVG_ALLOWED_ATTRS = new Set([
+  'id', 'viewBox', 'transform',
+  'd', 'points', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
+  'width', 'height',
+  'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width',
+  'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'stroke-opacity',
+  'opacity', 'clip-rule', 'clip-path',
+  'offset', 'stop-color', 'stop-opacity',
+  'gradientUnits', 'gradientTransform',
+]);
+
+// Attributes whose value may reference another element's id via
+// `url(#id)` — these get id-rewritten alongside plain `id` attributes.
+const SVG_URL_REF_ATTRS = new Set(['fill', 'stroke', 'clip-path']);
+
+/**
+ * Recursively rebuilds `srcEl` into a new element in `doc`, keeping only
+ * allowlisted tags/attributes. Returns null for a disallowed tag (dropping
+ * it and everything under it — an attacker-controlled <script> nested
+ * inside an otherwise-fine <g> must not survive just because its parent
+ * was allowed).
+ */
+function _cloneAllowed(srcEl, doc, idPrefix, idMap) {
+  // SVG tag/attribute names are case-sensitive (linearGradient, viewBox,
+  // gradientUnits, etc. are meaningfully camelCase) — matched against the
+  // allowlists as-authored, NOT lowercased. This is still safe against a
+  // case-trick bypass (e.g. `<ScRiPt>` or `OnClick=`) precisely because
+  // it's an allowlist: anything not an exact match to a real, intentionally
+  // -included spelling is dropped regardless of what case it's in.
+  const tag = srcEl.tagName;
+  if (!SVG_ALLOWED_TAGS.has(tag)) return null;
+
+  const out = doc.createElementNS('http://www.w3.org/2000/svg', tag);
+
+  for (const attr of Array.from(srcEl.attributes)) {
+    const name = attr.name;
+    if (!SVG_ALLOWED_ATTRS.has(name)) continue;
+    let value = attr.value;
+    if (name === 'id') {
+      const newId = idPrefix + '-' + value;
+      idMap.set(value, newId);
+      value = newId;
+    }
+    out.setAttribute(attr.name, value);
+  }
+
+  Array.from(srcEl.children).forEach((child) => {
+    const cloned = _cloneAllowed(child, doc, idPrefix, idMap);
+    if (cloned) out.appendChild(cloned);
+  });
+
+  return out;
+}
+
+/** Rewrites every `url(#oldId)` reference (fill/stroke/clip-path) to the
+ *  new, prefixed id assigned during cloning, so gradients/clip-paths still
+ *  resolve after the id was rewritten to avoid colliding with other
+ *  elements already on the canvas. */
+function _rewriteUrlRefs(root, idMap) {
+  root.querySelectorAll('*').forEach((el) => {
+    SVG_URL_REF_ATTRS.forEach((name) => {
+      const value = el.getAttribute(name);
+      const match = value && value.match(/^url\(#(.+)\)$/);
+      if (match && idMap.has(match[1])) {
+        el.setAttribute(name, `url(#${idMap.get(match[1])})`);
+      }
+    });
+  });
+}
+
+/**
+ * Parses and sanitizes an uploaded SVG file's raw text. Returns
+ * `{ ok: true, markup, viewBox }` on success — `markup` is the sanitized
+ * *inner* content (no outer <svg> tag, ready to drop into an
+ * element-renderer.js-created wrapper via `.innerHTML =`) — or
+ * `{ ok: false, error }` with a message safe to show the author directly.
+ * `idPrefix` should be unique per upload (the new element's id) so this
+ * SVG's internal ids can never collide with another svg element's.
+ */
+function sanitizeSvgMarkup(rawText, idPrefix) {
+  let doc;
+  try {
+    doc = new DOMParser().parseFromString(rawText, 'image/svg+xml');
+  } catch (e) {
+    return { ok: false, error: "Couldn't parse that file as SVG." };
+  }
+  if (doc.querySelector('parsererror')) {
+    return { ok: false, error: "That file isn't valid SVG." };
+  }
+
+  const srcRoot = doc.documentElement;
+  if (!srcRoot || srcRoot.tagName.toLowerCase() !== 'svg') {
+    return { ok: false, error: "That file isn't an SVG." };
+  }
+
+  let viewBox = srcRoot.getAttribute('viewBox');
+  if (!viewBox) {
+    const w = parseFloat(srcRoot.getAttribute('width')) || 100;
+    const h = parseFloat(srcRoot.getAttribute('height')) || 100;
+    viewBox = `0 0 ${w} ${h}`;
+  }
+
+  const outDoc = document.implementation.createDocument('http://www.w3.org/2000/svg', 'svg', null);
+  const idMap = new Map();
+  const clonedRoot = outDoc.createElementNS('http://www.w3.org/2000/svg', 'g');
+  Array.from(srcRoot.children).forEach((child) => {
+    const cloned = _cloneAllowed(child, outDoc, idPrefix, idMap);
+    if (cloned) clonedRoot.appendChild(cloned);
+  });
+  _rewriteUrlRefs(clonedRoot, idMap);
+
+  if (clonedRoot.children.length === 0) {
+    return { ok: false, error: "No supported shapes found in that SVG." };
+  }
+
+  const markup = Array.from(clonedRoot.children)
+    .map((el) => new XMLSerializer().serializeToString(el))
+    .join('');
+
+  return { ok: true, markup, viewBox };
+}

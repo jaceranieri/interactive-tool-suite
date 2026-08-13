@@ -199,6 +199,114 @@ code, not later cuts.
   left-rail button's active state — same pattern as `onSelect` already
   syncing the layer panel.
 
+### Handwriting font (`fontFamily` on the `text` type)
+
+A second font choice for text elements — "Sans" (the existing IBM Plex
+Sans) or "Handwriting" (Caveat) — picked from a dropdown in the
+properties popup, same schema-driven pattern as icon's `iconpicker` or
+svg's colour swatch. `FONT_FAMILIES` (in `element-renderer.js`) maps a
+short key (`sans` / `handwriting`) to a `{ label, css }` pair; adding a
+third font choice means adding an entry there AND loading its Google
+Font in three places that must all move together — `index.html`'s own
+`<head>` (authoring canvas), the Export template's `<head>` inside
+`openExportModal()`, and (for the Apps Script deployment) the equivalent
+`<head>` `<link>` in `AppScript/AnimatedSlidesV2.html` twice (once for
+the authoring page itself, once inside its own copy of the Export
+template string) — four total spots, easy to update three of four and
+ship a font that measures/wraps correctly in the editor but silently
+falls back to the browser default in the exported output.
+`element-types.js` declares `fontFamily` as a `fontpicker` field type;
+`canvas-editor.js`'s `_buildField` renders it as a `<select>` whose
+options are previewed in their own font (`opt.style.fontFamily`) so an
+author can see roughly what each choice looks like before picking it.
+`measureTextWidth`/`wrapTextLines`/`layoutText` in `element-renderer.js`
+all take the resolved font-family CSS string as a parameter now (not a
+single hardcoded `TEXT_FONT_FAMILY` constant) so word-wrapping measures
+against whichever font the element actually uses.
+
+### Uploaded SVGs (the `svg` element type)
+
+Lets an author upload their own SVG asset (a logo, a custom icon) rather
+than being limited to the built-in 7-icon library. Four scope decisions
+were settled up front, before any code was written, the same way Free
+draw's were: **single accent colour** recolour (every fill/stroke in the
+uploaded markup is flattened to one author-chosen colour, not a per-shape
+palette — multi-colour source art gets flattened on purpose), **inline-
+in-JSON storage** (the sanitized markup lives directly on the element's
+data, same as everything else in a project file — no separate asset-file
+API), **strict allowlist sanitization** (not a blocklist — see below), and
+a **new element type** rather than folding uploads into `icon` (icon
+stays a small curated built-in set; `svg` is the escape hatch for
+arbitrary author-supplied art).
+
+- **Data shape**: like `draw`'s `points`, `svgMarkup` (the sanitized
+  markup) and `originalViewBox` are type-specific data set directly on
+  the object rather than declared in `ELEMENT_TYPES.svg.fields` — no sane
+  form-input type for raw SVG source. Also like `draw`, an `svg` element
+  is never placed via `makeDefaultElement()`/`addElement()` alone — it
+  has no meaningful default shape until an author picks a file — so its
+  left-rail button opens a hidden `<input type="file">` instead
+  (`#svg-upload-input` in `index.html`) rather than instant-placing.
+  `handleSvgUpload()` reads the file, runs it through the sanitizer, and
+  calls `addSvgElement()` (the `svg`-specific sibling of `addElement()`)
+  on success — a rejected file (invalid SVG, or over
+  `SVG_UPLOAD_MAX_BYTES`, currently 500KB) shows a `Shell.toast` and
+  never creates an element.
+- **Why sanitize at all — read this before touching `svg-sanitizer.js`**:
+  `element-renderer.js`'s output is reused UNMODIFIED by the exported
+  learner-facing player (see that file's own header comment). An
+  unsanitized malicious SVG uploaded here would run its payload inside a
+  real Articulate course, not just inside this authoring tool — a
+  realistic threat, since "grab an icon off some site" is a normal author
+  workflow. `svg-sanitizer.js`'s `sanitizeSvgMarkup()` runs once, at
+  upload time, in the authoring UI only (not part of the shared renderer,
+  and not needed inside the exported player — by export time the stored
+  `svgMarkup` is already sanitized data, so this file is never one of
+  Export's fetched/embedded modules).
+- **Allowlist, not blocklist**: parses the uploaded text via `DOMParser`,
+  then rebuilds a clean tree element-by-element, keeping only tags in
+  `SVG_ALLOWED_TAGS` (shape/gradient/structural elements — no `<script>`,
+  no `<image>`, no `<a>`) and attributes in `SVG_ALLOWED_ATTRS` (geometry
+  and paint only — every `on*` handler, `style` — a `url(...)` inside a
+  style attribute is its own CSS-based injection vector, distinct from
+  the tag/handler-based ones the tag allowlist blocks — and
+  `href`/`xlink:href` are excluded). A disallowed tag drops itself AND
+  everything nested under it, so a `<script>` hidden inside an otherwise-
+  fine `<g>` doesn't survive just because its parent was allowed.
+  **Real bug caught during testing**: tag/attribute names were originally
+  compared after `.toLowerCase()`-ing both sides, which silently dropped
+  every camelCase SVG name (`linearGradient`, `viewBox`, `gradientUnits`)
+  since SVG tag/attribute names are case-sensitive — a gradient-filled
+  upload rendered as if the `<defs>` block were empty, no error, nothing
+  in the console. Fixed by comparing tag/attribute names as-authored,
+  with no case normalization on either side of the allowlist check — this
+  is still safe against a case-trick bypass (e.g. `<ScRiPt>`) precisely
+  *because* it's an allowlist: a name that doesn't exactly match one of
+  the deliberately-included spellings is dropped regardless of what case
+  it's in.
+- **Id rewriting**: every `id` attribute is rewritten with a prefix unique
+  to that upload (the new element's own id), and every `url(#id)`
+  reference (`fill`, `stroke`, `clip-path`) is rewritten alongside it —
+  needed so an uploaded SVG's internal ids (e.g. a gradient's `id="grad1"`)
+  can never collide with another `svg` element already on the same
+  canvas, or with the app's own DOM ids.
+- **Recolour application** (`applySvgAccentColor()` in
+  `element-renderer.js`): re-run on every render from the *original*
+  sanitized markup — not baked into stored `svgMarkup` — same as icon's
+  own `color` field re-applying `fill` on every render. An element with
+  an explicit `fill="none"` (an outline-only shape) is left alone so
+  stroke-only icons still read as outlines rather than gaining a fill; an
+  element with no `fill` attribute at all still defaults to black per the
+  SVG spec, so it's treated the same as an explicit non-`"none"` fill
+  (recoloured). `<stop stop-color>` (gradient stops) are recoloured too,
+  for consistency, even though a gradient's whole point is normally
+  multi-colour — a deliberate consequence of the single-accent-colour
+  scope call, not a special case.
+- Resize handles, the property panel's Colour/Opacity fields, layer panel
+  entry, undo/redo, and duplicate are all free from the existing schema-
+  driven system — the same payoff Free draw got from extending
+  `ELEMENT_TYPES` instead of hand-writing a new UI path.
+
 ## The Apps Script deployment pipeline — read this before touching v2
 
 `tools/animated-slides-v2/*.html` and `*.js` (repo source — plain
@@ -244,6 +352,123 @@ in its repo source** (`tools/animated-slides/index.html`) — specifically
 the hub link and `<base target="_top">`. If v1 is ever regenerated
 wholesale from repo source, those need reapplying, or patch the deployed
 file directly instead (as has been done so far).
+
+**Never hand someone a whole-file replacement for an `AppScript/*.html`
+file without first establishing that their live copy hasn't diverged
+from this repo.** This has already destroyed real work once: a previous
+session built the Handwriting-font feature by editing the live Apps
+Script files directly and never pushed the equivalent change to
+`tools/animated-slides-v2/`, so a later session that regenerated those
+files from repo source and said "replace the existing file's contents"
+silently deleted the whole feature from the deployment. The repo looked
+clean and the change looked additive — nothing in the diff hinted that
+the live file contained code the repo had never seen. Ask "have you made
+any edits directly in the Apps Script editor that aren't in GitHub?"
+before recommending a wholesale paste, and prefer targeted patches
+against shared anchor text when there's any doubt (that's how Toggle
+Slides' overrides work was synced, for exactly this reason). The general
+rule this project keeps relearning: **the deployed Apps Script project,
+not this repo, is the source of truth for what's actually running.**
+
+**A real, shipped bug from getting substitution 2 wrong**: the Draw
+feature (and, separately, the Handwriting font feature) were added to
+the deployed `ElementTypesJs.html`/`ElementRendererJs.html` without
+regenerating `MODULE_SOURCES` inside `AnimatedSlidesV2.html`'s
+`openExportModal()`. Since `MODULE_SOURCES` is a frozen string snapshot,
+not a live reference to those files, it kept an old copy of
+`element-renderer.js` with no `'draw'` case in `createElementNode()`.
+Any exported project containing a hand-drawn element then hit
+`throw new Error('Unknown element type: draw')` — thrown synchronously
+inside `SlideManager`'s constructor, which runs *before* `setupNavBar()`
+is ever called — so the entire exported `<script>` block died right
+there and the nav bar simply never got built. No console access inside
+an Articulate embed made this read as "the nav bar is hidden" rather
+than "the export threw an error," which is what made it hard to place at
+first. The fix is mechanical but easy to skip under time pressure:
+whenever `element-types.js` or `element-renderer.js` changes, regenerate
+`MODULE_SOURCES.elementTypes`/`.elementRenderer` from the real files
+(a small Node script does this — see git history for the exact one:
+`JSON.stringify` each file's contents and splice the result back into
+the `MODULE_SOURCES` object literal in `AnimatedSlidesV2.html`) and
+verify byte-for-byte against the source before considering the sync
+done, the same "generated programmatically, verified via direct
+comparison" approach Tabbed Panels and Toggle Slides already used for
+their own `MODULE_SOURCES`. **This is exactly the failure mode
+substitution 2 above warns about** — it just took a real incident to
+show how silent and structurally-separated-from-the-real-bug the
+symptom can be.
+
+**A second, separate "nav bar missing" cause — embed container sizing**:
+after the `MODULE_SOURCES` incident above was fixed, an author still saw
+no nav bar once embedded in Articulate. The exported page's `<style>`
+used to size `#canvas-wrapper` with `flex: 1` inside a `height: 100%`
+`#player-root` — meaning the canvas always claimed however much height
+the host container gave it, leaving nothing for the nav bar if that
+container was short. Fixed by dropping `height: 100%` on `html, body`
+entirely and giving `#canvas-wrapper` a fixed `aspect-ratio:
+${slideManager.canvasSettings.width} / ${slideManager.canvasSettings.height}`
+(interpolated into the template string at export time, same as
+`slidesJSON`/`canvasSettingsJSON`) instead — the canvas now sizes itself
+from its own *width* (which containers reliably provide) rather than a
+possibly-zero ancestor height, so the page reports its true natural
+content height (canvas + nav bar) instead of forcing itself into
+whatever height it was handed. **This only fully solves the problem if
+the host container can grow to fit that natural height** — Articulate's
+embed block has an "Auto Resize" option for exactly this case, and
+should be enabled. If a host container instead hard-clips at a fixed
+pixel height with `overflow: hidden` (author cannot enable auto-resize
+for whatever reason), no CSS inside the exported page can make content
+taller than that ceiling visible — the aspect-ratio fix narrows the
+canvas's own height to what its width actually needs, which helps a lot
+but isn't a hard guarantee in that specific case. Verified via a
+Playwright test that embedded the export inside a deliberately
+fixed-height, `overflow: hidden` iframe to confirm the fix's actual
+behavior (not just its intent) before shipping it — it reduced how
+often clipping happens but doesn't eliminate it outright; a genuine
+guarantee would need scaling the whole player down to fit available
+space via JS, not attempted here since it wasn't needed once Auto Resize
+was confirmed available.
+
+**A third "nav bar missing" cause — a truncated long line in `<head>`,
+and the most instructive of the three**: an author reported no nav bar
+AND the wrong font, in the embed *and* in a plain standalone save of the
+exported file. Both symptoms turned out to be one defect. The export's
+Google-Fonts `<link>` was a single ~150-character line, and it reached
+the live deployment truncated at `<link href="https:` — an
+**unterminated HTML attribute**. The parser then consumes everything up
+to the *next* `"` in the document as that attribute's value, which meant
+it swallowed `<style>`, `</head>`, `<body>` and the opening of
+`<div id="player-root">`. Verified by reading the parsed attribute back
+out of a real browser — `link.href` literally contained the entire
+stylesheet plus `<body>\n<div id=`. Consequences, all matching the
+report exactly: `#canvas-wrapper` / `#elements-layer` / `#player-nav-bar`
+still get created (so **slide content renders normally**, which is what
+makes this read as "only the nav bar is broken"), but `#player-root`
+never exists, so `playerRootEl.appendChild(navBarEl)` throws
+`Cannot read properties of null (reading 'appendChild')` *before*
+`setupNavBar()` is reached — and the truncated link also means the
+webfont never loads, hence the wrong font. **Debugging lesson worth
+keeping**: the author's own report ("font is wrong" + "nav bar missing")
+looked like two unrelated bugs and got investigated as two; they were
+one. When a page's `<head>` is malformed, expect symptoms scattered
+across unrelated features. Also note the earlier diagnosis blamed embed
+container height and was wrong — the "standalone save also fails" answer
+is what falsified it, so ask for that comparison early.
+Fixed structurally rather than by re-pasting the line:
+1. The export no longer emits a static font `<link>` at all — the
+   exported page builds it at runtime from short concatenated strings
+   inside `<script>` (`document.createElement('link')`), so there is no
+   long line left to truncate. Same approach Tabbed Panels' export
+   already uses for its `<style>`/`<link>`, for a different reason.
+2. `const playerRootEl = document.getElementById('player-root') ||
+   canvasWrapperEl.parentNode;` — a malformed `<head>` can never again
+   cost the learner all navigation.
+3. The authoring page's own `<head>` had the identical ~190-char
+   single-line risk; it's now three short `<link>`s (same fonts).
+Verified by loading the author's actual broken file (reproduced the exact
+error, `player-root` null), repairing only that one line (nav bar
+returned), then confirming a freshly generated export works AND still
+renders its nav bar with `<div id="player-root">` deliberately deleted.
 
 ## Local preview (no Apps Script needed for most of it)
 
@@ -396,7 +621,53 @@ There's no automated test suite. What exists:
   directly on the canvas with the stroke automatically simplified
   (Ramer-Douglas-Peucker) and curve-fit (Catmull-Rom-to-Bezier) so it
   reads as a smooth line rather than a jittery mouse trace, resizable
-  like any other element.
+  like any other element (deployed live and confirmed working in
+  authoring); a second "Handwriting" font choice for text elements (see
+  "Handwriting font" above), also deployed live and confirmed working in
+  authoring; and an SVG upload element type (see "Uploaded SVGs" above)
+  — an author can bring their own SVG asset (a logo, a custom icon)
+  rather than being limited to the built-in icon library, sanitized on
+  upload against a strict allowlist and recoloured via a single
+  accent-colour override, verified in local preview (a Playwright
+  session confirmed a `<script>` tag and an `onclick` handler both get
+  stripped from an uploaded file, a gradient's internal ids get rewritten
+  correctly, and the property panel / undo-redo / duplicate all work
+  against the new type) but **not yet hand-verified against a live Apps
+  Script deployment**.
+  **Incident, now fixed**: the Draw and Handwriting-font features were
+  deployed to `ElementTypesJs.html`/`ElementRendererJs.html` without
+  regenerating Export's `MODULE_SOURCES` snapshot inside
+  `AnimatedSlidesV2.html` (see "A real, shipped bug from getting
+  substitution 2 wrong" above) — any exported project containing a
+  hand-drawn element crashed the exported script before its nav bar
+  ever got built, which read as "the nav bar is hidden" with no visible
+  error inside an Articulate embed. Fixed by regenerating
+  `MODULE_SOURCES` from the real, current `element-types.js` /
+  `element-renderer.js` (which now include Draw, Handwriting-font, AND
+  the new SVG-upload type together) and verifying byte-for-byte against
+  the source. Confirmed via a Playwright test that reconstructed the
+  exact exported-HTML shape (using the regenerated `MODULE_SOURCES`
+  content, not the local dev server's live `fetch()` path, since that's
+  what actually ships from Apps Script) with a slide containing a draw
+  element, an svg element, and a Handwriting-font text element all at
+  once — nav bar rendered correctly, no thrown errors. Still outstanding:
+  a real end-to-end Save/Load + Export round-trip against the live Apps
+  Script deployment itself (this Playwright check exercises the exact
+  file contents that would be pasted in, but not Apps Script's own
+  `google.script.run`/templating layer).
+  **Second incident, same symptom, completely different cause, now
+  fixed** — after the `MODULE_SOURCES` fix above the author STILL had no
+  nav bar, plus the wrong font: the export's Google-Fonts `<link>` had
+  reached the live deployment truncated mid-URL, and the resulting
+  unterminated HTML attribute swallowed `<div id="player-root">` so the
+  export threw before building its nav bar. Full write-up under "A third
+  'nav bar missing' cause" above — worth reading before diagnosing any
+  future export problem, because two *earlier* diagnoses in that same
+  investigation (stale `MODULE_SOURCES`, then embed container height)
+  were each plausible, partially-correct-looking, and wrong. **This fix
+  has NOT been confirmed by the author yet** — it needs
+  `AppScript/AnimatedSlidesV2.html` re-pasted + redeployed, then a fresh
+  Export checked in Articulate.
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7

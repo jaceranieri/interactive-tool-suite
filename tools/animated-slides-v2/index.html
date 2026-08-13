@@ -5,7 +5,13 @@
 <title>Animated Slides v2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Deliberately three short <link>s rather than one combined ~190-char line:
+     a single very long line is what got truncated mid-URL on its way into a
+     live deployment, producing an unterminated attribute that ate the rest
+     of <head>. Shorter lines survive any copy/paste path. -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../shared/design-tokens.css">
 <link rel="stylesheet" href="../../shared/app-shell.css">
 <style>
@@ -210,6 +216,8 @@
   <div id="shell-main" style="display:flex;">
     <div id="left-rail">
       <div class="add-element-grid" id="add-element-grid"></div>
+      <input type="file" id="svg-upload-input" accept=".svg,image/svg+xml" style="display:none;" onchange="handleSvgUpload(event)">
+
       <div class="rail-divider"></div>
       <button class="add-element-btn" onclick="openCrossSlideModal()" title="Add linked element" aria-label="Add linked element"><i class="fa-solid fa-link"></i></button>
       <button class="add-element-btn" id="layers-toggle-btn" onclick="toggleLayersPanel()" title="Layers" aria-label="Toggle layers panel"><i class="fa-solid fa-layer-group"></i></button>
@@ -363,6 +371,7 @@
 <script src="../../shared/storage-connector.js"></script>
 <script src="element-types.js"></script>
 <script src="element-renderer.js"></script>
+<script src="svg-sanitizer.js"></script>
 <script src="canvas-editor.js"></script>
 <script src="history.js"></script>
 <script src="slide-manager.js"></script>
@@ -651,6 +660,10 @@
         // addElement(). See CanvasEditor.setDrawMode / _finishFreehand.
         btn.id = 'draw-tool-btn';
         btn.addEventListener('click', () => editor.setDrawMode(!editor.drawMode));
+      } else if (type === 'svg') {
+        // Also has no meaningful default shape — opens a file picker
+        // instead of instant-placing. See handleSvgUpload/addSvgElement.
+        btn.addEventListener('click', () => document.getElementById('svg-upload-input').click());
       } else {
         btn.addEventListener('click', () => addElement(type));
       }
@@ -675,6 +688,50 @@
     history.commitAction();
     refreshUI();
     editor.select(id); // straight into editing — no reason to make an author hunt for what they just added
+  }
+
+  // A generous but real ceiling — inline-in-JSON storage means an uploaded
+  // SVG's markup rides along in every Save/Load payload for this project
+  // from now on, so an Illustrator-export-sized file is worth rejecting up
+  // front rather than discovering a bloated project the hard way later.
+  const SVG_UPLOAD_MAX_BYTES = 500 * 1024;
+
+  async function handleSvgUpload(event) {
+    const file = event.target.files[0];
+    event.target.value = ''; // reset so re-selecting the same file still fires 'change'
+    if (!file) return;
+
+    if (file.size > SVG_UPLOAD_MAX_BYTES) {
+      Shell.toast(`That SVG is too large (max ${Math.round(SVG_UPLOAD_MAX_BYTES / 1024)}KB).`, 'danger');
+      return;
+    }
+
+    const rawText = await file.text();
+    const id = 'el-' + Date.now();
+    const result = sanitizeSvgMarkup(rawText, id);
+    if (!result.ok) {
+      Shell.toast(result.error, 'danger');
+      return;
+    }
+    addSvgElement(id, result.markup, result.viewBox);
+  }
+
+  function addSvgElement(id, svgMarkup, viewBox) {
+    history.beginAction();
+    const count = Object.keys(slideManager.elements).length;
+    const offset = (count % 6) * 24;
+    const data = makeDefaultElement('svg', id, 200 + offset, 150 + offset);
+    data.svgMarkup = svgMarkup;
+    data.originalViewBox = viewBox;
+    const node = createElementNode(data);
+    layer.appendChild(node.group);
+    gsap.to(node.group, { opacity: 1, duration: 0.4 });
+    slideManager.elements[id] = data;
+    slideManager.nodes[id] = node;
+    editor.registerNode(node);
+    history.commitAction();
+    refreshUI();
+    editor.select(id);
   }
 
   async function newProject() {
@@ -1220,12 +1277,11 @@
 <meta charset="UTF-8">
 <title>${currentProjectName}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"><\/script>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; font-family: 'IBM Plex Sans', sans-serif; }
-  #player-root { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
-  #canvas-wrapper { position: relative; flex: 1; min-height: 0; }
+  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; }
+  #player-root { width: 100%; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+  #canvas-wrapper { position: relative; width: 100%; aspect-ratio: ${slideManager.canvasSettings.width} / ${slideManager.canvasSettings.height}; }
   #canvas-wrapper svg { width: 100%; height: 100%; display: block; }
 </style>
 </head>
@@ -1237,6 +1293,27 @@
   <div id="player-nav-bar"></div>
 </div>
 <script>
+// Google Fonts are attached at RUNTIME rather than as a static <link> in
+// <head>. A real, shipped incident: that <link> was a single ~150-character
+// line, and it reached a live deployment truncated at "https:" — an
+// unterminated HTML attribute, which makes the parser swallow <style>,
+// </head>, <body> AND the opening of <div id="player-root"> into one
+// attribute value. player-root then never exists, so the appendChild below
+// threw before setupNavBar() ever ran and the nav bar silently never
+// appeared (and Caveat never loaded). Building the URL from short pieces
+// inside <script> removes the long line entirely, so no copy/paste or
+// editor path can reproduce that. Same reasoning as Tabbed Panels' export,
+// which also creates its <style>/<link> from script rather than static tags.
+(function () {
+  var fontLink = document.createElement('link');
+  fontLink.rel = 'stylesheet';
+  fontLink.href = 'https://fonts.googleapis.com/css2'
+    + '?family=IBM+Plex+Sans:wght@400;500;600;700'
+    + '&family=Caveat:wght@400;500;600;700'
+    + '&display=swap';
+  document.head.appendChild(fontLink);
+})();
+
 ${modules}
 
 const slides = ${slidesJSON};
@@ -1249,7 +1326,11 @@ canvasWrapperEl.style.background = canvasSettings.backgroundColor;
 
 const slideManager = new SlideManager({ svg, layer, slides, canvasSettings });
 const navBarEl = document.getElementById('player-nav-bar');
-const playerRootEl = document.getElementById('player-root');
+// Falls back to the canvas's own parent if #player-root is missing. That
+// should be impossible, but it WAS the exact failure above, and losing the
+// learner's only means of navigation is far worse than a slightly different
+// wrapper — so this never throws again.
+const playerRootEl = document.getElementById('player-root') || canvasWrapperEl.parentNode;
 if (canvasSettings.nav.navPosition === 'top') {
   playerRootEl.insertBefore(navBarEl, canvasWrapperEl);
 } else {

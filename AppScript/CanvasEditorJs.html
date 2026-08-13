@@ -905,6 +905,15 @@ class CanvasEditor {
         if (name === data[key]) opt.selected = true;
         input.appendChild(opt);
       });
+    } else if (field.type === 'fontpicker') {
+      input = document.createElement('select');
+      Object.entries(FONT_FAMILIES).forEach(([fontKey, font]) => {
+        const opt = document.createElement('option');
+        opt.value = fontKey; opt.textContent = font.label;
+        opt.style.fontFamily = font.css; // previews each choice in its own font
+        if (fontKey === data[key]) opt.selected = true;
+        input.appendChild(opt);
+      });
     }
     input.dataset.fieldKey = key;
 

@@ -84,16 +84,19 @@ function renderLayerPanel(container, slideManager, canvasEditor) {
     row.appendChild(controls);
 
     row.addEventListener('click', (e) => {
+      // origin: 'layers-panel' — see CanvasEditor.select()'s doc comment.
+      // Selecting/deselecting from a row should keep the Layers panel
+      // open rather than auto-switching to Properties the way a real
+      // canvas click does.
       const additive = e.shiftKey || e.metaKey || e.ctrlKey;
       if (additive && canvasEditor.selectedIds.has(id)) {
         canvasEditor.selectedIds.delete(id);
         canvasEditor._renderHandles();
-        canvasEditor._renderPopup();
-        canvasEditor.onSelect([...canvasEditor.selectedIds]);
+        canvasEditor.onSelect([...canvasEditor.selectedIds], { origin: 'layers-panel' });
         renderLayerPanel(container, slideManager, canvasEditor);
         return;
       }
-      canvasEditor.select(id, { additive });
+      canvasEditor.select(id, { additive, origin: 'layers-panel' });
       renderLayerPanel(container, slideManager, canvasEditor);
     });
 
@@ -124,5 +127,6 @@ function renderLayerPanel(container, slideManager, canvasEditor) {
     container.appendChild(row);
   });
 }
+
 
 </script>

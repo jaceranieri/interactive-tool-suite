@@ -1,19 +1,30 @@
 /* ==========================================================================
    Animated Slides v2 — Canvas Editor
-   Selection (including multi-select), drag-to-move, resize handles, and
-   the floating contextual properties popup. Sits entirely ON TOP of
-   element-renderer.js — never modifies it, only reads/writes the same
-   element `data` objects and calls updateElementNode() to reflect
-   changes. This is what keeps the renderer reusable unchanged inside the
-   exported player, which has none of this.
+   Selection (including multi-select), drag-to-move, and resize handles.
+   Sits entirely ON TOP of element-renderer.js — never modifies it, only
+   reads/writes the same element `data` objects and calls
+   updateElementNode() to reflect changes. This is what keeps the renderer
+   reusable unchanged inside the exported player, which has none of this.
+
+   Property editing used to live here too, as a floating contextual popup
+   positioned beside the selected element. It now lives in index.html's
+   right-docked #property-panel side panel instead (same .side-panel
+   system as Layers/Settings, matching Tabbed Panels' pattern) — this
+   class only ever reports selection changes via onSelect/onChange, it no
+   longer renders any property UI itself. buildField() and
+   setFieldOnSelection() below are the two pieces index.html reuses to
+   build that panel's inputs, kept here because they're the code that
+   actually knows how to read/write a field on element `data` safely
+   (history begin/commit, updateElementNode, handle repositioning).
 
    MULTI-SELECT: Shift or Cmd/Ctrl+click adds to the selection; clicking an
    already-selected element with a modifier held removes it. Multiple
    selected elements move together as a rigid group and can be deleted or
-   duplicated together, but resizing and the full properties popup stay
-   single-element only — resizing several different-typed elements as one
-   operation isn't supported, so with 2+ selected the popup becomes a
-   small "N selected" toolbar (Duplicate/Delete) instead.
+   duplicated together. Resizing stays single-element only — resizing
+   several different-typed elements as one operation isn't supported.
+   Editing a field shared by every selected type's schema (see
+   index.html's commonFieldsForSelection()) fans out via
+   setFieldOnSelection() below.
 
    Coordinate handling: every pointer interaction converts screen (mouse)
    coordinates to the SVG's own user-space coordinates via
@@ -71,19 +82,14 @@ class CanvasEditor {
    * @param svg       the root <svg> element
    * @param elements  { id: data } — the live element data objects
    * @param nodes     { id: node } — the corresponding renderer nodes
-   * @param popupHost a DOM element the floating popup gets appended to
-   *                  (should cover the same area as the canvas, positioned
-   *                  relative, so the popup can be absolutely positioned
-   *                  within it using screen coordinates)
    * @param onChange  called with (data) whenever a field or drag changes
    *                  something — hook for autosave/dirty-state elsewhere
    * @param onSelect  called with an array of currently-selected ids
    */
-  constructor({ svg, elements, nodes, popupHost, onChange = () => {}, onSelect = () => {}, history = null, getCanvasSettings = () => null, onDrawModeChange = () => {} }) {
+  constructor({ svg, elements, nodes, onChange = () => {}, onSelect = () => {}, history = null, getCanvasSettings = () => null, onDrawModeChange = () => {} }) {
     this.svg = svg;
     this.elements = elements;
     this.nodes = nodes;
-    this.popupHost = popupHost;
     this.onChange = onChange;
     this.onSelect = onSelect;
     this.history = history;
@@ -94,7 +100,6 @@ class CanvasEditor {
     this.selectedIds = new Set();
     this.handleLayer = null;
     this._multiHandleLayers = [];
-    this.popupEl = null;
     this.drag = null; // active drag/resize state, or null
     this.drawMode = false; // true while the freehand ("Draw") tool is armed
     this.freehand = null; // active in-progress stroke, or null
@@ -115,9 +120,9 @@ class CanvasEditor {
     window.addEventListener('pointermove', (e) => this._onPointerMove(e));
     window.addEventListener('pointerup', () => this._onPointerUp());
     window.addEventListener('keydown', (e) => {
-      // Don't hijack keys while someone's typing in the popup — only
-      // treat these as canvas shortcuts when focus isn't on a text-
-      // editing control.
+      // Don't hijack keys while someone's typing in a property field —
+      // only treat these as canvas shortcuts when focus isn't on a
+      // text-editing control.
       const tag = document.activeElement && document.activeElement.tagName;
       const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (isTyping) return;
@@ -152,7 +157,7 @@ class CanvasEditor {
   }
 
   /** The "primary" selected id — the most recently selected one. Used
-   *  wherever exactly one id is needed (the single-element popup, drag
+   *  wherever exactly one id is needed (the single-element property panel, drag
    *  anchoring). Returns null when nothing is selected. */
   get selectedId() {
     if (this.selectedIds.size === 0) return null;
@@ -184,7 +189,6 @@ class CanvasEditor {
     this.onChange({ duplicatedIds: newIds });
     this.selectedIds = new Set(newIds);
     this._renderHandles();
-    this._renderPopup();
     this.onSelect([...this.selectedIds]);
   }
 
@@ -201,7 +205,6 @@ class CanvasEditor {
       updateElementNode(this.nodes[id], data, { animate: false });
     });
     this._renderHandles();
-    this._syncPopupFields();
     if (this.history) this.history.commitAction();
     this.onChange({});
   }
@@ -237,7 +240,6 @@ class CanvasEditor {
         // Clicking an already-selected element with a modifier held toggles it off.
         this.selectedIds.delete(id);
         this._renderHandles();
-        this._renderPopup();
         this.onSelect([...this.selectedIds]);
         return;
       }
@@ -303,8 +305,14 @@ class CanvasEditor {
   }
 
   /** @param options.additive  true (Shift/Cmd/Ctrl held) adds to the
-   *  current selection instead of replacing it. */
-  select(id, { additive = false } = {}) {
+   *  current selection instead of replacing it.
+   *  @param options.origin  passed through to onSelect as meta.origin —
+   *  'canvas' (default) for a real canvas interaction, or 'layers-panel'
+   *  when layer-panel.js triggers this from a row click. index.html uses
+   *  this to decide whether to auto-open the Properties panel: selecting
+   *  on the canvas should jump straight to editing it, but selecting a
+   *  row while browsing Layers shouldn't yank the panel away from Layers. */
+  select(id, { additive = false, origin = 'canvas' } = {}) {
     try {
       if (!additive) {
         this.selectedIds.forEach((sid) => {
@@ -315,8 +323,7 @@ class CanvasEditor {
       this.selectedIds.add(id);
       if (this.nodes[id] && this.nodes[id]._hoverOutline) this.nodes[id]._hoverOutline.style.display = 'none';
       this._renderHandles();
-      this._renderPopup();
-      this.onSelect([...this.selectedIds]);
+      this.onSelect([...this.selectedIds], { origin });
     } catch (err) {
       // Caught (not left uncaught) so the real error reaches the console
       // with its actual message/stack — an uncaught error bubbling
@@ -329,7 +336,6 @@ class CanvasEditor {
   deselect() {
     this.selectedIds.clear();
     this._clearHandles();
-    this._clearPopup();
     this.onSelect([]);
   }
 
@@ -342,9 +348,9 @@ class CanvasEditor {
 
   /** Arms/disarms the freehand drawing tool. While on, clicking anywhere
    *  on the canvas (even on top of existing elements) starts a new stroke
-   *  instead of selecting/dragging — deselects first so the properties
-   *  popup for whatever was previously selected doesn't linger on top of
-   *  the canvas while drawing. Stays on across multiple strokes; the
+   *  instead of selecting/dragging — deselects first so the property panel
+   *  for whatever was previously selected doesn't stay open while
+   *  drawing. Stays on across multiple strokes; the
    *  caller (the left-rail button, or Escape) toggles it back off. */
   setDrawMode(on) {
     if (this.drawMode === on) return;
@@ -428,14 +434,15 @@ class CanvasEditor {
     this.select(id); // straight into editing, same as every other "add element" path
   }
 
-  /** Re-renders handles and the popup for whatever's currently selected —
-   *  for external callers (like History.setState after an undo/redo) that
-   *  changed element data without going through the editor's own drag/
-   *  field-edit paths. No-op if nothing is selected. */
+  /** Re-renders handles and re-fires onSelect (which index.html uses to
+   *  refresh the property panel's fields) for whatever's currently
+   *  selected — for external callers (like History.setState after an
+   *  undo/redo) that changed element data without going through the
+   *  editor's own drag/field-edit paths. No-op if nothing is selected. */
   refreshSelection() {
     if (this.selectedIds.size === 0) return;
     this._renderHandles();
-    this._renderPopup();
+    this.onSelect([...this.selectedIds]);
   }
 
   /** Starts a rubber-band selection drag from a pointerdown on empty
@@ -497,7 +504,6 @@ class CanvasEditor {
     if (!additive) this.selectedIds.clear();
     hits.forEach((id) => this.selectedIds.add(id));
     this._renderHandles();
-    this._renderPopup();
     this.onSelect([...this.selectedIds]);
     this.marqueeDrag = null;
   }
@@ -595,8 +601,7 @@ class CanvasEditor {
 
     updateElementNode(node, data, { animate: false });
     this._renderHandles(); // handle positions track width/height/length changes
-    this._syncPopupFields();
-    this.onChange(data);
+    this.onChange(data); // index.html's onChange syncs the property panel's fields from this
   }
 
   _onPointerUp() {
@@ -737,139 +742,16 @@ class CanvasEditor {
     layer.appendChild(h);
   }
 
-  /* ---- Contextual properties popup ---- */
+  /* ---- Property field building (consumed by index.html's #property-panel) ---- */
 
-  _clearPopup() {
-    if (this.popupEl) this.popupEl.remove();
-    this.popupEl = null;
-  }
-
-  _renderPopup() {
-    this._clearPopup();
-    if (this.selectedIds.size === 0) return;
-
-    if (this.selectedIds.size > 1) {
-      this._renderMultiSelectToolbar();
-      return;
-    }
-
-    const data = this.elements[this.selectedId];
-    const schema = ELEMENT_TYPES[data.type];
-
-    const popup = document.createElement('div');
-    popup.className = 'element-popup';
-    this.popupEl = popup;
-
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.className = 'popup-name';
-    nameInput.value = data.name || schema.label;
-    nameInput.addEventListener('focus', () => {
-      if (this.history) this.history.beginAction();
-    });
-    nameInput.addEventListener('input', () => {
-      data.name = nameInput.value;
-      this.onChange(data);
-    });
-    nameInput.addEventListener('change', () => {
-      if (this.history) this.history.commitAction();
-    });
-    popup.appendChild(nameInput);
-
-    const primary = Object.entries(schema.fields).filter(([, f]) => (f.tier || 'primary') === 'primary');
-    const secondary = Object.entries(schema.fields).filter(([, f]) => f.tier === 'secondary');
-
-    const fieldsWrap = document.createElement('div');
-    fieldsWrap.className = 'popup-fields';
-    primary.forEach(([key, field]) => fieldsWrap.appendChild(this._buildField(data, key, field)));
-    popup.appendChild(fieldsWrap);
-
-    if (secondary.length) {
-      const more = document.createElement('button');
-      more.className = 'popup-more-toggle';
-      more.textContent = 'More options';
-      const moreWrap = document.createElement('div');
-      moreWrap.className = 'popup-fields';
-      moreWrap.style.display = 'none';
-      secondary.forEach(([key, field]) => moreWrap.appendChild(this._buildField(data, key, field)));
-      more.addEventListener('click', () => {
-        const showing = moreWrap.style.display !== 'none';
-        moreWrap.style.display = showing ? 'none' : 'block';
-        more.textContent = showing ? 'More options' : 'Fewer options';
-        this._positionPopup(); // size changed — reposition to stay on screen
-      });
-      popup.appendChild(more);
-      popup.appendChild(moreWrap);
-    }
-
-    const actionsRow = document.createElement('div');
-    actionsRow.style.display = 'flex';
-    actionsRow.style.gap = 'var(--space-2)';
-    actionsRow.style.marginTop = 'var(--space-3)';
-
-    const duplicateBtn = document.createElement('button');
-    duplicateBtn.className = 'btn btn-secondary';
-    duplicateBtn.style.flex = '1';
-    duplicateBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Duplicate';
-    duplicateBtn.title = 'Cmd/Ctrl + D';
-    duplicateBtn.addEventListener('click', () => this.duplicateSelected());
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-danger';
-    deleteBtn.style.flex = '1';
-    deleteBtn.innerHTML = '<i class="fa-solid fa-trash"></i> Delete';
-    deleteBtn.title = 'Delete or Backspace';
-    deleteBtn.addEventListener('click', () => this.deleteSelected());
-
-    actionsRow.appendChild(duplicateBtn);
-    actionsRow.appendChild(deleteBtn);
-    popup.appendChild(actionsRow);
-
-    this.popupHost.appendChild(popup);
-    this._positionPopup();
-  }
-
-  /** Shown instead of the full properties popup whenever 2+ elements are
-   *  selected — just enough to act on the group as a whole. */
-  _renderMultiSelectToolbar() {
-    const popup = document.createElement('div');
-    popup.className = 'element-popup';
-    this.popupEl = popup;
-
-    const label = document.createElement('div');
-    label.style.fontWeight = '700';
-    label.style.fontSize = 'var(--text-sm)';
-    label.style.marginBottom = 'var(--space-3)';
-    label.textContent = `${this.selectedIds.size} elements selected`;
-    popup.appendChild(label);
-
-    const actionsRow = document.createElement('div');
-    actionsRow.style.display = 'flex';
-    actionsRow.style.gap = 'var(--space-2)';
-
-    const duplicateBtn = document.createElement('button');
-    duplicateBtn.className = 'btn btn-secondary';
-    duplicateBtn.style.flex = '1';
-    duplicateBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Duplicate';
-    duplicateBtn.title = 'Cmd/Ctrl + D';
-    duplicateBtn.addEventListener('click', () => this.duplicateSelected());
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-danger';
-    deleteBtn.style.flex = '1';
-    deleteBtn.innerHTML = '<i class="fa-solid fa-trash"></i> Delete';
-    deleteBtn.title = 'Delete or Backspace';
-    deleteBtn.addEventListener('click', () => this.deleteSelected());
-
-    actionsRow.appendChild(duplicateBtn);
-    actionsRow.appendChild(deleteBtn);
-    popup.appendChild(actionsRow);
-
-    this.popupHost.appendChild(popup);
-    this._positionPopup(); // positions relative to the primary (most-recently-selected) element
-  }
-
-  _buildField(data, key, field) {
+  /** Builds one labeled input for a single-element selection, wired to
+   *  read/write `data[key]` directly — history begin/commit on
+   *  focus/change, updateElementNode + handle refresh on every input so
+   *  the canvas tracks the field live. `data-field-key` is set so
+   *  index.html's syncPropertyPanelFields() can push drag-derived changes
+   *  (e.g. the text width handle) back into the open panel without a
+   *  full re-render stealing focus mid-edit. */
+  buildField(data, key, field) {
     const wrap = document.createElement('div');
     wrap.className = 'popup-field';
     const label = document.createElement('label');
@@ -925,7 +807,6 @@ class CanvasEditor {
       data[key] = val;
       updateElementNode(this.nodes[this.selectedId], data, { animate: false });
       this._renderHandles(); // width/height may have changed (e.g. text width)
-      this._positionPopup();
       this.onChange(data);
     });
     input.addEventListener('change', () => {
@@ -936,48 +817,21 @@ class CanvasEditor {
     return wrap;
   }
 
-  /** Keeps popup fields in sync when a drag (not a field edit) changed
-   *  something the popup displays, e.g. dragging the text width handle.
-   *  A no-op for the multi-select toolbar, which has no such fields. */
-  _syncPopupFields() {
-    if (!this.popupEl) return;
-    const data = this.elements[this.selectedId];
-    if (!data) return;
-    this.popupEl.querySelectorAll('[data-field-key]').forEach((input) => {
-      const key = input.dataset.fieldKey;
-      if (document.activeElement !== input) input.value = data[key];
+  /** Applies a single field's value to every currently-selected element
+   *  that has it — the multi-select panel's "edit once, apply to all"
+   *  behavior for fields shared across the selected types (colour,
+   *  opacity, etc.). Elements missing the field (shouldn't happen, since
+   *  callers only offer fields common to every selected type) are
+   *  skipped rather than gaining a stray key. */
+  setFieldOnSelection(key, value) {
+    this.selectedIds.forEach((id) => {
+      const data = this.elements[id];
+      if (!data || !(key in data)) return;
+      data[key] = value;
+      updateElementNode(this.nodes[id], data, { animate: false });
     });
-  }
-
-  /**
-   * Positions the popup beside the (primary) selected element's on-screen
-   * bounding box, flipping to whichever side keeps it fully within
-   * popupHost's bounds — so it never covers the element it's editing, and
-   * never runs off the canvas edge.
-   */
-  _positionPopup() {
-    if (!this.popupEl || !this.selectedId) return;
-    const node = this.nodes[this.selectedId];
-    if (!node) return;
-    const hostRect = this.popupHost.getBoundingClientRect();
-    const elRect = node.group.getBoundingClientRect();
-    const popupRect = this.popupEl.getBoundingClientRect();
-    const gap = 16;
-
-    let left = elRect.right - hostRect.left + gap;
-    if (left + popupRect.width > hostRect.width) {
-      left = elRect.left - hostRect.left - popupRect.width - gap;
-    }
-    if (left < gap) left = gap; // neither side fits — pin inside the host rather than overflow
-
-    let top = elRect.top - hostRect.top;
-    if (top + popupRect.height > hostRect.height - gap) {
-      top = hostRect.height - popupRect.height - gap;
-    }
-    if (top < gap) top = gap;
-
-    this.popupEl.style.left = left + 'px';
-    this.popupEl.style.top = top + 'px';
+    this._renderHandles();
+    this.onChange({});
   }
 }
 

@@ -412,6 +412,47 @@ guarantee would need scaling the whole player down to fit available
 space via JS, not attempted here since it wasn't needed once Auto Resize
 was confirmed available.
 
+**A third "nav bar missing" cause — a truncated long line in `<head>`,
+and the most instructive of the three**: an author reported no nav bar
+AND the wrong font, in the embed *and* in a plain standalone save of the
+exported file. Both symptoms turned out to be one defect. The export's
+Google-Fonts `<link>` was a single ~150-character line, and it reached
+the live deployment truncated at `<link href="https:` — an
+**unterminated HTML attribute**. The parser then consumes everything up
+to the *next* `"` in the document as that attribute's value, which meant
+it swallowed `<style>`, `</head>`, `<body>` and the opening of
+`<div id="player-root">`. Verified by reading the parsed attribute back
+out of a real browser — `link.href` literally contained the entire
+stylesheet plus `<body>\n<div id=`. Consequences, all matching the
+report exactly: `#canvas-wrapper` / `#elements-layer` / `#player-nav-bar`
+still get created (so **slide content renders normally**, which is what
+makes this read as "only the nav bar is broken"), but `#player-root`
+never exists, so `playerRootEl.appendChild(navBarEl)` throws
+`Cannot read properties of null (reading 'appendChild')` *before*
+`setupNavBar()` is reached — and the truncated link also means the
+webfont never loads, hence the wrong font. **Debugging lesson worth
+keeping**: the author's own report ("font is wrong" + "nav bar missing")
+looked like two unrelated bugs and got investigated as two; they were
+one. When a page's `<head>` is malformed, expect symptoms scattered
+across unrelated features. Also note the earlier diagnosis blamed embed
+container height and was wrong — the "standalone save also fails" answer
+is what falsified it, so ask for that comparison early.
+Fixed structurally rather than by re-pasting the line:
+1. The export no longer emits a static font `<link>` at all — the
+   exported page builds it at runtime from short concatenated strings
+   inside `<script>` (`document.createElement('link')`), so there is no
+   long line left to truncate. Same approach Tabbed Panels' export
+   already uses for its `<style>`/`<link>`, for a different reason.
+2. `const playerRootEl = document.getElementById('player-root') ||
+   canvasWrapperEl.parentNode;` — a malformed `<head>` can never again
+   cost the learner all navigation.
+3. The authoring page's own `<head>` had the identical ~190-char
+   single-line risk; it's now three short `<link>`s (same fonts).
+Verified by loading the author's actual broken file (reproduced the exact
+error, `player-root` null), repairing only that one line (nav bar
+returned), then confirming a freshly generated export works AND still
+renders its nav bar with `<div id="player-root">` deliberately deleted.
+
 ## Local preview (no Apps Script needed for most of it)
 
 `tools/animated-slides-v2/index.html` loads its own engine as plain

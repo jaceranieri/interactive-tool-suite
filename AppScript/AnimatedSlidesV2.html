@@ -6,7 +6,13 @@
 <title>Animated Slides v2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Deliberately three short <link>s rather than one combined ~190-char line:
+     a single very long line is what got truncated mid-URL on its way into a
+     live deployment, producing an unterminated attribute that ate the rest
+     of <head>. Shorter lines survive any copy/paste path. -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <?!= include('DesignTokens'); ?>
 <?!= include('AppShellCss'); ?>
 <style>
@@ -1277,7 +1283,6 @@
 <meta charset="UTF-8">
 <title>${currentProjectName}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"><\/script>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; }
@@ -1294,6 +1299,27 @@
   <div id="player-nav-bar"></div>
 </div>
 <script>
+// Google Fonts are attached at RUNTIME rather than as a static <link> in
+// <head>. A real, shipped incident: that <link> was a single ~150-character
+// line, and it reached a live deployment truncated at "https:" — an
+// unterminated HTML attribute, which makes the parser swallow <style>,
+// </head>, <body> AND the opening of <div id="player-root"> into one
+// attribute value. player-root then never exists, so the appendChild below
+// threw before setupNavBar() ever ran and the nav bar silently never
+// appeared (and Caveat never loaded). Building the URL from short pieces
+// inside <script> removes the long line entirely, so no copy/paste or
+// editor path can reproduce that. Same reasoning as Tabbed Panels' export,
+// which also creates its <style>/<link> from script rather than static tags.
+(function () {
+  var fontLink = document.createElement('link');
+  fontLink.rel = 'stylesheet';
+  fontLink.href = 'https://fonts.googleapis.com/css2'
+    + '?family=IBM+Plex+Sans:wght@400;500;600;700'
+    + '&family=Caveat:wght@400;500;600;700'
+    + '&display=swap';
+  document.head.appendChild(fontLink);
+})();
+
 ${modules}
 
 const slides = ${slidesJSON};
@@ -1306,7 +1332,11 @@ canvasWrapperEl.style.background = canvasSettings.backgroundColor;
 
 const slideManager = new SlideManager({ svg, layer, slides, canvasSettings });
 const navBarEl = document.getElementById('player-nav-bar');
-const playerRootEl = document.getElementById('player-root');
+// Falls back to the canvas's own parent if #player-root is missing. That
+// should be impossible, but it WAS the exact failure above, and losing the
+// learner's only means of navigation is far worse than a slightly different
+// wrapper — so this never throws again.
+const playerRootEl = document.getElementById('player-root') || canvasWrapperEl.parentNode;
 if (canvasSettings.nav.navPosition === 'top') {
   playerRootEl.insertBefore(navBarEl, canvasWrapperEl);
 } else {

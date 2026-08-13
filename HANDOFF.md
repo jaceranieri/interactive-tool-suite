@@ -7,8 +7,13 @@ to it) at the end of each work session. For durable architecture,
 conventions, and the deployment pipeline checklist, see `CLAUDE.md`
 instead — this file only covers what's transient.
 
-Branch for this session's work: `claude/svg-upload-feature-plan-n1mr9j`
-(4 commits, pushed). No PR opened — the person hasn't asked for one.
+Branch for this session's work: `claude/svg-upload-feature-plan-n1mr9j`,
+tracked by **PR #12**
+(https://github.com/jaceranieri/interactive-tool-suite/pull/12), which
+the person created from the Claude Code UI. **Don't open another PR** —
+pushing further commits to this branch updates #12 automatically.
+Nobody has decided whether a session should subscribe to its activity
+for auto CI-fix / review-comment handling; ask, don't assume.
 
 ## Do this first: the export nav-bar fix is NOT confirmed yet
 

@@ -353,6 +353,23 @@ the hub link and `<base target="_top">`. If v1 is ever regenerated
 wholesale from repo source, those need reapplying, or patch the deployed
 file directly instead (as has been done so far).
 
+**Never hand someone a whole-file replacement for an `AppScript/*.html`
+file without first establishing that their live copy hasn't diverged
+from this repo.** This has already destroyed real work once: a previous
+session built the Handwriting-font feature by editing the live Apps
+Script files directly and never pushed the equivalent change to
+`tools/animated-slides-v2/`, so a later session that regenerated those
+files from repo source and said "replace the existing file's contents"
+silently deleted the whole feature from the deployment. The repo looked
+clean and the change looked additive — nothing in the diff hinted that
+the live file contained code the repo had never seen. Ask "have you made
+any edits directly in the Apps Script editor that aren't in GitHub?"
+before recommending a wholesale paste, and prefer targeted patches
+against shared anchor text when there's any doubt (that's how Toggle
+Slides' overrides work was synced, for exactly this reason). The general
+rule this project keeps relearning: **the deployed Apps Script project,
+not this repo, is the source of truth for what's actually running.**
+
 **A real, shipped bug from getting substitution 2 wrong**: the Draw
 feature (and, separately, the Handwriting font feature) were added to
 the deployed `ElementTypesJs.html`/`ElementRendererJs.html` without
@@ -638,6 +655,19 @@ There's no automated test suite. What exists:
   Script deployment itself (this Playwright check exercises the exact
   file contents that would be pasted in, but not Apps Script's own
   `google.script.run`/templating layer).
+  **Second incident, same symptom, completely different cause, now
+  fixed** — after the `MODULE_SOURCES` fix above the author STILL had no
+  nav bar, plus the wrong font: the export's Google-Fonts `<link>` had
+  reached the live deployment truncated mid-URL, and the resulting
+  unterminated HTML attribute swallowed `<div id="player-root">` so the
+  export threw before building its nav bar. Full write-up under "A third
+  'nav bar missing' cause" above — worth reading before diagnosing any
+  future export problem, because two *earlier* diagnoses in that same
+  investigation (stale `MODULE_SOURCES`, then embed container height)
+  were each plausible, partially-correct-looking, and wrong. **This fix
+  has NOT been confirmed by the author yet** — it needs
+  `AppScript/AnimatedSlidesV2.html` re-pasted + redeployed, then a fresh
+  Export checked in Articulate.
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7

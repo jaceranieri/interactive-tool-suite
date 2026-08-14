@@ -117,10 +117,9 @@ database.
   - `tabbed-panels/` — schema-driven tab/block authoring tool (flowed
     content, not the SVG canvas the other two tools use). Deployed to
     Apps Script (`AppScript/TabbedPanels*.html`, `Code.gs`'s `PAGES` entry
-    uncommented) with a working Export, though the real Apps Script
-    save/load round-trip is still unverified end to end — see
-    `tools/tabbed-panels/CLAUDE.md` for its full architecture and "What's
-    NOT built yet".
+    uncommented) with a working Export and a confirmed-live Save/Load
+    round-trip — see `tools/tabbed-panels/CLAUDE.md` for its full
+    architecture and current backlog.
   - **Toggle Slides — removed 2026-08-14.** Was a single-canvas tool
     where nav buttons independently toggled groups of elements on and
     off; didn't meet requirements and was deleted (repo source and
@@ -430,13 +429,15 @@ There's no automated test suite. What exists:
   list for the removal note.
 - **v2**: feature-complete on the original build plan plus a further
   round of polish (Draw, Handwriting font, SVG upload, the property
-  side-panel redesign, ruler guides — most deployed live, some still
-  awaiting live-deployment confirmation). Two "nav bar missing" incidents
-  from this round are fully written up in "The Apps Script deployment
-  pipeline" above since they're general lessons, not v2 trivia. Full
-  detail and the current backlog: `tools/animated-slides-v2/CLAUDE.md`.
-- **Tabbed Panels**: in development. Export works; the real Apps Script
-  Save/Load round-trip is still unverified end to end. Full detail:
+  side-panel redesign, ruler guides). Draw/Handwriting/SVG upload and the
+  nav-bar/font export fix are all confirmed working live; ruler guides
+  are still local-preview-only pending live-deployment confirmation. Two
+  "nav bar missing" incidents from this round are fully written up in
+  "The Apps Script deployment pipeline" above since they're general
+  lessons, not v2 trivia. Full detail and the current backlog:
+  `tools/animated-slides-v2/CLAUDE.md`.
+- **Tabbed Panels**: in development, but Export and the real Apps Script
+  Save/Load round-trip are now both confirmed working live. Full detail:
   `tools/tabbed-panels/CLAUDE.md`.
 - **Not yet migrated / not yet built**: nothing is currently being
   migrated from a legacy tool — see "Starting a new tool" below instead.
@@ -555,13 +556,15 @@ item gets done.
    needed" — no existing pattern besides `SIDEBAR.md`'s (side panels)
    needed a doc written just because of this decision, so there's no
    further backlog here, only the standing rule for next time.
-6. **Verification/production backlog**: clear the existing "unverified
-   against a live Apps Script deployment" backlog (Tabbed Panels'
-   Save/Load/Export round-trip, SVG upload, folder-support round-trip —
-   all tracked in `HANDOFF.md` and cross-referenced throughout this
-   file; Toggle Slides' items dropped off this list with its removal)
-   **before** starting any
-   new tool, rather than letting it keep growing alongside new work.
+6. **Verification/production backlog**: in progress — Tabbed Panels'
+   Save/Load/Export round-trip and v2's SVG upload are both now
+   confirmed working against the live Apps Script deployment (Toggle
+   Slides' items dropped off this list with its removal). Still open:
+   folder-support round-trip (`apiSaveProject`/`apiMoveProject`/
+   `apiCreateFolder`/`apiDeleteFolder` in `Code.gs`) and v2's ruler
+   guides, both tracked in `HANDOFF.md`. Clear the rest **before**
+   starting any new tool, rather than letting it keep growing alongside
+   new work.
 7. **`AppScript/x`**: deleted — was a stray tracked, apparently
    content-free file from an unrelated stray commit, not part of any
    tool's real file set. Done.

@@ -397,8 +397,9 @@ via a single accent-colour override, verified in local preview (a
 Playwright session confirmed a `<script>` tag and an `onclick` handler
 both get stripped from an uploaded file, a gradient's internal ids get
 rewritten correctly, and the property panel / undo-redo / duplicate all
-work against the new type) but **not yet hand-verified against a live
-Apps Script deployment**.
+work against the new type) and **confirmed working end-to-end against
+the live Apps Script deployment** — a real SVG uploaded, saved, reloaded,
+and exported successfully.
 
 **Incident, now fixed**: the Draw and Handwriting-font features were
 deployed to `ElementTypesJs.html`/`ElementRendererJs.html` without
@@ -432,9 +433,10 @@ CLAUDE.md's deployment-pipeline section, "A third 'nav bar missing'
 cause" — worth reading before diagnosing any future export problem,
 because two *earlier* diagnoses in that same investigation (stale
 `MODULE_SOURCES`, then embed container height) were each plausible,
-partially-correct-looking, and wrong. **This fix has NOT been confirmed
-by the author yet** — it needs `AppScript/AnimatedSlidesV2.html`
-re-pasted + redeployed, then a fresh Export checked in Articulate.
+partially-correct-looking, and wrong. **This fix is now confirmed
+live** — `AppScript/AnimatedSlidesV2.html` was re-pasted and redeployed,
+and a fresh Export renders its nav bar and the Handwriting font (Caveat)
+correctly inside an actual Articulate embed.
 
 Element properties also moved out of the old floating popup into a
 right-docked side panel (see the repo root's `SIDEBAR.md` for the full

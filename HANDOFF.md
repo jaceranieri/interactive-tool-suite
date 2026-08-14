@@ -15,27 +15,25 @@ pushing further commits to this branch updates #12 automatically.
 Nobody has decided whether a session should subscribe to its activity
 for auto CI-fix / review-comment handling; ask, don't assume.
 
-## Do this first: the export nav-bar fix is NOT confirmed yet
+## Confirmed live: export nav-bar fix, SVG upload, Tabbed Panels round-trip
 
-The last thing this session did was fix a real, reproduced bug where
-**every exported project rendered its slide content but no nav bar, and
-used the wrong font**. The fix is committed and pushed but **the person
-has not yet re-pasted and redeployed it**, so it is unconfirmed in
-practice. Step 1 of the next session is:
+Three items that were previously "unconfirmed in practice" are now
+confirmed working against the real Apps Script deployment:
 
-1. Person re-pastes `AppScript/AnimatedSlidesV2.html` into Apps Script
-   (**use GitHub's "Copy raw file" button, not a manual click-drag
-   selection**), saves, and creates a **new deployment version** (saving
-   alone does not update the served web app).
-2. Generate a fresh Export from the live tool, paste into an Articulate
-   embed block, confirm **the nav bar appears AND the Handwriting font
-   renders as Caveat** (both symptoms came from the same defect, so both
-   should resolve together).
-3. If it's still broken: get the actual exported `.html` **as a file
-   upload**, not pasted inline — a big inline paste got mangled in transit
-   during this session and cost real time chasing a phantom. Then check
-   `document.getElementById('player-root')` in the console; if it's
-   `null` again the `<head>` is being corrupted by something new.
+1. **The export nav-bar/font bug is fixed and confirmed.**
+   `AppScript/AnimatedSlidesV2.html` was re-pasted and redeployed, and a
+   fresh Export renders its nav bar AND the Handwriting font (Caveat)
+   correctly inside an actual Articulate embed. Full write-up in
+   `tools/animated-slides-v2/CLAUDE.md`'s Current status section.
+2. **SVG upload works end-to-end live** — uploaded, saved, reloaded, and
+   exported successfully against the real deployment, not just local
+   preview.
+3. **Tabbed Panels' Apps Script deployment is confirmed** — a real
+   Save/Open/Rename/Delete round-trip and Export both work against the
+   live `google.script.run` backend.
+
+See `CLAUDE.md`'s "Scaling decisions" #6 for what's still open in the
+verification backlog (folder-support round-trip, v2's ruler guides).
 
 ## What this session actually did
 
@@ -59,9 +57,9 @@ check, which silently dropped every camelCase SVG name
 (`linearGradient`, `viewBox`), rendering gradient uploads as if `<defs>`
 were empty with no error anywhere.
 
-**Not yet confirmed by the person in a live deployment** — no one has
-uploaded a real SVG through the hosted tool and saved/loaded/exported it
-end to end. That's the main outstanding verification for this feature.
+**Confirmed by the person in a live deployment** — a real SVG uploaded
+through the hosted tool, saved, loaded, and exported successfully end to
+end.
 
 ### 2. Recovered the Handwriting font feature (it had been silently destroyed)
 
@@ -139,19 +137,16 @@ asked for this explicitly; keep doing it unprompted.
 
 ## Carried over, still unverified in Apps Script (untouched this session)
 
-- **Tabbed Panels**: `AppScript/TabbedPanels.html` + module files exist
-  and went through the 5-substitution pass, `PAGES` entry uncommented,
-  but none of it has been pasted into a live Apps Script project. Do a
-  real Save/Open/Rename/Delete round-trip, click through Export, and
-  **paste an exported file into an actual Articulate embed block to
-  confirm it renders styled** (a real fix went in for that and was never
-  confirmed against a real embed). Re-paste ALL of its AppScript files
-  together, not just whichever seems related to the latest change.
 - **Storage folders**: `apiSaveProject`/`apiListProjects`/etc. in
   `AppScript/Code.gs` gained a `folder` parameter, plus
   `apiMoveProject`/`apiCreateFolder`/`apiDeleteFolder`. Re-paste
   `Code.gs` (and `storage-backend.gs` if using the standalone fallback)
   and do a real folder round-trip before trusting it in production.
+- **v2's ruler guides**: verified in local preview (Playwright) only —
+  add/drag/delete a guide, snap behaviour, and undo/redo/persistence all
+  confirmed there, but not yet hand-verified against the live Apps
+  Script deployment. See `tools/animated-slides-v2/CLAUDE.md`'s Current
+  status section.
 - **Toggle Slides — removed 2026-08-14**, didn't meet requirements. Its
   verification items (ghost-drag, live deployment) are moot. **PR #10**
   (against `claude/toggle-slides-multi-slide-hyhuh7`) is now stale if
@@ -165,18 +160,18 @@ asked for this explicitly; keep doing it unprompted.
    were made about deploy tooling, the shared canvas engine, fork
    reconciliation, and doc/verification conventions as the suite grows.
    #1, #2, #3, #5, and #7 are done; #4 became moot when Toggle Slides
-   was removed; only #6 (clear the verification backlog) is still open.
-1. **Confirm the export nav-bar + font fix live** (see the top section).
-   Nothing else about v2 should be considered done until this is.
-2. **Exercise SVG upload against the live deployment** — upload a real
-   SVG, save, reload, export, embed. Only local-preview verified so far.
-3. **Do the real Apps Script round-trips for Tabbed Panels** — still the
-   single most important unverified thing project-wide.
-4. Consider backporting the explicit Save-folder-picker from Tabbed
+   was removed; #6 (verification backlog) is now down to just
+   folder-support round-trip and v2's ruler guides.
+1. **Folder-support round-trip** — `apiSaveProject`/`apiMoveProject`/
+   `apiCreateFolder`/`apiDeleteFolder` in `Code.gs`, live and
+   unconfirmed. See "Carried over" above.
+2. **v2's ruler guides against the live deployment** — local-preview
+   confirmed only so far. See "Carried over" above.
+3. Consider backporting the explicit Save-folder-picker from Tabbed
    Panels to v2, for consistency.
-5. **v2 Canvas Settings swatch consistency audit** — older backlog item,
+4. **v2 Canvas Settings swatch consistency audit** — older backlog item,
    raised while reviewing Tabbed Panels' Styles drawer, never started.
-6. Touch/tablet drag-and-drop, accessibility pass, narrow-window layout —
+5. Touch/tablet drag-and-drop, accessibility pass, narrow-window layout —
    standing gaps across v2 / Tabbed Panels, deferred many times now.
 
 ## Older, still-outstanding items from earlier in the project

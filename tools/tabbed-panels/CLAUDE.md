@@ -313,21 +313,19 @@ export ships its own hardcoded copy rather than reusing
 
 ## What's NOT built yet
 
-- **Apps Script deployment exists but is unverified for real** —
+- ~~Apps Script deployment unverified~~ — **confirmed working**:
   `AppScript/TabbedPanels.html` (+ `TabTypesJs.html`,
   `RichtextEditorJs.html`, `BlockRendererJs.html`, `TabNavJs.html`,
-  `TabManagerJs.html`) went through the 5-substitution pass and the
-  `PAGES` entry in `Code.gs` is uncommented, so it's reachable from the
-  hub once redeployed. Export's module-fetching code was swapped for an
+  `TabManagerJs.html`) went through the 5-substitution pass, and a real
+  Save/Open/Rename/Delete round-trip plus Export against the live Apps
+  Script deployment has now been confirmed end to end against real
+  `google.script.run`. Export's module-fetching code was swapped for an
   embedded `MODULE_SOURCES` object (substitution 2) in the deployed
   copy, generated programmatically from the real source files rather
   than hand-typed, to avoid escaping mistakes. Its `history.js` reuses
   the **existing** `AppScript/HistoryJs.html` rather than a duplicate
   copy — byte-for-byte identical generic code, nothing tool-specific to
-  wrap separately. None of this has actually been pasted into a live
-  Apps Script project yet — untested against real `google.script.run`
-  end to end. Do a real Save/Load round-trip before treating this as
-  done (see the repo root's `HANDOFF.md`).
+  wrap separately.
 - **Touch/tablet drag-and-drop** — the Tabs drawer's reorder and the
   block list's reorder both use native HTML5 drag-and-drop (copied from
   v2's layer/slide reordering), which has the same known touchscreen gap

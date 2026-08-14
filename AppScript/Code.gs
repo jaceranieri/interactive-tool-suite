@@ -24,9 +24,9 @@
 const PAGES = {
   // 'animated-slides': { file: 'AnimatedSlides', title: 'Animated Slides', description: 'Build slide-based interactives with elements that animate into position across slides.', status: 'stable' },  <- removed 2026-08-14, superseded by v2, see CLAUDE.md
   'animated-slides-v2': {
-    file: 'AnimatedSlidesV2', title: 'Animated Slides (v2)',
+    file: 'AnimatedSlidesV2', title: 'Animated Slides',
     description: 'Rebuilt engine — undo/redo, layers, and a redesigned nav bar. In testing.',
-    status: 'beta',
+    status: 'stable',
     // Optional: a tool with a `previewFile` gets its hub preview panel
     // populated with that file's raw contents (a genuine Export of a
     // small demo project, generated once and committed — not derived

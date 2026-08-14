@@ -1,9 +1,14 @@
 # CLAUDE.md
 
 Context for Claude (or any AI assistant) working in this repo. Read this
-before making changes, especially to `tools/animated-slides-v2/`. Update
-it as the project evolves — a stale CLAUDE.md actively misleads, since
-it's read as ground truth rather than double-checked against the code.
+first — it's the map of the suite's shared architecture, conventions,
+and deployment pipeline. Each tool with enough tool-specific depth to
+warrant it has its own `tools/{tool-id}/CLAUDE.md` for the detail that
+belongs there instead of here (currently `animated-slides-v2/` and
+`tabbed-panels/`); this file points to them rather than duplicating
+their content. Update whichever file actually owns a piece of content as
+the project evolves — a stale CLAUDE.md actively misleads, since it's
+read as ground truth rather than double-checked against the code.
 
 ## What this is
 
@@ -57,9 +62,10 @@ database.
   browsing support (breadcrumbs, folder rows, a "New folder" button) via
   extra keys on its existing `actions` param (`folders`, `currentFolder`,
   `onOpenFolder`, `onNewFolder`, `onDeleteFolder`) — omit all of them and
-  it renders exactly as it did before folders existed, so tools that
-  haven't been wired up for folders yet (currently just v1) need no
-  changes. `animated-slides-v2/index.html` was the first tool wired up,
+  it renders exactly as it did before folders existed, so a tool that
+  hasn't been wired up for folders yet needs no changes (every currently-
+  active tool has been — this only matters for the next new tool).
+  `animated-slides-v2/index.html` was the first tool wired up,
   and the pattern it established — `browseFolder` (where the Open modal
   is currently browsing) and `currentProjectFolder` (where the open
   project actually lives) as separate state, `browseFolder` reset to
@@ -73,9 +79,7 @@ database.
   inside that modal via the same `renderProjectList()` opt-in params,
   just with an empty `projects` array since it's picking a destination,
   not a file. Worth considering backporting this explicit Save-folder-
-  picker to v2 too, for consistency — not done yet. Wiring folder support
-  into v1 at all is still outstanding — see "Current status" / "What's
-  NOT built yet" below.
+  picker to v2 too, for consistency — not done yet.
 - **Shared foundation** (`shared/`): `design-tokens.css` (colors, spacing,
   type — includes an explicit house style: "Colour," not "Color," in
   labels and anywhere user-facing), `app-shell.css` / `app-shell.js` (top
@@ -89,24 +93,33 @@ database.
   `canvas-editor.js`, `element-types.js`, `element-renderer.js` — used by
   any canvas-based (SVG element) tool, and `history.js` (fully generic
   undo/redo, used by both v2 and Tabbed Panels even though the latter
-  isn't canvas-based). See "Animated Slides v2's internal architecture"
-  below for what each does; see "Scaling decisions" #3 for why they
-  moved.
-  tool" below.
+  isn't canvas-based). See `tools/animated-slides-v2/CLAUDE.md` for what
+  each does; see "Scaling decisions" #3 for why they moved.
 - **Tools** live in `tools/{tool-id}/`. Currently:
-  - `animated-slides/` (v1) — stable, in production use, not under active
-    development.
+  - **Animated Slides v1 — removed 2026-08-14.** Superseded by v2, which
+    surpassed it functionally; kept in production for a while after v2
+    launched, then retired once v2 was trusted. Repo source
+    (`tools/animated-slides/`) and the deployed `AppScript/AnimatedSlides.html`
+    were deleted; `Code.gs`'s `PAGES` entry is commented out, not
+    deleted, in case a rollback is ever needed. Saved v1 projects
+    (`projects/animated-slides/*.json`) were deliberately left in place
+    — no tool can open them anymore, but the data isn't destroyed.
+    Already-published Articulate courses built from a v1 export keep
+    working regardless, since an export is self-contained HTML with no
+    runtime dependency on the authoring tool. See git history at or
+    before this commit for v1's source if ever needed again.
   - `animated-slides-v2/` — ground-up rebuild of Animated Slides:
     schema-driven element system, undo/redo, cross-slide element linking,
     multi-select. As of this writing, considered feature-complete enough
-    that active development has paused (see "Current status").
+    that active development has paused (see "Current status" below for
+    the one-line summary, `tools/animated-slides-v2/CLAUDE.md` for the
+    full architecture and detailed status).
   - `tabbed-panels/` — schema-driven tab/block authoring tool (flowed
     content, not the SVG canvas the other two tools use). Deployed to
     Apps Script (`AppScript/TabbedPanels*.html`, `Code.gs`'s `PAGES` entry
-    uncommented) with a working Export, though the real Apps Script
-    save/load round-trip is still unverified end to end — see "What's NOT
-    built yet" under "Tabbed Panels" below. See that section for its
-    architecture.
+    uncommented) with a working Export and a confirmed-live Save/Load
+    round-trip — see `tools/tabbed-panels/CLAUDE.md` for its full
+    architecture and current backlog.
   - **Toggle Slides — removed 2026-08-14.** Was a single-canvas tool
     where nav buttons independently toggled groups of elements on and
     off; didn't meet requirements and was deleted (repo source and
@@ -120,307 +133,6 @@ database.
     behavior, so element property editing was likely broken in the live
     deployment at time of removal). `Code.gs`'s `PAGES` entry is
     commented out, not deleted, in case this is picked back up.
-
-## Animated Slides v2's internal architecture
-
-`element-types.js`, `element-renderer.js`, `canvas-editor.js`, and
-`history.js` live in `shared/`, not `tools/animated-slides-v2/` — see
-"Scaling decisions" #3. They're described here because this is still
-where their design rationale belongs (v2 is where they were built and
-is still their most complete consumer); `slide-manager.js`,
-`layer-panel.js`, `nav-bar.js`, and `svg-sanitizer.js` remain genuinely
-v2-specific and stay in `tools/animated-slides-v2/`.
-
-- `element-types.js` — the `ELEMENT_TYPES` schema (field definitions per
-  element type: text/rect/arrow/icon/draw). Adding a field here
-  automatically gets a property-panel input; adding a type automatically
-  gets an "Add element" button. Extend the schema rather than hand-writing
-  per-type UI. One exception to "every type gets an instant-place Add
-  element button": `draw` (see "Free draw" below) — its button arms a
-  tool instead of placing anything, since a freehand drawing has no
-  sane default shape.
-- `element-renderer.js` — the one rendering engine, used **unmodified** by
-  both the authoring canvas and the exported player. Never make this
-  authoring-aware — it only ever reads/writes plain element `data`
-  objects and has no concept of selection, dragging, or editing. Two
-  choices worth knowing: text is native SVG `<text>`/`<tspan>`, not
-  `<foreignObject>` (opacity + foreignObject interact badly with the
-  SVG viewBox scale); GSAP is only used for genuine animated transitions,
-  not instant edits. `smoothedPathFromPoints()` (Catmull-Rom-to-Bezier)
-  is the one place a `draw` element's `points` array becomes an SVG path
-  `d` string — used both when a stroke is first drawn and on every later
-  resize, so it never needs a second copy in the exported player.
-- `canvas-editor.js` — selection (including multi-select and marquee),
-  drag/resize, the contextual popup, and freehand-stroke capture (see
-  "Free draw" below). Sits on top of the renderer, never modifies it.
-  Shift-drag locks movement to whichever axis (horizontal or vertical)
-  has moved further from the drag's start point, re-evaluated every
-  frame.
-- `slide-manager.js` — owns `slides`, `activeIndex`, `canvasSettings`, and
-  the live `elements`/`nodes` maps for the active slide. Cross-slide
-  element "linking" (the core mechanic of this tool) is just two elements
-  on different slides sharing the same `id` — nothing more than that.
-  Layer stacking order is the `elements` array's order (index 0 =
-  furthest back) — see the "Getting this wrong" bullet under Conventions.
-- `history.js` (shared, see above), `layer-panel.js`, `nav-bar.js` —
-  undo/redo, the layer list, and the learner-facing nav bar (also reused
-  verbatim by export).
-
-### Free draw (the `draw` element type)
-
-Lets an author sketch directly on the canvas instead of only placing
-pre-built shapes — a pencil-icon left-rail button (multi-stroke toggle,
-not one-shot: clicking it arms `CanvasEditor.drawMode` and it stays on
-across repeated strokes until clicked again or Escape is pressed).
-Deliberately scoped down from the start: stroke-only (colour/thickness/
-opacity, no closed-path fill option), resizable via the same 4-corner
-handles every other non-text/arrow type already gets for free, and a
-fixed (non-author-configurable) smoothing amount rather than an exposed
-slider — all three were explicit scope calls made before writing any
-code, not later cuts.
-
-- **Data shape**: like arrow's `length`/`angle`, `points` is a
-  type-specific property that isn't user-editable via a form control, so
-  it isn't declared in `ELEMENT_TYPES.draw.fields` — it's set directly
-  on the data object, the same way core x/y/width/height are. Each point
-  is normalized to the element's own bounding box (`x`/`y` both 0..1,
-  fraction of `data.width`/`data.height`) — exactly how rect's radius
-  fields relate to its box — specifically so plain corner-drag resize
-  (no draw-specific code in `_applyResize`/`_renderHandles`) scales the
-  whole drawing for free, same as rect/icon.
-- **Two-stage smoothing, split by file on purpose**: `canvas-editor.js`'s
-  `simplifyPoints()` (Ramer-Douglas-Peucker) runs once, in
-  `_finishFreehand()`, against the *raw* pointer trail — this is the
-  "de-jitter" step, and it's pointer-specific (only exists at
-  capture time), so it has no reason to live in the renderer.
-  `element-renderer.js`'s `smoothedPathFromPoints()` (Catmull-Rom-to-
-  Bezier) is the separate "how do these points become a curve" step,
-  and it only depends on `points` — no pointer data — so it's reused
-  identically by both a live authoring resize and the exported player.
-  While a stroke is still being drawn, the on-canvas preview is a plain
-  unsmoothed polyline (cheap, responsive); the real smoothed path is
-  only ever built once, in `_finishFreehand()`, from the simplified
-  points — there's no live-smoothing-while-dragging.
-- **Draw mode intercepts clicks everywhere, not just on empty canvas** —
-  an author needs to be able to draw on top of existing elements. Two
-  separate gates make this work: the SVG-level `pointerdown` listener
-  checks `drawMode` *before* its usual "only if `e.target === svg`"
-  marquee check, and each element node's own `pointerdown` handler (in
-  `_attachSelection`) bails out early without calling
-  `stopPropagation()` when `drawMode` is on, letting the event bubble up
-  to that SVG-level listener instead of starting a select/drag on
-  whatever's underneath the stroke.
-- Entering draw mode calls `deselect()` first (closes the properties
-  popup, which would otherwise sit on top of the canvas while drawing).
-  `setDrawMode()` takes a callback (`onDrawModeChange`, a constructor
-  option alongside `onSelect`/`onChange`) so `index.html` can toggle the
-  left-rail button's active state — same pattern as `onSelect` already
-  syncing the layer panel.
-
-### Handwriting font (`fontFamily` on the `text` type)
-
-A second font choice for text elements — "Sans" (the existing IBM Plex
-Sans) or "Handwriting" (Caveat) — picked from a dropdown in the
-properties popup, same schema-driven pattern as icon's `iconpicker` or
-svg's colour swatch. `FONT_FAMILIES` (in `element-renderer.js`) maps a
-short key (`sans` / `handwriting`) to a `{ label, css }` pair; adding a
-third font choice means adding an entry there AND loading its Google
-Font in three places that must all move together — `index.html`'s own
-`<head>` (authoring canvas), the Export template's `<head>` inside
-`openExportModal()`, and (for the Apps Script deployment) the equivalent
-`<head>` `<link>` in `AppScript/AnimatedSlidesV2.html` twice (once for
-the authoring page itself, once inside its own copy of the Export
-template string) — four total spots, easy to update three of four and
-ship a font that measures/wraps correctly in the editor but silently
-falls back to the browser default in the exported output.
-`element-types.js` declares `fontFamily` as a `fontpicker` field type;
-`canvas-editor.js`'s `_buildField` renders it as a `<select>` whose
-options are previewed in their own font (`opt.style.fontFamily`) so an
-author can see roughly what each choice looks like before picking it.
-`measureTextWidth`/`wrapTextLines`/`layoutText` in `element-renderer.js`
-all take the resolved font-family CSS string as a parameter now (not a
-single hardcoded `TEXT_FONT_FAMILY` constant) so word-wrapping measures
-against whichever font the element actually uses.
-
-### Uploaded SVGs (the `svg` element type)
-
-Lets an author upload their own SVG asset (a logo, a custom icon) rather
-than being limited to the built-in 7-icon library. Four scope decisions
-were settled up front, before any code was written, the same way Free
-draw's were: **single accent colour** recolour (every fill/stroke in the
-uploaded markup is flattened to one author-chosen colour, not a per-shape
-palette — multi-colour source art gets flattened on purpose), **inline-
-in-JSON storage** (the sanitized markup lives directly on the element's
-data, same as everything else in a project file — no separate asset-file
-API), **strict allowlist sanitization** (not a blocklist — see below), and
-a **new element type** rather than folding uploads into `icon` (icon
-stays a small curated built-in set; `svg` is the escape hatch for
-arbitrary author-supplied art).
-
-- **Data shape**: like `draw`'s `points`, `svgMarkup` (the sanitized
-  markup) and `originalViewBox` are type-specific data set directly on
-  the object rather than declared in `ELEMENT_TYPES.svg.fields` — no sane
-  form-input type for raw SVG source. Also like `draw`, an `svg` element
-  is never placed via `makeDefaultElement()`/`addElement()` alone — it
-  has no meaningful default shape until an author picks a file — so its
-  left-rail button opens a hidden `<input type="file">` instead
-  (`#svg-upload-input` in `index.html`) rather than instant-placing.
-  `handleSvgUpload()` reads the file, runs it through the sanitizer, and
-  calls `addSvgElement()` (the `svg`-specific sibling of `addElement()`)
-  on success — a rejected file (invalid SVG, or over
-  `SVG_UPLOAD_MAX_BYTES`, currently 500KB) shows a `Shell.toast` and
-  never creates an element.
-- **Why sanitize at all — read this before touching `svg-sanitizer.js`**:
-  `element-renderer.js`'s output is reused UNMODIFIED by the exported
-  learner-facing player (see that file's own header comment). An
-  unsanitized malicious SVG uploaded here would run its payload inside a
-  real Articulate course, not just inside this authoring tool — a
-  realistic threat, since "grab an icon off some site" is a normal author
-  workflow. `svg-sanitizer.js`'s `sanitizeSvgMarkup()` runs once, at
-  upload time, in the authoring UI only (not part of the shared renderer,
-  and not needed inside the exported player — by export time the stored
-  `svgMarkup` is already sanitized data, so this file is never one of
-  Export's fetched/embedded modules).
-- **Allowlist, not blocklist**: parses the uploaded text via `DOMParser`,
-  then rebuilds a clean tree element-by-element, keeping only tags in
-  `SVG_ALLOWED_TAGS` (shape/gradient/structural elements — no `<script>`,
-  no `<image>`, no `<a>`) and attributes in `SVG_ALLOWED_ATTRS` (geometry
-  and paint only — every `on*` handler, `style` — a `url(...)` inside a
-  style attribute is its own CSS-based injection vector, distinct from
-  the tag/handler-based ones the tag allowlist blocks — and
-  `href`/`xlink:href` are excluded). A disallowed tag drops itself AND
-  everything nested under it, so a `<script>` hidden inside an otherwise-
-  fine `<g>` doesn't survive just because its parent was allowed.
-  **Real bug caught during testing**: tag/attribute names were originally
-  compared after `.toLowerCase()`-ing both sides, which silently dropped
-  every camelCase SVG name (`linearGradient`, `viewBox`, `gradientUnits`)
-  since SVG tag/attribute names are case-sensitive — a gradient-filled
-  upload rendered as if the `<defs>` block were empty, no error, nothing
-  in the console. Fixed by comparing tag/attribute names as-authored,
-  with no case normalization on either side of the allowlist check — this
-  is still safe against a case-trick bypass (e.g. `<ScRiPt>`) precisely
-  *because* it's an allowlist: a name that doesn't exactly match one of
-  the deliberately-included spellings is dropped regardless of what case
-  it's in.
-- **Id rewriting**: every `id` attribute is rewritten with a prefix unique
-  to that upload (the new element's own id), and every `url(#id)`
-  reference (`fill`, `stroke`, `clip-path`) is rewritten alongside it —
-  needed so an uploaded SVG's internal ids (e.g. a gradient's `id="grad1"`)
-  can never collide with another `svg` element already on the same
-  canvas, or with the app's own DOM ids.
-- **Recolour application** (`applySvgAccentColor()` in
-  `element-renderer.js`): re-run on every render from the *original*
-  sanitized markup — not baked into stored `svgMarkup` — same as icon's
-  own `color` field re-applying `fill` on every render. An element with
-  an explicit `fill="none"` (an outline-only shape) is left alone so
-  stroke-only icons still read as outlines rather than gaining a fill; an
-  element with no `fill` attribute at all still defaults to black per the
-  SVG spec, so it's treated the same as an explicit non-`"none"` fill
-  (recoloured). `<stop stop-color>` (gradient stops) are recoloured too,
-  for consistency, even though a gradient's whole point is normally
-  multi-colour — a deliberate consequence of the single-accent-colour
-  scope call, not a special case.
-- Resize handles, the property panel's Colour/Opacity fields, layer panel
-  entry, undo/redo, and duplicate are all free from the existing schema-
-  driven system — the same payoff Free draw got from extending
-  `ELEMENT_TYPES` instead of hand-writing a new UI path.
-
-### Ruler guides
-
-Persistent (project-wide, not per-slide) vertical/horizontal lines an
-author places to line elements up against, with elements magnetically
-snapping to them while being dragged. Lives entirely in
-`canvas-editor.js` (an authoring-only file — see "The Apps Script
-deployment pipeline" below on why that alone keeps guides out of the
-exported player) plus a small Settings-panel section in `index.html`;
-`element-renderer.js` and the exported player know nothing about guides
-at all.
-
-- **Data shape**: `canvasSettings.guides = { enabled, horizontal: [{id,
-  y}], vertical: [{id, x}] }` — project-wide like `nav`/`snapToGrid`, for
-  the same reason nav styling is: a layout aid should stay put as an
-  author moves between slides, not reset per slide. `defaultGuides()`
-  lives in `slide-manager.js` next to `defaultCanvasSettings()`;
-  `SlideManager.setState()` backfills it for a project saved before this
-  feature existed, the same pattern already used for `nav`.
-- **One enabled flag gates both visibility AND snapping** — Settings'
-  "Show & snap to guides" switch and the global Shift+R shortcut both
-  just flip `canvasSettings.guides.enabled` via
-  `CanvasEditor.toggleGuidesEnabled()`. A hidden guide that still
-  silently snapped things would be confusing, so there's deliberately no
-  second "snap without showing" mode. Shift+R lives inside
-  `CanvasEditor`'s existing keydown listener specifically to reuse its
-  `isTyping` guard — without it, typing a capital "R" into any text
-  field (a slide name, a text element's content) would hijack the
-  keystroke instead of typing the letter.
-- **Creation**: Settings' Guides section has "+ Horizontal"/"+ Vertical"
-  buttons (`CanvasEditor.addGuide()`) that add a guide at the canvas's
-  own centre, selected and immediately draggable — no ruler UI, unlike
-  Figma/Illustrator's drag-off-the-ruler gesture, a deliberate scope call
-  made before writing any code (the canvas here is small enough that a
-  full ruler felt like more UI than the feature needed). The same
-  section also lists every existing guide with a numeric position field
-  (an alternative to dragging) and a remove button.
-- **Selection is independent of element selection** — `selectedGuide`
-  (`{ orientation, id }`) is a separate field from `selectedIds`;
-  clicking a guide deselects any element and vice versa, so the two
-  concepts never overlap. Deleting a selected guide (Delete/Backspace)
-  and duplicating/deleting a selected ELEMENT are therefore two
-  completely independent code paths that happen to share a keybinding.
-- **Removal**: drag a guide off the canvas's own on-screen bounds (a
-  `getBoundingClientRect()` check in screen space, so it means the same
-  thing regardless of zoom), or select it and press Delete/Backspace.
-  `_finishGuideDrag()`'s delete-on-drop path reuses the
-  `history.beginAction()` that `_startGuideDrag()` already opened rather
-  than opening a second one — the whole drag-then-delete gesture
-  collapses into ONE undo step that puts the guide back at its PRE-drag
-  position, not two separate steps (drag position, then existence).
-- **A thin `<line>` is nearly unclickable** — every rendered guide is
-  actually two stacked `<line>`s: a 1-2px visible one
-  (`pointer-events: none`) and an invisible ~10px-wide one on top
-  (`stroke-opacity: 0` + `pointer-events: stroke`, not `stroke: none`,
-  since `none` would make it non-interactive too) that actually receives
-  clicks/drags. `renderGuides()` always destroys and recreates the whole
-  `<g id="guides-layer">` (same "destroy and recreate" idiom
-  `_renderHandles()` already uses) and always re-appends it as the LAST
-  child of the root `<svg>`, so guides paint on top of elements-layer
-  (and selection handles) no matter what slide-switching or layer
-  reordering did to sibling order elsewhere.
-- **Snapping is scoped to MOVE-drags only, not resize** — a deliberate
-  scope call, not an oversight: an element's left/right/top/bottom edges
-  and horizontal/vertical center all magnetically snap to a guide within
-  ~8 ON-SCREEN pixels (converted to SVG user-space units via
-  `svg.getScreenCTM().a`, the same "never guess a scale factor manually"
-  reasoning `screenToSVGPoint()` already follows, since the canvas can
-  render at any zoom/size) while being repositioned, but resize handles
-  still only grid-snap, same as before this feature. `_snapToGuides()`
-  works against the element's LOCAL bbox (`_getLocalBBox()`, which
-  already has an arrow-specific branch) rather than assuming `(x, y,
-  width, height)` directly describes the box — needed for arrows, whose
-  visual box can extend up/left of their own `x,y` origin. A currently-
-  engaged guide highlights (thicker + a different colour) while
-  something is snapped to it, cleared on pointerup; the highlight-set
-  comparison is skipped-if-unchanged so `renderGuides()` isn't rebuilt
-  every single pointermove frame, only when which guide(s) are engaged
-  actually changes.
-- **A real layout bug found while building this, worth knowing before
-  touching `.side-panel` again**: an earlier fix gave `#editor-slide-bar`
-  a higher z-index than `.side-panel` so the bar (and its **+ Slide**
-  button) would paint on top of any open panel instead of being covered
-  by it. That z-index rule alone turned out NOT to be enough once a
-  panel's content can be tall enough to scroll — the bar would still permanently cover whatever portion of the
-  panel's full-viewport-height box happened to sit behind it, and no
-  amount of scrolling the panel's own `.side-panel-body` could bring
-  that region out from behind the bar, since the bar isn't part of the
-  panel's scroll container at all. Adding the Guides section made
-  Settings tall enough on a modest viewport to actually hit this. Fixed
-  by giving `.side-panel` a real `bottom: var(--slide-bar-height, 0px)`
-  instead of `bottom: 0` — `syncSlideBarHeight()` in `index.html`
-  measures `#editor-slide-bar`'s actual rendered height (not a guessed
-  pixel constant) and publishes it as that custom property, called on
-  load, on window resize, and from `refreshUI()`. The z-index rule stays
-  too, as a harmless fallback for the brief instant before that JS runs
-  on first paint.
 
 ## The Apps Script deployment pipeline — read this before touching v2
 
@@ -461,12 +173,14 @@ wholesale regeneration — that's the safer way to work day-to-day; save
 a full from-scratch regeneration (and the 5-step checklist) for when
 they've drifted enough that hand-sync isn't practical.
 
-Also worth knowing: **v1's deployed copy
-(`AppScript/AnimatedSlides.html`) has manual patches that aren't
-in its repo source** (`tools/animated-slides/index.html`) — specifically
-the hub link and `<base target="_top">`. If v1 is ever regenerated
-wholesale from repo source, those need reapplying, or patch the deployed
-file directly instead (as has been done so far).
+Worth remembering even though the tool itself is gone (see the
+Architecture section's v1 removal note): **v1's deployed copy had manual
+patches that were never in its repo source** — specifically the hub link
+and `<base target="_top">`. A live file silently diverging from repo
+source is exactly the class of risk "the deployed Apps Script project,
+not this repo, is the source of truth" warns about below — worth
+recalling if a future tool's deployed copy is ever suspected of the
+same drift.
 
 **Never hand someone a whole-file replacement for an `AppScript/*.html`
 file without first establishing that their live copy hasn't diverged
@@ -588,30 +302,26 @@ renders its nav bar with `<div id="player-root">` deliberately deleted.
 
 ## Local preview (no Apps Script needed for most of it)
 
-`tools/animated-slides-v2/index.html` loads its own engine as plain
-`<script src>` files — four from `../../shared/` (`element-types.js`,
-`element-renderer.js`, `canvas-editor.js`, `history.js` — see "Scaling
-decisions" #3), and three from its own folder (`slide-manager.js`,
-`layer-panel.js`, `nav-bar.js`) — all of which exist as real standalone
-files (they didn't for a while; CLAUDE.md described them but they'd only
-ever been uploaded as `AppScript/*Js.html`, so the page 404'd on all
-seven outside Apps Script — fixed by extracting them verbatim from the
-AppScript wrapper files). This means:
+Every tool's `index.html` loads its JS as plain `<script src>` files
+(from its own folder and/or `../../shared/`), so serving the repo with
+any static file server and opening a tool's `index.html` renders it
+fully interactive — canvas/content area, drag/resize, side panels,
+undo/redo, Export — in a real browser, without touching Apps Script at
+all:
 
 ```
 python3 -m http.server 8000   # from the repo root
-# then open http://localhost:8000/tools/animated-slides-v2/index.html
+# then open http://localhost:8000/tools/{tool-id}/index.html
 ```
 
-renders and is fully interactive — canvas, drag/resize, layers, the
-settings/layers drawers, undo/redo, Export, "Load from code" — in a real
-browser, without touching Apps Script at all. **Save/Load and the rest of
-project management don't work locally** — those go through
-`google.script.run`, which only exists once the page is actually served
-by Apps Script. GSAP, Font Awesome, and the Google Fonts stylesheet load
-from CDN, so local preview still needs real internet access for those
-(a sandboxed/offline environment will render the structural layout but
-without icons, animation, or the intended fonts).
+**Save/Load and the rest of project management don't work locally** —
+those go through `google.script.run`, which only exists once the page is
+actually served by Apps Script. GSAP, Font Awesome, and the Google Fonts
+stylesheet load from CDN for tools that use them, so local preview still
+needs real internet access for those (a sandboxed/offline environment
+will render the structural layout but without icons, animation, or the
+intended fonts). See each tool's own `CLAUDE.md` for its specific script
+list and any tool-specific local-preview notes.
 
 ## Conventions
 
@@ -715,96 +425,20 @@ There's no automated test suite. What exists:
 
 *(Keep this section current — it's the part most likely to go stale.)*
 
-- **v1**: stable, in production use, not under active development.
-- **v2**: feature-complete on the original build plan, plus a further
-  round of polish and fixes done since: "Load from code" (paste a
-  previous Export's HTML back in to rebuild an editable project — see
-  `tools/animated-slides-v2/ai-authoring/prompt.md` for a self-contained
-  prompt that walks a non-technical author through generating
-  export-compatible project data with an LLM, without touching this
-  tool directly first); a fixed layer-order bug (reordering could
-  silently revert after navigating slides); a fixed inverted
-  bring-forward/send-backward chevron bug; shift-to-axis-lock dragging;
-  a redesigned left rail (vertical icon-only stack: originally 4
-  add-element icons, now 5 with Draw — see "Free draw" above — a
-  divider, then Link/Layers/Settings, each opening a non-blocking
-  slide-out drawer instead of a modal that covers the canvas); and a
-  settings drawer rebuilt as a 2-column grid with a proper Active/
-  Inactive colour table, matching a supplied design mockup; and
-  folder support in Save/Open (see "Storage" above) — the Open modal
-  now browses into folders via breadcrumbs, can create/delete folders,
-  and a new project's first save lands in whichever folder was last
-  browsed; and a freehand "Draw" tool (see "Free draw" above) — sketch
-  directly on the canvas with the stroke automatically simplified
-  (Ramer-Douglas-Peucker) and curve-fit (Catmull-Rom-to-Bezier) so it
-  reads as a smooth line rather than a jittery mouse trace, resizable
-  like any other element (deployed live and confirmed working in
-  authoring); a second "Handwriting" font choice for text elements (see
-  "Handwriting font" above), also deployed live and confirmed working in
-  authoring; and an SVG upload element type (see "Uploaded SVGs" above)
-  — an author can bring their own SVG asset (a logo, a custom icon)
-  rather than being limited to the built-in icon library, sanitized on
-  upload against a strict allowlist and recoloured via a single
-  accent-colour override, verified in local preview (a Playwright
-  session confirmed a `<script>` tag and an `onclick` handler both get
-  stripped from an uploaded file, a gradient's internal ids get rewritten
-  correctly, and the property panel / undo-redo / duplicate all work
-  against the new type) but **not yet hand-verified against a live Apps
-  Script deployment**.
-  **Incident, now fixed**: the Draw and Handwriting-font features were
-  deployed to `ElementTypesJs.html`/`ElementRendererJs.html` without
-  regenerating Export's `MODULE_SOURCES` snapshot inside
-  `AnimatedSlidesV2.html` (see "A real, shipped bug from getting
-  substitution 2 wrong" above) — any exported project containing a
-  hand-drawn element crashed the exported script before its nav bar
-  ever got built, which read as "the nav bar is hidden" with no visible
-  error inside an Articulate embed. Fixed by regenerating
-  `MODULE_SOURCES` from the real, current `element-types.js` /
-  `element-renderer.js` (which now include Draw, Handwriting-font, AND
-  the new SVG-upload type together) and verifying byte-for-byte against
-  the source. Confirmed via a Playwright test that reconstructed the
-  exact exported-HTML shape (using the regenerated `MODULE_SOURCES`
-  content, not the local dev server's live `fetch()` path, since that's
-  what actually ships from Apps Script) with a slide containing a draw
-  element, an svg element, and a Handwriting-font text element all at
-  once — nav bar rendered correctly, no thrown errors. Still outstanding:
-  a real end-to-end Save/Load + Export round-trip against the live Apps
-  Script deployment itself (this Playwright check exercises the exact
-  file contents that would be pasted in, but not Apps Script's own
-  `google.script.run`/templating layer).
-  **Second incident, same symptom, completely different cause, now
-  fixed** — after the `MODULE_SOURCES` fix above the author STILL had no
-  nav bar, plus the wrong font: the export's Google-Fonts `<link>` had
-  reached the live deployment truncated mid-URL, and the resulting
-  unterminated HTML attribute swallowed `<div id="player-root">` so the
-  export threw before building its nav bar. Full write-up under "A third
-  'nav bar missing' cause" above — worth reading before diagnosing any
-  future export problem, because two *earlier* diagnoses in that same
-  investigation (stale `MODULE_SOURCES`, then embed container height)
-  were each plausible, partially-correct-looking, and wrong. **This fix
-  has NOT been confirmed by the author yet** — it needs
-  `AppScript/AnimatedSlidesV2.html` re-pasted + redeployed, then a fresh
-  Export checked in Articulate.
-  Element properties also moved out of the old floating popup into a
-  right-docked side panel (see "The Apps Script deployment pipeline"
-  section's sibling doc, `SIDEBAR.md`, for the full cross-tool writeup) —
-  opens instantly on canvas selection, shows every field at once (no more
-  "More options" toggle), and multi-select can now edit fields common to
-  every selected type at once instead of only offering Duplicate/Delete.
-  Deployed live. And ruler guides (see "Ruler guides" above) — persistent
-  vertical/horizontal snap lines, toggled via Settings or Shift+R, an
-  element's edges/center magnetically snap to one while being dragged
-  (move only, not resize) — verified in local preview (Playwright:
-  add/drag/delete a guide, exact-position snap confirmed, persistence
-  across slides and undo/redo confirmed) but **not yet hand-verified
-  against a live Apps Script deployment**.
-  Remaining known gaps: custom color pickers (native color inputs still
-  used, just restyled as a small square swatch rather than the full
-  redesign a true custom picker would be), a thin icon library (7
-  icons), touch/tablet support (layer/slide drag-to-reorder uses native
-  HTML5 drag-and-drop, which doesn't work on touchscreens — canvas
-  drag/selection is fine, since that's built on pointer events), no
-  accessibility pass, narrow-window layout untested.
+- **v1**: removed 2026-08-14 — see the Architecture section's Tools
+  list for the removal note.
+- **v2**: feature-complete on the original build plan plus a further
+  round of polish (Draw, Handwriting font, SVG upload, the property
+  side-panel redesign, ruler guides). Draw/Handwriting/SVG upload and the
+  nav-bar/font export fix are all confirmed working live; ruler guides
+  are still local-preview-only pending live-deployment confirmation. Two
+  "nav bar missing" incidents from this round are fully written up in
+  "The Apps Script deployment pipeline" above since they're general
+  lessons, not v2 trivia. Full detail and the current backlog:
+  `tools/animated-slides-v2/CLAUDE.md`.
+- **Tabbed Panels**: in development, but Export and the real Apps Script
+  Save/Load round-trip are now both confirmed working live. Full detail:
+  `tools/tabbed-panels/CLAUDE.md`.
 - **Not yet migrated / not yet built**: nothing is currently being
   migrated from a legacy tool — see "Starting a new tool" below instead.
 
@@ -822,8 +456,8 @@ it for real as part of "Scaling decisions" #5 below.)
   new tool is canvas-based (an SVG canvas of positioned/sized elements,
   the way v2 is and Tabbed Panels deliberately isn't), also start from
   `shared/canvas-editor.js` / `element-types.js` / `element-renderer.js`
-  / `history.js` — the promoted engine described under "Animated Slides
-  v2's internal architecture" above — rather than copy-pasting v2's
+  / `history.js` — the promoted engine described in
+  `tools/animated-slides-v2/CLAUDE.md` — rather than copy-pasting v2's
   tool-specific files the way the now-removed Toggle Slides did (see the
   Architecture section's Toggle Slides bullet for how that diverged and
   why it was a real, live-shipped bug by the time it was investigated).
@@ -831,6 +465,14 @@ it for real as part of "Scaling decisions" #5 below.)
   makes it reachable from the hub — no separate manifest to update) and
   set up the matching deployed `AppScript/*.html` files per
   `DEPLOY_CHECKLIST.md`.
+- **Give it its own `tools/{tool-id}/CLAUDE.md` once there's enough
+  tool-specific depth to warrant one** (architecture, feature write-ups,
+  a detailed "Current status") — root `CLAUDE.md` should stay the lean
+  map, not grow a new multi-hundred-line section per tool the way it did
+  before `animated-slides-v2/CLAUDE.md` and `tabbed-panels/CLAUDE.md`
+  were split out. A brand-new tool with only a sentence or two of detail
+  doesn't need its own file yet — a bullet under "Tools" above is enough
+  until there's real depth to move.
 - **Cross-tool pattern docs**: if the new tool implements a UI pattern a
   second tool already has (side panels, folder browsing, toast/modal
   conventions, etc.), and the two implementations aren't identical, write
@@ -843,316 +485,6 @@ it for real as part of "Scaling decisions" #5 below.)
 - Local preview (`python3 -m http.server 8000` from repo root) works for
   everything except Save/Load, which needs `google.script.run` and
   therefore a real Apps Script deployment — see "Local preview" above.
-
-## Tabbed Panels
-
-An author builds a series of tabs; learners navigate between them. Each
-tab's content is an ordered list of blocks — heading (with optional
-subtitle), paragraph, list, button (external hyperlink), badge, table,
-separator. Genuinely different content model from Animated Slides —
-that tool's SVG canvas + `x`/`y`/`width`/`height` element schema doesn't
-fit flowed content, so it does **not** reuse `shared/element-types.js` /
-`shared/element-renderer.js` / `shared/canvas-editor.js` — the canvas
-engine — even though those now live in `shared/` too (promoted there
-for future canvas-based tools, not because Tabbed Panels needed them).
-What it does share: `shared/design-tokens.css`, `shared/app-shell.css` +
-`app-shell.js` (top bar, modals, toasts, `Shell.confirm`/`Shell.prompt`,
-project list rendering), `shared/storage-connector.js`,
-`shared/history.js` (fully generic, no canvas dependency), and the same
-`Code.gs` `PAGES` + `apiSaveProject`/`apiListProjects`/etc. pattern — same
-persistence plumbing as Animated Slides, just a different `content`
-shape.
-
-The authoring canvas is intentionally WYSIWYG: it renders as a white
-"player card" on a gray stage with the exact tab-nav markup/CSS the
-exported player uses, so editing genuinely previews the learner-facing
-result rather than approximating it (see "Internal architecture" below
-for how that's structured to stay true).
-
-### Internal architecture (`tools/tabbed-panels/`)
-
-Deliberately mirrors v2's file-per-concern split, but simpler where the
-underlying problem is simpler — there's no SVG canvas, no GSAP
-transitions, no cross-tab element linking, so several v2 concepts
-(nodes vs. data, incremental DOM patching, animated diffing between
-slides) just don't apply here. Tabs and blocks are plain data;
-`renderTabContent()` does a full rebuild on every change rather than
-diffing, which is fine at this scale.
-
-- `tab-types.js` — the `BLOCK_TYPES` schema (field definitions per block
-  type: heading/paragraph/list/button/badge/table/separator), same
-  "packing list" role as v2's `ELEMENT_TYPES` — the property panel is
-  generated from these field lists, not hand-written per type.
-  `makeDefaultBlock()` builds a new block's data from schema defaults,
-  deep-cloning array/object defaults (`table.rows` is an array of
-  arrays, so a shallow copy isn't enough).
-- `block-renderer.js` — the one rendering path (`renderBlock()` /
-  `renderTabContent()`), used **unmodified** by both the authoring
-  content area and the exported player — same authoring-unawareness
-  rule as `element-renderer.js`: reads plain block `data` plus the
-  project's `styles` object (see below), returns real DOM, no concept of
-  selection or editing.
-- `tab-nav.js` — the learner-facing tab strip (underline on the active
-  tab, left/right chevrons that scroll the strip when tabs overflow).
-  Same role as v2's `nav-bar.js`: one rendering + click-handling path,
-  reused **unmodified** by both the authoring canvas and Export. All
-  tab CRUD (add/rename/delete/reorder) lives *outside* this file, in
-  index.html's Tabs drawer — this module only ever renders tabs and
-  reports which one was clicked, which is what keeps the canvas
-  genuinely WYSIWYG instead of an editor-only approximation.
-- `richtext-editor.js` — the hand-rolled rich-text field (chosen over a
-  third-party lib during scaffolding review): a contenteditable div +
-  toolbar toggling bold/italic/underline/link via `execCommand`.
-  `sanitizeRichHtml()` strips everything outside an explicit allowlist
-  (`<b> <i> <u> <a href>`) on every input event, so a value handed to
-  `onChange` — and therefore whatever ends up in a saved project — is
-  never something a browser paste or a stray `execCommand` call could
-  have snuck an unexpected tag/attribute into. Table cells are plain
-  text, not richtext, so they don't go through this module.
-  **Real bug fixed here**: the Link button's click handler is `async`
-  (it awaits `Shell.prompt()` for the URL), and `Shell.prompt()` opens a
-  modal that steals focus to its own input — which clears the
-  contenteditable's text selection the instant that happens. By the time
-  the awaited promise resolved, `execCommand('createLink')` had nothing
-  selected to act on, so it silently did nothing — this was the actual
-  cause of inline links "not working at all," not a sanitizer or
-  rendering issue. Fixed by capturing `window.getSelection()`'s Range
-  *before* the `await`, then restoring it right after, before calling
-  `execCommand`.
-- `tab-manager.js` — `TabManager` owns `tabs` and `styles` (both mutated
-  in place, per the usual reference-identity rule) and the active tab.
-  `defaultStyles()` is the project-wide typography/colour object (see
-  below). Tabs and blocks are tracked by stable `id`, never index — same
-  reasoning as v2's slides/elements. `getState()`/`setState()` feed
-  `history.js` directly, deep-cloning every block (`cloneBlock()`) so
-  undo/redo snapshots never share a nested array (list items, table
-  rows) with the live block — a real bug hit and fixed this round: a
-  shallow `{...block}` copy still shares nested-array references, so
-  editing the live block was silently corrupting entries already pushed
-  onto the undo stack.
-- `history.js` — loaded from `shared/` (see "Scaling decisions" #3), not
-  a per-tool copy. Originally a verbatim copy of
-  `animated-slides-v2/history.js`; since it's fully generic (works off
-  any `getState`/`setState` pair, no tool-specific logic ever needed),
-  the duplicate copy was retired in favor of both tools loading the same
-  file once it was promoted to `shared/`.
-- `index.html` — page shell + all the UI glue: left rail of "add block"
-  buttons plus a Styles drawer opener, the player-card canvas
-  (`tab-nav.js` for the strip, `block-renderer.js` for content, both
-  fed live state on every change), two `.side-panel` drawers (block
-  property panel, global Styles — same pattern as v2's layers/settings
-  drawers, **only one open at a time** via `openPanel()`/`closePanel()`),
-  a persistent bottom tab bar (`#editor-tab-bar`), and Export. Project
-  lifecycle (New/Save/Open/rename/delete) is copy-adapted from v2's
-  `index.html`, same `Shell`/`Storage` calls, different `TOOL_ID`
-  (`'tabbed-panels'`) and content shape.
-  **Export's `<head>` has no static `<style>` or `<link rel="stylesheet">`
-  — both are created by the exported page's own `<script>` at runtime
-  instead** (`document.createElement('style'|'link')`, appended to
-  `document.head`). This was a real bug fix, not a stylistic choice: an
-  author reported the exported HTML losing essentially all of its
-  class-based styling (tab strip rendering as plain buttons, the button
-  block as a bare underlined link, table cells picking up a stray pink
-  background) when pasted into an Articulate embed block, while
-  structural content and inline JS-set styles (`el.style.x = ...`, e.g.
-  heading font-size/colour) still worked fine. That split — inline
-  styles surviving, stylesheet-based CSS not — is the signature of an
-  embed sanitizer that strips `<style>`/`<link>` tags from pasted HTML
-  while still executing `<script>` content; since script execution
-  clearly still works, injecting the same CSS via a script-created
-  `<style>` element sidesteps whatever is stripping the static tag,
-  regardless of the exact sanitizer/CSP mechanism Articulate uses (not
-  independently verified — the fix targets the observed symptom).
-  Applies to both the local-preview/testing template
-  (`fetchModuleSources()`'s caller) and the Apps-Script-deployed
-  template — same CSS text, just embedded differently per substitution
-  2's usual split.
-- **Tab management lives in the bottom bar, not a drawer** — same role
-  and layout as v2's `#editor-slide-bar`: one thumbnail per tab
-  (`renderTabThumbnail()` renders the SAME `renderBlock()` the real
-  canvas uses, at a fixed content width, then scales the whole thing
-  down via CSS `transform` — no separate "how do I draw a thumbnail"
-  logic to keep in sync, same trick v2's `renderSlideThumbnailSVG()`
-  uses), with hover-revealed duplicate/delete buttons, double-click-to-
-  rename, and native HTML5 drag-to-reorder. This replaced an earlier
-  side-panel "Tabs" drawer once the canvas redesign made the top tab-nav
-  strip purely WYSIWYG (click-to-switch only) — tab CRUD needed a home
-  outside that strip, and the bottom bar with live-content thumbnails is
-  strictly more useful than a plain list ever was.
-- **Layers panel** (left rail, `fa-layer-group` icon next to Styles) —
-  same drawer mechanism as the property/Styles panels (`openPanel('layers')`,
-  one `.side-panel` slot shared between all three), listing the active
-  tab's blocks via `renderLayersPanel()` in `index.html`. Directly mirrors
-  v2's `layer-panel.js`: drag-to-reorder or up/down chevrons (disabled at
-  the top/bottom of the list), row click selects the block (same as
-  clicking it on the canvas — opens the property panel, which closes
-  Layers since they share the one drawer slot). One real difference from
-  v2: `tab.blocks` is already stored top-to-bottom, matching both the
-  canvas and the Layers list, so there's no display-order inversion to
-  worry about (v2's `elements` array is bottom-to-top, reversed for
-  display). Reordering by chevron needed a new `TabManager.reorderBlock(id,
-  direction)` — the one-step equivalent of the drag-based
-  `moveBlockAfter()`, mirroring `SlideManager.reorderLayer()`. Each row's
-  label comes from `blockSummary()` (a short, content-derived string —
-  a heading's text, a table's dimensions, etc. — rather than a generic
-  type name repeated for every row of the same type).
-
-### Project-wide styles (`defaultStyles()` in `tab-manager.js`)
-
-A block only ever picks a *variant* — heading level (h2/h3/h4), badge,
-button, or table style (primary/secondary, or bordered/plain for
-tables) — never a literal size/colour. The `styles` object on project
-state defines what each variant actually looks like, edited via the
-Styles drawer: `h2`/`h3`/`h4`/`subtitle` each have `{ size, color }`;
-`badge`, `button`, and `table` each have a named-variant map of
-`{ bg, text, border }` (`table`'s variants are `bordered`/`plain` rather
-than `primary`/`secondary` — "plain" just sets `border` to the card's
-own white, so the grid lines read as absent with no separate rendering
-branch needed). Same split v2 uses for nav Active/Inactive colours, and
-rendered with the same "Colours" table pattern — `renderVariantColourTable()`
-takes an optional `variants` param (`[[key, label], ...]`, defaulting to
-primary/secondary) so Badges/Buttons/Tables all share one function
-despite different variant names, rather than three near-duplicate
-render functions. Every swatch in the Styles drawer (typography colours
-included) shares one CSS rule and gets a `title` attribute naming
-exactly what it recolours (e.g. "Background — Bordered") — these two
-were both real fixes: the colour-table swatches had originally been
-added without the sizing/rounding rule the typography swatches already
-had (an inconsistency caught during a review pass, not something a
-mockup called for), and tooltips were a subsequent explicit request. If
-another block type ever needs a colour-table section, reuse
-`renderVariantColourTable()` rather than writing a fourth copy.
-`block-renderer.js` takes `styles` as a parameter rather than reading a
-global, so it stays a pure function of its inputs — this is also what
-lets Export embed it unmodified.
-
-**Backlog, not yet done**: Animated Slides v2's own Canvas Settings
-drawer has the same swatch-consistency question worth auditing — raised
-by the person while reviewing Tabbed Panels' Styles drawer, explicitly
-deferred as a separate future pass on `tools/animated-slides-v2/
-index.html`, not bundled into this work.
-
-Two more keys cover layout rather than a per-block variant:
-`blockSpacing` (a single number, the gap in px between stacked blocks —
-applied by setting `#block-list`'s `style.gap` directly, not read by
-`block-renderer.js` itself since it's a property of the *container*, not
-any individual block) and `tabLabel` (`{ fontSize, paddingX, paddingY }`
-for `tab-nav.js`'s `.tp-tabnav-tab` buttons — `renderTabNav()` takes this
-as an optional `tabLabelStyle` param and applies it as inline styles,
-same "parameter, not a global" reasoning as `block-renderer.js`).
-`tabLabel` also carries `activeColor` (the active tab's text + underline
-colour, applied only to the `.active` button — inactive tabs still fall
-back to the host page's own `.tp-tabnav-tab` CSS) and `table` also
-carries `radius`/`cellPadding`/`headerFontSize`/`bodyFontSize` (layout,
-not a colour variant, so they live as sibling keys alongside `table`'s
-`bordered`/`plain` variant maps rather than a fourth variant). The
-Styles drawer's Tables section appends a `field-grid` of these four
-number inputs into the same section `renderVariantColourTable()`
-returns, so it all reads as one "Tables" group rather than two separate
-headings. `block-renderer.js`'s table case wraps the actual `<table>` in
-a `.tp-table-wrapper` div carrying the radius + outer border —
-border-radius on a `<table>` with `border-collapse: collapse` doesn't
-clip reliably across browsers, but `overflow: hidden` on a plain block
-div does, which is why the rounding lives one level up rather than on
-the table element itself.
-**Backfilling these into old saved projects needed more than the
-existing flat per-top-level-key copy** in `TabManager.setState()` — a
-saved project's existing `styles.table` object would already be
-"present" and skip the top-level fallback entirely, silently leaving
-`radius`/`cellPadding`/etc. `undefined` rather than picking up the new
-defaults. Fixed by making the backfill go one level deep for any
-top-level style key that's a plain object (and, for variant maps like
-`badge`/`button`/`table`, one level deeper again for each variant) —
-see the comment above the backfill loop if this needs touching again
-for a future style field.
-
-`styles.pageBackground` (`{ color, transparent }`) controls the
-*exported page's* outer background — the area behind `#player-card`,
-not the card itself, which stays white. Styles drawer renders it as a
-colour swatch plus a "Transparent" toggle (`renderPageBackgroundSection()`
-in `index.html`) so an author can drop the embed onto any Articulate
-slide colour without a mismatched box around it. `applyPageBackground()`
-mirrors the choice onto the authoring `#stage` for live WYSIWYG preview,
-except when `transparent` is on — true transparency has nothing
-meaningful to show inside the app's own chrome, so the editor falls back
-to its normal sunken-surface colour and only the exported HTML's
-`openExportModal()` actually emits `background: transparent` (computed
-once as `pageBg` before the export template string, substituted into the
-`html, body { ... }` rule the same way `modules`/`tabsJSON` already are).
-This backfills into old projects for free via the existing one-level-deep
-loop above, since `pageBackground` is a plain object like `h2`/`subtitle`.
-
-Blocks are laid out via `#block-list`'s `flex-flow: row wrap` (not a
-plain column) specifically so **multiple Badge blocks can sit side by
-side** instead of one per line: every `.tp-block` defaults to
-`flex: 0 0 100%` (forces its own full-width row), except
-`.tp-block-badge`, which is `flex: 0 0 auto` and therefore wraps like
-inline text alongside adjacent badges. Any other block type between two
-badges still forces its own line before/after, since it keeps the
-100%-width default. This is authoring-canvas AND Export CSS — both
-`tools/tabbed-panels/index.html`'s `<style>` block and the Export
-template's embedded `<style>` block need the same three rules
-(`#block-list`, `.tp-block`, `.tp-block-badge`) kept in sync, since the
-export ships its own hardcoded copy rather than reusing
-`shared/app-shell.css`.
-
-### Content model, settled across two scaffolding/design-review rounds
-
-- **Block types**: `heading` (h2/h3/h4, plain text — no inline marks on
-  the main text; an optional `subtitle` field renders a second,
-  separately-styled line beneath it rather than being its own block
-  type), `paragraph` (richtext + text-align), `list` (bullet/numbered,
-  flat array of richtext items — **no nesting**), `button`
-  (label/url/style — a standalone CTA), `badge` (label + style),
-  `table` (style variant + add/remove rows and columns in the property
-  panel, **plain-text cells, no richtext** — kept simple for a dense
-  grid), `separator` (no fields, just a rule).
-- **Inline link vs. button block are deliberately two different things**
-  — a link embedded mid-sentence (richtext's `link` mark) and a
-  standalone CTA (the `button` block) read differently to a learner, so
-  neither collapses into the other. Both **always open in a new tab** —
-  the button block's `newTab` toggle was removed (a course sending the
-  learner away from the course entirely was judged to always be the
-  wrong default, so it stopped being a per-instance choice); inline
-  links get `target`/`rel` forced at *render* time in
-  `block-renderer.js`'s `forceLinksToNewTab()`, applied to every `<a>`
-  inside a rendered paragraph/list regardless of how the link was
-  created, rather than trying to set it at creation time in
-  `richtext-editor.js`.
-- **Rich text storage**: sanitized HTML string, not a custom run-based
-  model — see `richtext-editor.js` above.
-- **Tab strip is WYSIWYG, tab CRUD is not** — the canvas only ever
-  shows the real underline+chevron tab-nav (click to switch, nothing
-  else); add/rename/duplicate/delete/reorder are a deliberately separate
-  concern handled entirely in the bottom tab bar, not exposed on the
-  canvas itself.
-
-### What's NOT built yet
-
-- **Apps Script deployment exists but is unverified for real** —
-  `AppScript/TabbedPanels.html` (+ `TabTypesJs.html`,
-  `RichtextEditorJs.html`, `BlockRendererJs.html`, `TabNavJs.html`,
-  `TabManagerJs.html`) went through the 5-substitution pass and the
-  `PAGES` entry in `Code.gs` is uncommented, so it's reachable from the
-  hub once redeployed. Export's module-fetching code was swapped for an
-  embedded `MODULE_SOURCES` object (substitution 2) in the deployed
-  copy, generated programmatically from the real source files rather
-  than hand-typed, to avoid escaping mistakes. Its `history.js` reuses
-  the **existing** `AppScript/HistoryJs.html` rather than a duplicate
-  copy — byte-for-byte identical generic code, nothing tool-specific to
-  wrap separately. None of this has actually been pasted into a live
-  Apps Script project yet — untested against real `google.script.run`
-  end to end. Do a real Save/Load round-trip before treating this as
-  done (see HANDOFF.md).
-- **Touch/tablet drag-and-drop** — the Tabs drawer's reorder and the
-  block list's reorder both use native HTML5 drag-and-drop (copied from
-  v2's layer/slide reordering), which has the same known touchscreen gap
-  v2 does.
-- No accessibility pass, no narrow-window layout testing — same
-  standing gaps as v2, not yet even looked at here.
-- Table cells are plain text only (a deliberate scope decision, not an
-  oversight — see "Content model" above); revisit only if an author
-  specifically asks for rich text inside table cells.
 
 ## Scaling decisions — agreed, not yet implemented
 
@@ -1224,13 +556,15 @@ item gets done.
    needed" — no existing pattern besides `SIDEBAR.md`'s (side panels)
    needed a doc written just because of this decision, so there's no
    further backlog here, only the standing rule for next time.
-6. **Verification/production backlog**: clear the existing "unverified
-   against a live Apps Script deployment" backlog (Tabbed Panels'
-   Save/Load/Export round-trip, SVG upload, folder-support round-trip —
-   all tracked in `HANDOFF.md` and cross-referenced throughout this
-   file; Toggle Slides' items dropped off this list with its removal)
-   **before** starting any
-   new tool, rather than letting it keep growing alongside new work.
+6. **Verification/production backlog**: in progress — Tabbed Panels'
+   Save/Load/Export round-trip and v2's SVG upload are both now
+   confirmed working against the live Apps Script deployment (Toggle
+   Slides' items dropped off this list with its removal). Still open:
+   folder-support round-trip (`apiSaveProject`/`apiMoveProject`/
+   `apiCreateFolder`/`apiDeleteFolder` in `Code.gs`) and v2's ruler
+   guides, both tracked in `HANDOFF.md`. Clear the rest **before**
+   starting any new tool, rather than letting it keep growing alongside
+   new work.
 7. **`AppScript/x`**: deleted — was a stray tracked, apparently
    content-free file from an unrelated stray commit, not part of any
    tool's real file set. Done.

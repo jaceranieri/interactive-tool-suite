@@ -62,7 +62,13 @@
   #empty-state-hint p { margin: 0; font-weight: 600; font-size: var(--text-base); color: var(--ink-soft); }
   #empty-state-hint span { font-size: var(--text-sm); }
 
-  #editor-slide-bar { flex-shrink: 0; padding: var(--space-3) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-3); }
+  /* position+z-index above .side-panel's z-index:90 — the side panel is
+     position:fixed, full viewport height, right-docked, so without this it
+     paints OVER the bottom slide bar's right end (where +Slide lives)
+     whenever a panel is open. Raising the bar into its own stacking
+     context above the panel's makes the panel slide in behind it instead —
+     the bar (and +Slide) stays clickable regardless of which panel is open. */
+  #editor-slide-bar { position: relative; z-index: 95; flex-shrink: 0; padding: var(--space-3) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-3); }
   #editor-slide-bar .title-block { margin-right: var(--space-2); }
   #slide-tabs { display: flex; gap: var(--space-2); flex: 1; overflow-x: auto; padding: 8px 10px 6px 10px; margin: -8px -10px -6px -10px; }
   .slide-tab-wrap { position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -158,7 +164,6 @@
   .popup-field input[type=color]::-webkit-color-swatch-wrapper, .colour-table input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
   .popup-field input[type=color]::-webkit-color-swatch, .colour-table input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
   .popup-field input[type=color]::-moz-color-swatch, .colour-table input[type=color]::-moz-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
-  .popup-more-toggle { width: 100%; margin-top: 4px; padding: 6px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
   /* Slide switch, used wherever a plain on/off setting is needed instead
      of a native checkbox (see CLAUDE.md's "no native dialogs" convention —
      same reasoning: a styled control that actually looks like the rest of
@@ -178,8 +183,6 @@
   .colour-table { display: grid; grid-template-columns: auto 1fr 1fr; column-gap: var(--space-4); row-gap: var(--space-3); align-items: center; }
   .colour-table-head { font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; text-align: left; }
   .colour-table-row-label { font-size: var(--text-sm); color: var(--ink); margin: 0; white-space: nowrap; }
-  .popup-fields + .popup-more-toggle { margin-top: var(--space-3); }
-  .popup-more-toggle + .popup-fields { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -1131,30 +1134,19 @@
     nameInput.addEventListener('change', () => history.commitAction());
     body.appendChild(nameInput);
 
-    const primary = Object.entries(schema.fields).filter(([, f]) => (f.tier || 'primary') === 'primary');
-    const secondary = Object.entries(schema.fields).filter(([, f]) => f.tier === 'secondary');
-
+    // The side panel has room to just show everything at once — no more
+    // "More options" toggle hiding secondary fields behind a click, the
+    // way the old floating popup needed to stay small. `tier` still exists
+    // on the schema (element-types.js) as a hint for field ORDER — primary
+    // fields listed first, secondary after — but no longer gates visibility.
     const fieldsWrap = document.createElement('div');
     fieldsWrap.className = 'popup-fields';
-    primary.forEach(([key, field]) => fieldsWrap.appendChild(editor.buildField(data, key, field)));
+    const orderedFields = Object.entries(schema.fields).sort(([, a], [, b]) => {
+      const rank = (f) => (f.tier === 'secondary' ? 1 : 0);
+      return rank(a) - rank(b);
+    });
+    orderedFields.forEach(([key, field]) => fieldsWrap.appendChild(editor.buildField(data, key, field)));
     body.appendChild(fieldsWrap);
-
-    if (secondary.length) {
-      const more = document.createElement('button');
-      more.className = 'popup-more-toggle';
-      more.textContent = 'More options';
-      const moreWrap = document.createElement('div');
-      moreWrap.className = 'popup-fields';
-      moreWrap.style.display = 'none';
-      secondary.forEach(([key, field]) => moreWrap.appendChild(editor.buildField(data, key, field)));
-      more.addEventListener('click', () => {
-        const showing = moreWrap.style.display !== 'none';
-        moreWrap.style.display = showing ? 'none' : 'block';
-        more.textContent = showing ? 'More options' : 'Fewer options';
-      });
-      body.appendChild(more);
-      body.appendChild(moreWrap);
-    }
 
     body.appendChild(propertyActionsRow());
   }

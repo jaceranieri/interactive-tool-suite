@@ -166,6 +166,11 @@ asked for this explicitly; keep doing it unprompted.
 
 ## What's next
 
+0. **Read CLAUDE.md's "Scaling decisions — agreed, not yet implemented"
+   section** (added by a planning-only review session, no code touched).
+   Seven decisions were made about deploy tooling, the shared canvas
+   engine, fork reconciliation, and doc/verification conventions as the
+   suite grows past 3-4 tools — none of them executed yet.
 1. **Confirm the export nav-bar + font fix live** (see the top section).
    Nothing else about v2 should be considered done until this is.
 2. **Exercise SVG upload against the live deployment** — upload a real

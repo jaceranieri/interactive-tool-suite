@@ -1362,3 +1362,61 @@ thing to confirm, not something already checked off here.
   to thumbnail, since a button's elements sit among everyone else's on
   the same canvas) — revisit only if authors report losing track of
   which button owns what without opening the Layers panel.
+
+## Scaling decisions — agreed, not yet implemented
+
+A planning-only review session (no code touched) looked at how this
+project's structure holds up as more tools get added — expectation set
+at the time was **5-8 tools total, added over months**, not a much
+larger platform. The person made seven decisions during that session.
+None of the code/doc changes below have been made yet — this section is
+the record of what was decided, so a future session can execute against
+it without re-litigating the choices. Update/remove each bullet as its
+item gets done.
+
+1. **Deploy checklist**: turn the existing 5-substitution Apps Script
+   pipeline checklist (see "The Apps Script deployment pipeline" above)
+   into a standalone `DEPLOY_CHECKLIST.md` with literal checkboxes per
+   file/substitution, rather than leaving it as prose inside this file.
+   Goal: make it harder to half-follow under time pressure, the same
+   failure mode behind the `MODULE_SOURCES`/truncated-`<link>` incidents
+   documented above. Not done yet.
+2. **`clasp`/build automation**: stays deferred, but now on an explicit
+   trigger rather than an open-ended "someday" — **revisit automating
+   the Apps Script deploy (`clasp` or equivalent) the next time a
+   hand-sync bug actually ships to production**, rather than waiting for
+   a fixed tool-count checkpoint. Three such incidents are already on
+   record (see the deployment-pipeline section above); a fourth is the
+   agreed trigger to stop deferring this.
+3. **Shared canvas engine**: promote `canvas-editor.js`,
+   `element-types.js`, `element-renderer.js`, and `history.js` out of
+   `tools/animated-slides-v2/` and into `shared/`, becoming the fork
+   point for every future canvas-based tool (Apps Script's flat file
+   namespace already supports one shared `include('ElementRendererJs')`
+   etc. across multiple `PAGES` entries — no plugin/import system
+   needed). Do this **before** the next canvas-based tool is started,
+   not retroactively-only. Not done yet.
+4. **Reconcile existing forks**: alongside #3, also reconcile
+   `tools/toggle-slides/`'s already-diverged copies of those same four
+   files against v2's current versions (see `SIDEBAR.md`'s "Known gap:
+   the same bottom-bar overlap bug v2 just fixed" for one concrete,
+   already-identified divergence to fix as part of this). Decided
+   explicitly rather than leaving Toggle Slides on its fork indefinitely
+   or deferring reconciliation to "someday." Not done yet.
+5. **Cross-tool pattern docs**: standardize the `SIDEBAR.md` model —
+   once a second tool implements a shared UI pattern (folders/project-
+   list, toasts/modals, etc.), that pattern gets its own standalone
+   reference doc (like `SIDEBAR.md`), rather than only writing one
+   opportunistically after a bug forces the cross-tool comparison, and
+   rather than folding everything into this file. Applies going forward;
+   no existing pattern needs a doc written retroactively just because of
+   this decision, unless/until it's touched again.
+6. **Verification/production backlog**: clear the existing "unverified
+   against a live Apps Script deployment" backlog (Tabbed Panels'
+   Save/Load/Export round-trip, Toggle Slides' ghost-drag interaction,
+   SVG upload, folder-support round-trip — all tracked in `HANDOFF.md`
+   and cross-referenced throughout this file) **before** starting any
+   new tool, rather than letting it keep growing alongside new work.
+7. **`AppScript/x`**: delete this stray tracked file (an apparently
+   content-free file from an unrelated stray commit — not part of any
+   tool's real file set). Not done yet.

@@ -8,23 +8,65 @@
 <?!= include('AppShellCss'); ?>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  body { padding: var(--space-8); }
-  .hub-header { max-width: 960px; margin: 0 auto var(--space-8); }
+  html, body { height: 100%; }
+  body { padding: var(--space-8); display: flex; flex-direction: column; }
+  .hub-header { max-width: 1200px; width: 100%; margin: 0 auto var(--space-6); }
   .hub-header .title-block { margin-bottom: var(--space-2); }
   .hub-header h1 { font-size: var(--text-2xl); margin: 0 0 var(--space-2); }
   .hub-header p { color: var(--ink-soft); margin: 0; }
-  .hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-4); max-width: 960px; margin: 0 auto; }
-  .hub-tile {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-    padding: var(--space-5); box-shadow: var(--shadow-sm); cursor: pointer; text-decoration: none;
-    display: block; color: inherit; transition: box-shadow var(--duration-base) var(--ease-standard);
+
+  .hub-layout {
+    max-width: 1200px; width: 100%; margin: 0 auto; flex: 1;
+    display: grid; grid-template-columns: 300px 1fr; gap: var(--space-5);
+    min-height: 0;
   }
-  .hub-tile:hover { box-shadow: var(--shadow-md); }
-  .hub-tile-top { display: flex; justify-content: space-between; align-items: flex-start; }
-  .hub-tile h3 { margin: var(--space-2) 0 0; font-size: var(--text-lg); font-weight: 600; }
-  .hub-tile p { color: var(--ink-soft); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
+
+  /* ---- Left: tool list ---- */
+  .hub-list {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm); overflow-y: auto; padding: var(--space-2);
+  }
+  .hub-list-item {
+    display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+    border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); margin-bottom: 2px;
+    color: inherit; font-family: inherit; transition: background var(--duration-fast) var(--ease-standard);
+  }
+  .hub-list-item:hover { background: var(--surface-sunken); }
+  .hub-list-item.active { background: var(--accent-soft); }
+  .hub-list-item-top { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+  .hub-list-item h3 { margin: 0; font-size: var(--text-base); font-weight: 600; }
+  .hub-list-item p {
+    color: var(--ink-soft); font-size: var(--text-sm); margin: var(--space-1) 0 0;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
   .status-pill.beta { background: var(--warn-soft); color: #7A5210; }
   .status-pill.beta .dot { background: var(--warn); }
+
+  /* ---- Right: detail + preview ---- */
+  .hub-detail {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm); padding: var(--space-5); display: flex; flex-direction: column;
+    gap: var(--space-4); min-height: 0;
+  }
+  .hub-detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); }
+  .hub-detail-header h2 { margin: var(--space-1) 0 0; font-size: var(--text-xl); }
+  .hub-detail-header p { color: var(--ink-soft); margin: var(--space-2) 0 0; max-width: 60ch; }
+  .hub-detail-actions { flex-shrink: 0; }
+
+  .hub-preview {
+    flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--surface-sunken); overflow: hidden; display: flex;
+  }
+  .hub-preview iframe { flex: 1; width: 100%; height: 100%; border: none; }
+  .hub-preview-empty {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--ink-soft); font-size: var(--text-sm); text-align: center; padding: var(--space-6);
+  }
+
+  @media (max-width: 760px) {
+    .hub-layout { grid-template-columns: 1fr; }
+    .hub-list { max-height: 260px; }
+  }
 </style>
 </head>
 <body>
@@ -35,35 +77,100 @@
     <p>Choose the right tool for the interactive you're building.</p>
   </div>
 
-  <div class="hub-grid" id="hub-grid"></div>
+  <div class="hub-layout">
+    <div class="hub-list" id="hub-list"></div>
+    <div class="hub-detail">
+      <div class="hub-detail-header">
+        <div>
+          <div class="title-block" id="hub-detail-status"></div>
+          <h2 id="hub-detail-title"></h2>
+          <p id="hub-detail-description"></p>
+        </div>
+        <div class="hub-detail-actions">
+          <a class="btn btn-primary" id="hub-detail-open">Open tool</a>
+        </div>
+      </div>
+      <div class="hub-preview" id="hub-preview"></div>
+    </div>
+  </div>
 
   <script>
     const tools = <?!= toolsJson ?>;
     const baseUrl = <?!= JSON.stringify(baseUrl) ?>;
 
-    const grid = document.getElementById('hub-grid');
-    tools.forEach((tool) => {
-      const a = document.createElement('a');
-      a.className = 'hub-tile';
-      a.href = baseUrl + '?page=' + tool.id;
+    let selectedId = tools.length ? tools[0].id : null;
 
-      const badge = tool.status === 'beta'
+    function statusBadge(tool) {
+      return tool.status === 'beta'
         ? '<span class="status-pill beta"><span class="dot"></span>Beta</span>'
         : '';
+    }
 
-      a.innerHTML = `
-        <div class="hub-tile-top">
-          <div class="title-block">Tool</div>
-          ${badge}
-        </div>
-        <h3></h3>
-        <p></p>
-      `;
-      a.querySelector('h3').textContent = tool.title;
-      a.querySelector('p').textContent = tool.description || '';
+    function renderList() {
+      const list = document.getElementById('hub-list');
+      list.innerHTML = '';
+      tools.forEach((tool) => {
+        const btn = document.createElement('button');
+        btn.className = 'hub-list-item' + (tool.id === selectedId ? ' active' : '');
+        btn.innerHTML = `
+          <div class="hub-list-item-top">
+            <h3></h3>
+            ${statusBadge(tool)}
+          </div>
+          <p></p>
+        `;
+        btn.querySelector('h3').textContent = tool.title;
+        btn.querySelector('p').textContent = tool.description || '';
+        btn.addEventListener('click', () => selectTool(tool.id));
+        list.appendChild(btn);
+      });
+    }
 
-      grid.appendChild(a);
-    });
+    function renderDetail() {
+      const tool = tools.find((t) => t.id === selectedId);
+      const preview = document.getElementById('hub-preview');
+      preview.innerHTML = '';
+
+      if (!tool) {
+        document.getElementById('hub-detail-status').innerHTML = '';
+        document.getElementById('hub-detail-title').textContent = '';
+        document.getElementById('hub-detail-description').textContent = '';
+        document.getElementById('hub-detail-open').style.display = 'none';
+        return;
+      }
+
+      document.getElementById('hub-detail-status').innerHTML = statusBadge(tool);
+      document.getElementById('hub-detail-title').textContent = tool.title;
+      document.getElementById('hub-detail-description').textContent = tool.description || '';
+      const openLink = document.getElementById('hub-detail-open');
+      openLink.style.display = '';
+      openLink.href = baseUrl + '?page=' + tool.id;
+
+      if (tool.previewHtml) {
+        // A fresh iframe per tool switch — only the selected tool's
+        // preview is ever mounted, so switching tools tears down the
+        // previous one instead of keeping multiple live iframes around.
+        const iframe = document.createElement('iframe');
+        iframe.title = tool.title + ' preview';
+        iframe.srcdoc = tool.previewHtml;
+        preview.appendChild(iframe);
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'hub-preview-empty';
+        empty.textContent = 'Preview not available yet.';
+        preview.appendChild(empty);
+      }
+    }
+
+    function selectTool(id) {
+      if (id === selectedId) return;
+      selectedId = id;
+      renderList();
+      renderDetail();
+    }
+
+    renderList();
+    renderDetail();
   </script>
 
 </body>

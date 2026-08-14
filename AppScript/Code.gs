@@ -27,11 +27,17 @@ const PAGES = {
     file: 'AnimatedSlidesV2', title: 'Animated Slides (v2)',
     description: 'Rebuilt engine — undo/redo, layers, and a redesigned nav bar. In testing.',
     status: 'beta',
+    // Optional: a tool with a `previewFile` gets its hub preview panel
+    // populated with that file's raw contents (a genuine Export of a
+    // small demo project, generated once and committed — not derived
+    // live from a real saved project). See root CLAUDE.md's Hub bullet.
+    previewFile: 'PreviewAnimatedSlidesV2',
   },
   'tabbed-panels': {
     file: 'TabbedPanels', title: 'Tabbed Panels',
     description: 'Build tabbed content with headings, text, lists, and linking buttons.',
     status: 'in development',
+    previewFile: 'PreviewTabbedPanels',
   },
   // 'toggle-slides': { file: 'ToggleSlides', title: 'Toggle Slides', description: 'A single canvas where nav buttons independently toggle groups of elements on and off.', status: 'in development' },  <- removed 2026-08-14, didn't meet requirements, see CLAUDE.md
   // 'tabbed-container': { file: 'TabbedContainer', title: 'Tabbed Container', description: '...', status: 'stable' },  <- add once migrated
@@ -45,11 +51,26 @@ function doGet(e) {
   if (page === 'hub') {
     const template = HtmlService.createTemplateFromFile('Hub');
     template.baseUrl = baseUrl;
+    // A previewFile's contents are a full HTML page — they contain their
+    // own literal "</script>" tags, which would otherwise prematurely
+    // close Hub.html's `<script>` block the instant this JSON is spliced
+    // in via the `<?!= toolsJson ?>` scriptlet below (the browser's HTML
+    // parser looks for that sequence textually, even inside a JS string
+    // literal). Escaping every "<" as < keeps the payload valid JS
+    // without changing what JSON.parse() on the other end reads back.
     template.toolsJson = JSON.stringify(
       Object.entries(PAGES).map(([id, meta]) => ({
         id, title: meta.title, description: meta.description, status: meta.status,
+        // Raw contents of the tool's demo-export file, if it has one —
+        // a frozen snapshot read fresh on every hub render (same
+        // "read a file's real content into a JS string" technique as
+        // Export's MODULE_SOURCES), not a live reference. Hub.html
+        // mounts this directly into an iframe via `.srcdoc`.
+        previewHtml: meta.previewFile
+          ? HtmlService.createHtmlOutputFromFile(meta.previewFile).getContent()
+          : null,
       }))
-    );
+    ).replace(/</g, '\\u003c');
     return template.evaluate()
       .setTitle('Authoring Tools')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');

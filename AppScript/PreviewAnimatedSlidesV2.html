@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Untitled project</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; }
+  #player-root { width: 100%; display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+  #canvas-wrapper { position: relative; width: 100%; aspect-ratio: 1920 / 1080; }
+  #canvas-wrapper svg { width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<div id="player-root">
+  <div id="canvas-wrapper">
+    <svg id="canvas-svg"><g id="elements-layer"></g></svg>
+  </div>
+  <div id="player-nav-bar"></div>
+</div>
+<script>
+// Google Fonts are attached at RUNTIME rather than as a static <link> in
+// <head>. A real, shipped incident: that <link> was a single ~150-character
+// line, and it reached a live deployment truncated at "https:" — an
+// unterminated HTML attribute, which makes the parser swallow <style>,
+// </head>, <body> AND the opening of <div id="player-root"> into one
+// attribute value. player-root then never exists, so the appendChild below
+// threw before setupNavBar() ever ran and the nav bar silently never
+// appeared (and Caveat never loaded). Building the URL from short pieces
+// inside <script> removes the long line entirely, so no copy/paste or
+// editor path can reproduce that. Same reasoning as Tabbed Panels' export,
+// which also creates its <style>/<link> from script rather than static tags.
+(function () {
+  var fontLink = document.createElement('link');
+  fontLink.rel = 'stylesheet';
+  fontLink.href = 'https://fonts.googleapis.com/css2'
+    + '?family=IBM+Plex+Sans:wght@400;500;600;700'
+    + '&family=Caveat:wght@400;500;600;700'
+    + '&display=swap';
+  document.head.appendChild(fontLink);
+})();
+
+/* ==========================================================================
+   Shared Canvas Engine — Element Type Schema
+   One declaration per element type. This is the "packing list" — the
+   properties panel gets generated from these field lists instead of each
+   type having its own hand-written form, and the renderer (element-
+   renderer.js) reads the same field names when drawing/updating a node.
+   Promoted from tools/animated-slides-v2/ to shared/ so future
+   canvas-based tools fork from here instead of copy-pasting v2's copy —
+   see CLAUDE.md's "Scaling decisions" #3.
+
+   Every element also has these, handled by the engine directly rather than
+   declared per-type since ALL types share them: id, type, x, y, width,
+   height. Only what's specific to a type goes in its `fields`.
+   ========================================================================== */
+
+const ELEMENT_TYPES = {
+
+  text: {
+    label: 'Text',
+    icon: 'fa-font',
+    defaultSize: { width: 400, height: 120 },
+    fields: {
+      content:    { type: 'textarea',   label: 'Text',       default: 'New text', tier: 'primary' },
+      fontFamily: { type: 'fontpicker', label: 'Font',       default: 'sans', tier: 'primary' },
+      fontSize:   { type: 'number',     label: 'Font size',   default: 52, min: 8, max: 200, tier: 'primary' },
+      fontWeight: { type: 'select',     label: 'Weight',      default: '700', tier: 'secondary',
+                    options: [['400','Regular'], ['500','Medium'], ['600','Semibold'], ['700','Bold'], ['800','Extra bold']] },
+      color:      { type: 'color',    label: 'Colour',       default: '#1f2937', tier: 'primary' },
+      align:      { type: 'select',   label: 'Align',       default: 'center', tier: 'secondary',
+                    options: [['left','Left'], ['center','Center'], ['right','Right'], ['justify','Justify']] },
+      padding:    { type: 'number',   label: 'Padding',     default: 10, min: 0, max: 100, tier: 'secondary' },
+      lineHeight: { type: 'number',   label: 'Line height', default: 1.3, min: 0.8, max: 3, step: 0.1, tier: 'secondary' },
+      opacity:    { type: 'range',    label: 'Opacity',     default: 1, min: 0, max: 1, step: 0.05, tier: 'secondary' },
+    },
+  },
+
+  rect: {
+    label: 'Shape',
+    icon: 'fa-square',
+    defaultSize: { width: 300, height: 200 },
+    fields: {
+      fill:      { type: 'color',  label: 'Fill',              default: '#e1f6db', tier: 'primary' },
+      radiusTL:  { type: 'number', label: 'Radius (top-left)',  default: 0, min: 0, max: 300, tier: 'secondary' },
+      radiusTR:  { type: 'number', label: 'Radius (top-right)', default: 0, min: 0, max: 300, tier: 'secondary' },
+      radiusBR:  { type: 'number', label: 'Radius (btm-right)', default: 0, min: 0, max: 300, tier: 'secondary' },
+      radiusBL:  { type: 'number', label: 'Radius (btm-left)',  default: 0, min: 0, max: 300, tier: 'secondary' },
+      opacity:   { type: 'range',  label: 'Opacity',            default: 1, min: 0, max: 1, step: 0.05, tier: 'secondary' },
+    },
+  },
+
+  arrow: {
+    label: 'Arrow',
+    icon: 'fa-arrow-down',
+    defaultSize: { width: 200, height: 200 }, // overwritten immediately from length/angle — see applyArrowStyle
+    fields: {
+      length:      { type: 'number', label: 'Length',           default: 200, min: 10, max: 1800, tier: 'primary' },
+      angle:       { type: 'number', label: 'Angle (0=up, 90=right, 180=down, 270=left)', default: 180, min: 0, max: 360, step: 1, tier: 'primary' },
+      strokeWidth: { type: 'number', label: 'Thickness',        default: 8, min: 1, max: 60, tier: 'secondary' },
+      color:       { type: 'color',  label: 'Colour',            default: '#1f2937', tier: 'primary' },
+      opacity:     { type: 'range',  label: 'Opacity',          default: 1, min: 0, max: 1, step: 0.05, tier: 'secondary' },
+    },
+  },
+
+  icon: {
+    label: 'Icon',
+    icon: 'fa-star',
+    defaultSize: { width: 80, height: 80 },
+    fields: {
+      iconName: { type: 'iconpicker', label: 'Icon',  default: 'star', tier: 'primary' },
+      color:    { type: 'color',      label: 'Colour', default: '#1f2937', tier: 'primary' },
+      opacity:  { type: 'range',      label: 'Opacity', default: 1, min: 0, max: 1, step: 0.05, tier: 'secondary' },
+    },
+  },
+
+  // Unlike every other type, a "draw" element is never placed via
+  // makeDefaultElement()/addElement() — it has no meaningful default shape,
+  // so its left-rail button arms freehand draw mode instead (see
+  // CanvasEditor.setDrawMode / index.html's renderAddElementButtons). The
+  // actual element is built directly in CanvasEditor._finishFreehand() once
+  // a stroke is drawn. `defaultSize` is unused but kept so nothing else
+  // that assumes every ELEMENT_TYPES entry has one needs a special case.
+  // `points` (the smoothed stroke geometry, normalized 0..1 against
+  // width/height so corner-resize scales it like any other type) is set
+  // directly on the data object rather than declared as a `fields` entry —
+  // there's no sane form-input type for an array of points, same reasoning
+  // that keeps x/y/width/height themselves out of `fields`.
+  draw: {
+    label: 'Draw',
+    icon: 'fa-pencil',
+    defaultSize: { width: 200, height: 200 },
+    fields: {
+      color:       { type: 'color',  label: 'Colour',    default: '#1f2937', tier: 'primary' },
+      strokeWidth: { type: 'number', label: 'Thickness', default: 6, min: 1, max: 60, tier: 'primary' },
+      opacity:     { type: 'range',  label: 'Opacity',   default: 1, min: 0, max: 1, step: 0.05, tier: 'secondary' },
+    },
+  },
+
+  // An author-uploaded SVG asset. Like draw's `points`, `svgMarkup` (the
+  // sanitized markup — see svg-sanitizer.js) and `originalViewBox` are
+  // type-specific data set directly on the object rather than declared as
+  // `fields` — there's no sane form-input type for raw SVG source, so it
+  // bypasses the generic field-list UI same as points does. Also like draw,
+  // an `svg` element is never placed via makeDefaultElement()/addElement()
+  // alone — it has no meaningful default shape until an author picks a
+  // file — so its left-rail button opens a file picker instead (see
+  // index.html's renderAddElementButtons/addSvgElement). `accentColor` is a
+  // single recolour override applied to every fill/stroke in the uploaded
+  // markup at render time (see element-renderer.js's applySvgAccentColor) —
+  // a deliberate scope call: multi-colour source art gets flattened to one
+  // colour rather than exposing a per-shape palette.
+  svg: {
+    label: 'SVG',
+    icon: 'fa-shapes',
+    defaultSize: { width: 200, height: 200 },
+    fields: {
+      accentColor: { type: 'color', label: 'Colour',  default: '#1f2937', tier: 'primary' },
+      opacity:     { type: 'range', label: 'Opacity', default: 1, min: 0, max: 1, step: 0.05, tier: 'secondary' },
+    },
+  },
+
+};
+
+/**
+ * Builds a fresh element's data object from its schema defaults — this is
+ * what "add element" calls. Keeps default-value logic in one place instead
+ * of repeated inline object literals scattered through the editor.
+ */
+function makeDefaultElement(type, id, x, y) {
+  const schema = ELEMENT_TYPES[type];
+  if (!schema) throw new Error(`Unknown element type: ${type}`);
+
+  const data = {
+    id, type, x, y,
+    name: schema.label, // shown as the popup's heading — free text, author can rename
+    width: schema.defaultSize.width,
+    height: schema.defaultSize.height,
+  };
+
+  Object.entries(schema.fields).forEach(([key, field]) => {
+    data[key] = field.default;
+  });
+
+  return data;
+}
+
+
+
+/* ==========================================================================
+   Shared Canvas Engine — Element Renderer
+   The single "recipe card" for drawing and updating each element type.
+   Used identically by the authoring canvas AND the exported player — no
+   second copy to drift out of sync. Requires GSAP and element-types.js to
+   be loaded first.
+   Promoted from tools/animated-slides-v2/ to shared/ so future
+   canvas-based tools fork from here instead of copy-pasting v2's copy —
+   see CLAUDE.md's "Scaling decisions" #3.
+
+   This engine is deliberately "dumb": given element data, it creates or
+   updates the visual SVG node. It knows nothing about selection, drag
+   handles, or resize handles — those are authoring-only concerns the
+   editor layers on top, so this file works unchanged inside the exported
+   player, which has no editing UI at all.
+
+   TWO DELIBERATE CHOICES WORTH KNOWING ABOUT:
+
+   1. Text uses native SVG <text>/<tspan>, NOT <foreignObject>.
+      foreignObject embeds HTML inside SVG, and browsers apply the SVG
+      viewBox scale to that embedded HTML inconsistently — notably, setting
+      opacity below 1 forces a compositing layer that changes the render
+      path, so text visibly changed size purely from an opacity change even
+      though every underlying value was correct. Native SVG text obeys the
+      viewBox transform reliably everywhere. Tradeoff: SVG text has no
+      automatic wrapping, so we wrap manually (see layoutText), and inline
+      HTML formatting inside a single text element is not supported.
+
+   2. GSAP is used ONLY for genuine animated transitions (animate:true).
+      Instant updates set attributes directly — no reason to route a slider
+      drag through an animation engine.
+   ========================================================================== */
+
+const svgNS = "http://www.w3.org/2000/svg";
+
+/* Text's available font choices — the CSS the exported page/authoring page
+   loads from Google Fonts (see index.html's <head> link and the Export
+   template's own copy) must include every font listed here. Add a new
+   entry here and it shows up in the properties popup's font picker
+   automatically (see element-types.js's 'fontpicker' field type / canvas-
+   editor.js's _buildField) — same "add it here, wired up everywhere"
+   pattern ICON_PATHS below already uses for icons. */
+const FONT_FAMILIES = {
+  sans: { label: 'Sans', css: "'IBM Plex Sans', system-ui, sans-serif" },
+  handwriting: { label: 'Handwriting', css: "'Caveat', cursive" },
+};
+
+const ICON_PATHS = {
+  "star": "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+  "heart": "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
+  "check-circle": "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
+  "info": "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
+  "warning": "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+  "flag": "M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z",
+  "bookmark": "M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"
+  // Add new icons here — they show up in the icon picker automatically
+  // (see element-types.js's iconpicker field type), no other file to touch.
+};
+
+/* ---- Text measurement ----
+   Uses a canvas rather than the DOM: measuring via getComputedTextLength()
+   would force a layout/reflow on every keystroke, and canvas measurement of
+   the same font is accurate enough for wrapping while costing nothing. */
+const _measureCanvas = document.createElement('canvas').getContext('2d');
+
+function measureTextWidth(str, fontSize, fontWeight, fontFamily) {
+  _measureCanvas.font = `${fontWeight || 700} ${fontSize}px ${fontFamily}`;
+  return _measureCanvas.measureText(str).width;
+}
+
+/**
+ * Wraps a string into lines that fit within maxWidth. Honours explicit
+ * newlines the author typed, then word-wraps each resulting paragraph.
+ * A single word longer than maxWidth is left overflowing rather than
+ * broken mid-word — breaking it would usually be more surprising.
+ */
+function wrapTextLines(content, maxWidth, fontSize, fontWeight, fontFamily) {
+  const lines = [];
+  (content || '').split('\n').forEach(paragraph => {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) { lines.push(''); return; }
+    let line = words[0];
+    for (let i = 1; i < words.length; i++) {
+      const candidate = line + ' ' + words[i];
+      if (measureTextWidth(candidate, fontSize, fontWeight, fontFamily) <= maxWidth) {
+        line = candidate;
+      } else {
+        lines.push(line);
+        line = words[i];
+      }
+    }
+    lines.push(line);
+  });
+  return lines;
+}
+
+/**
+ * Rebuilds the <tspan> children of a text element for the current content,
+ * width, font and alignment — and sets data.height to whatever the wrapped
+ * result actually needs, so text is never clipped.
+ */
+function layoutText(textEl, data) {
+  const fontSize = data.fontSize || 52;
+  const fontWeight = data.fontWeight || '700';
+  const fontFamily = (FONT_FAMILIES[data.fontFamily] || FONT_FAMILIES.sans).css;
+  const padding = data.padding !== undefined ? data.padding : 10;
+  const lineHeight = (data.lineHeight || 1.3) * fontSize;
+  const align = data.align || 'center';
+  const innerWidth = Math.max(1, data.width - padding * 2);
+
+  const lines = wrapTextLines(data.content, innerWidth, fontSize, fontWeight, fontFamily);
+
+  // Grow the element's box to fit the wrapped text.
+  const naturalHeight = lines.length * lineHeight + padding * 2;
+  data.height = Math.max(naturalHeight, ELEMENT_TYPES.text.defaultSize.height);
+
+  // Horizontal anchoring
+  let anchor, x;
+  if (align === 'left' || align === 'justify') { anchor = 'start';  x = padding; }
+  else if (align === 'right')                  { anchor = 'end';    x = data.width - padding; }
+  else                                         { anchor = 'middle'; x = data.width / 2; }
+  textEl.setAttribute('text-anchor', anchor);
+
+  // Vertically centre the block of lines within the element's box.
+  const blockHeight = lines.length * lineHeight;
+  const firstBaseline = (data.height - blockHeight) / 2 + fontSize * 0.82; // 0.82 ≈ cap height above baseline
+
+  textEl.textContent = '';
+  lines.forEach((line, i) => {
+    const tspan = document.createElementNS(svgNS, 'tspan');
+    tspan.setAttribute('x', x);
+    tspan.setAttribute('y', firstBaseline + i * lineHeight);
+    tspan.textContent = line || ' '; // keep empty lines occupying space
+    textEl.appendChild(tspan);
+  });
+}
+
+/* ---- Font loading ----
+   Text measurement depends on the real webfont being available. If it
+   hasn't loaded yet, wrapping is computed against a fallback font and will
+   be slightly wrong. Re-layout every text node once fonts are ready. */
+const _textNodes = new Set();
+if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => {
+    _textNodes.forEach(({ textEl, data }) => layoutText(textEl, data));
+  });
+}
+
+/**
+ * Builds an SVG path `d` string for a rectangle with an independent corner
+ * radius per corner — something native <rect> can't express (it only
+ * supports one uniform rx/ry). Radii are clamped so opposite corners never
+ * overlap on a small shape.
+ */
+function roundedRectPath(width, height, tl, tr, br, bl) {
+  const maxR = Math.min(width, height) / 2;
+  tl = Math.min(tl, maxR); tr = Math.min(tr, maxR);
+  br = Math.min(br, maxR); bl = Math.min(bl, maxR);
+  return `
+    M ${tl} 0
+    L ${width - tr} 0
+    A ${tr} ${tr} 0 0 1 ${width} ${tr}
+    L ${width} ${height - br}
+    A ${br} ${br} 0 0 1 ${width - br} ${height}
+    L ${bl} ${height}
+    A ${bl} ${bl} 0 0 1 0 ${height - bl}
+    L 0 ${tl}
+    A ${tl} ${tl} 0 0 1 ${tl} 0
+    Z
+  `.trim();
+}
+/**
+ * Turns a sequence of already-simplified points into a smooth SVG path `d`
+ * string via a Catmull-Rom-to-Bezier conversion (the standard tension-1/6
+ * form) — this is what actually removes the "jitter" a raw mouse trace has,
+ * by curving *through* every point rather than connecting them with
+ * straight segments. Runs identically at authoring time and inside the
+ * exported player, since it only depends on `points` — no live pointer
+ * data involved (that part is CanvasEditor's job, see simplifyPoints there).
+ */
+function smoothedPathFromPoints(points) {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
+function createElementNode(data) {
+  const g = document.createElementNS(svgNS, "g");
+  g.setAttribute("id", data.id);
+  g.setAttribute("data-type", data.type);
+  gsap.set(g, { x: data.x, y: data.y, opacity: 0 });
+
+  if (data.type === 'text') {
+    const textEl = document.createElementNS(svgNS, "text");
+    g.appendChild(textEl);
+    applyTextStyle(textEl, data, false);
+    _textNodes.add({ textEl, data });
+    return { group: g, textEl };
+  }
+
+  if (data.type === 'rect') {
+    const shape = document.createElementNS(svgNS, "path");
+    g.appendChild(shape);
+    applyRectStyle(shape, data, false);
+    return { group: g, shape };
+  }
+
+  if (data.type === 'arrow') {
+    const visualGroup = document.createElementNS(svgNS, 'g');
+    g.appendChild(visualGroup);
+
+    const defs = document.createElementNS(svgNS, "defs");
+    const marker = document.createElementNS(svgNS, "marker");
+    marker.setAttribute("id", "marker-" + data.id);
+    marker.setAttribute("markerWidth", "6");
+    marker.setAttribute("markerHeight", "6");
+    marker.setAttribute("refX", "4");
+    marker.setAttribute("refY", "3");
+    marker.setAttribute("orient", "auto");
+    const markerPath = document.createElementNS(svgNS, "path");
+    markerPath.setAttribute("d", "M 0 1 L 4 3 L 0 5 Z");
+    markerPath.setAttribute("stroke-linejoin", "round");
+    marker.appendChild(markerPath);
+    defs.appendChild(marker);
+    visualGroup.appendChild(defs);
+
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("stroke-linecap", "round");
+    line.setAttribute("marker-end", "url(#marker-" + data.id + ")");
+    visualGroup.appendChild(line);
+
+    // Invisible, much wider line layered on top purely to catch pointer
+    // events — kept OUTSIDE visualGroup since it must always stay fully
+    // hit-testable regardless of the visible arrow's opacity.
+    const hitLine = document.createElementNS(svgNS, "line");
+    hitLine.setAttribute("stroke", "#000");
+    hitLine.setAttribute("opacity", "0");
+    hitLine.setAttribute("pointer-events", "stroke");
+    g.appendChild(hitLine);
+
+    applyArrowStyle(line, markerPath, hitLine, visualGroup, data, false);
+    return { group: g, line, markerPath, hitLine, visualGroup };
+  }
+
+  if (data.type === 'draw') {
+    const shape = document.createElementNS(svgNS, "path");
+    shape.setAttribute('fill', 'none');
+    shape.setAttribute('stroke-linecap', 'round');
+    shape.setAttribute('stroke-linejoin', 'round');
+    g.appendChild(shape);
+
+    // Same "invisible wide stroke purely to catch pointer events" trick as
+    // the arrow's hitLine — a 1-6px smoothed stroke is otherwise very hard
+    // to click precisely.
+    const hitShape = document.createElementNS(svgNS, "path");
+    hitShape.setAttribute('fill', 'none');
+    hitShape.setAttribute('stroke', '#000');
+    hitShape.setAttribute('opacity', '0');
+    hitShape.setAttribute('pointer-events', 'stroke');
+    g.appendChild(hitShape);
+
+    applyDrawStyle(shape, hitShape, data, false);
+    return { group: g, shape, hitShape };
+  }
+
+  if (data.type === 'icon') {
+    const iconSvg = document.createElementNS(svgNS, "svg");
+    iconSvg.setAttribute("viewBox", "0 0 24 24");
+    iconSvg.setAttribute("width", data.width);
+    iconSvg.setAttribute("height", data.height);
+    const iconPath = document.createElementNS(svgNS, "path");
+    iconSvg.appendChild(iconPath);
+    g.appendChild(iconSvg);
+    applyIconStyle(iconSvg, iconPath, data, false);
+    return { group: g, iconSvg, iconPath };
+  }
+
+  if (data.type === 'svg') {
+    const svgWrap = document.createElementNS(svgNS, "svg");
+    svgWrap.setAttribute("width", data.width);
+    svgWrap.setAttribute("height", data.height);
+    // svgMarkup is already-sanitized *inner* content (see svg-sanitizer.js)
+    // — safe to inject directly, no outer <svg> tag to strip.
+    svgWrap.innerHTML = data.svgMarkup || '';
+    g.appendChild(svgWrap);
+    applySvgStyle(svgWrap, data, false);
+    return { group: g, svgWrap };
+  }
+
+  throw new Error(`Unknown element type: ${data.type}`);
+}
+
+/**
+ * Updates an existing node to match new data. animate:true for slide-to-
+ * slide transitions; false (default) for instant edits.
+ */
+function updateElementNode(node, data, { animate = false, duration = 0.8 } = {}) {
+  if (animate) {
+    gsap.to(node.group, { x: data.x, y: data.y, opacity: 1, duration, ease: "power3.inOut" });
+  } else {
+    gsap.set(node.group, { x: data.x, y: data.y, opacity: 1 });
+  }
+
+  if (data.type === 'text') {
+    applyTextStyle(node.textEl, data, animate, duration);
+  } else if (data.type === 'rect') {
+    applyRectStyle(node.shape, data, animate, duration);
+  } else if (data.type === 'arrow') {
+    applyArrowStyle(node.line, node.markerPath, node.hitLine, node.visualGroup, data, animate, duration);
+  } else if (data.type === 'draw') {
+    applyDrawStyle(node.shape, node.hitShape, data, animate, duration);
+  } else if (data.type === 'icon') {
+    applyIconStyle(node.iconSvg, node.iconPath, data, animate, duration);
+  } else if (data.type === 'svg') {
+    applySvgStyle(node.svgWrap, data, animate, duration);
+  }
+}
+
+/**
+ * Either tweens an SVG element's attributes with GSAP (animate:true) or
+ * sets them directly (animate:false).
+ */
+function setOrTween(el, attrs, animate, duration) {
+  if (animate) {
+    gsap.to(el, { attr: attrs, duration, ease: "power3.inOut" });
+  } else {
+    Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+  }
+}
+
+/* ---- Per-type style application ---- */
+
+function applyTextStyle(textEl, data, animate, duration = 0.8) {
+  textEl.setAttribute('font-weight', data.fontWeight || '700');
+  textEl.setAttribute('font-family', (FONT_FAMILIES[data.fontFamily] || FONT_FAMILIES.sans).css);
+  textEl.setAttribute('fill', data.color || '#1f2937');
+
+  const targetFontSize = data.fontSize || 52;
+  const targetWidth = data.width;
+  const targetOpacity = data.opacity !== undefined ? data.opacity : 1;
+
+  if (animate) {
+    // Line wrapping is fundamentally discrete (a line count change can't
+    // be "half-wrapped"), but font size and width can genuinely ease —
+    // re-running layoutText() every animation frame with the currently
+    // interpolated values gets as close to a smooth resize as text reflow
+    // allows, rather than the box snapping to its final size instantly.
+    const proxy = {
+      fontSize: textEl._lastFontSize || targetFontSize,
+      width: textEl._lastWidth || targetWidth,
+      opacity: parseFloat(textEl.getAttribute('opacity') || '1'),
+    };
+    gsap.to(proxy, {
+      fontSize: targetFontSize, width: targetWidth, opacity: targetOpacity,
+      duration, ease: 'power3.inOut',
+      onUpdate: () => {
+        textEl.setAttribute('font-size', proxy.fontSize);
+        textEl.setAttribute('opacity', proxy.opacity);
+        layoutText(textEl, { ...data, fontSize: proxy.fontSize, width: proxy.width });
+      },
+      onComplete: () => {
+        layoutText(textEl, data); // final pass against the real data object, so data.height ends up correctly synced
+      },
+    });
+  } else {
+    textEl.setAttribute('font-size', targetFontSize);
+    textEl.setAttribute('opacity', targetOpacity);
+    layoutText(textEl, data);
+  }
+  textEl._lastFontSize = targetFontSize;
+  textEl._lastWidth = targetWidth;
+}
+
+function applyRectStyle(shape, data, animate, duration = 0.8) {
+  const target = {
+    width: data.width, height: data.height,
+    tl: data.radiusTL || 0, tr: data.radiusTR || 0, br: data.radiusBR || 0, bl: data.radiusBL || 0,
+  };
+
+  if (animate) {
+    // GSAP can't natively tween an SVG path's `d` string (that needs the
+    // paid MorphSVG plugin) — so instead we tween the plain numbers
+    // through a proxy object and rebuild the path from them every frame.
+    const from = shape._lastGeom || target;
+    const proxy = { ...from };
+    gsap.to(proxy, {
+      ...target, duration, ease: 'power3.inOut',
+      onUpdate: () => {
+        shape.setAttribute('d', roundedRectPath(proxy.width, proxy.height, proxy.tl, proxy.tr, proxy.br, proxy.bl));
+      },
+    });
+  } else {
+    shape.setAttribute('d', roundedRectPath(target.width, target.height, target.tl, target.tr, target.br, target.bl));
+  }
+  shape._lastGeom = target;
+
+  setOrTween(shape, {
+    fill: data.fill || '#e1f6db',
+    opacity: data.opacity !== undefined ? data.opacity : 1,
+  }, animate, duration);
+}
+
+/**
+ * Compass-style angle (0° = up, 90° = right, 180° = down, 270° = left) and
+ * a length, rather than raw x1/y1/x2/y2 — much easier for an author to
+ * reason about, and the only thing that actually needs to be stored; the
+ * line's endpoint is derived from it every time.
+ */
+function applyArrowStyle(line, markerPath, hitLine, visualGroup, data, animate, duration = 0.8) {
+  const color = data.color || '#1f2937';
+  const opacity = data.opacity !== undefined ? data.opacity : 1;
+  const target = { length: data.length || 200, angle: data.angle || 0, strokeWidth: data.strokeWidth || 8 };
+
+  function applyGeometry(length, angleDeg, strokeWidth) {
+    const angleRad = angleDeg * Math.PI / 180;
+    const x2 = length * Math.sin(angleRad);
+    const y2 = -length * Math.cos(angleRad); // negative: 0° points up (negative Y), not right
+    line.setAttribute('x1', 0); line.setAttribute('y1', 0);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke-width', strokeWidth);
+    if (hitLine) {
+      hitLine.setAttribute('x1', 0); hitLine.setAttribute('y1', 0);
+      hitLine.setAttribute('x2', x2); hitLine.setAttribute('y2', y2);
+      hitLine.setAttribute('stroke-width', Math.max(24, strokeWidth + 16));
+    }
+    // Keep width/height as the line's bounding box — not used for
+    // rendering, but useful for selection outlines and drag handles.
+    data.width = Math.max(Math.abs(x2), strokeWidth);
+    data.height = Math.max(Math.abs(y2), strokeWidth);
+  }
+
+  line.setAttribute('stroke', color);
+  // The line and its arrowhead marker are two separate shapes, and
+  // applying opacity to each of them individually caused a visible seam
+  // where they overlap (the semi-transparent line and marker double-
+  // blend right at the join). Instead, both stay fully opaque themselves
+  // and opacity is applied once to visualGroup, which composites them as
+  // a single unit first — no seam, since there's nothing left to double-
+  // blend by the time opacity is applied.
+  if (markerPath) { markerPath.setAttribute('fill', color); markerPath.setAttribute('stroke', color); }
+  setOrTween(visualGroup, { opacity }, animate, duration);
+  // The arrowhead marker's markerUnits defaults to "strokeWidth", so it
+  // scales with the line's thickness automatically — no manual resizing
+  // of the marker needed here.
+
+  if (animate) {
+    const from = line._lastGeom || target;
+    // Animate the short way around the circle — e.g. 350° -> 10° should
+    // ease through 360/0, not spin backwards through 180.
+    let angleFrom = from.angle;
+    const delta = target.angle - angleFrom;
+    if (delta > 180) angleFrom += 360;
+    else if (delta < -180) angleFrom -= 360;
+    const proxy = { length: from.length, angle: angleFrom, strokeWidth: from.strokeWidth };
+    gsap.to(proxy, {
+      length: target.length, angle: target.angle, strokeWidth: target.strokeWidth,
+      duration, ease: 'power3.inOut',
+      onUpdate: () => applyGeometry(proxy.length, proxy.angle, proxy.strokeWidth),
+    });
+  } else {
+    applyGeometry(target.length, target.angle, target.strokeWidth);
+  }
+  line._lastGeom = target;
+}
+
+/**
+ * `data.points` are stored normalized to the element's own width/height
+ * (each x/y in 0..1) — exactly like rect reading data.width/height to build
+ * its path — so a plain corner-drag resize (no draw-specific resize code
+ * needed in canvas-editor.js) scales the whole drawing for free. The path
+ * shape itself is never tweened frame-by-frame during animate:true
+ * transitions (same "reflow is discrete" reasoning as text) — only opacity
+ * eases; a resized/linked drawing just snaps to its new scaled geometry
+ * while the group's x/y/opacity animate around it.
+ */
+function applyDrawStyle(shape, hitShape, data, animate, duration = 0.8) {
+  const color = data.color || '#1f2937';
+  const strokeWidth = data.strokeWidth || 6;
+  const opacity = data.opacity !== undefined ? data.opacity : 1;
+
+  const scaledPoints = (data.points || []).map(p => ({ x: p.x * data.width, y: p.y * data.height }));
+  const d = smoothedPathFromPoints(scaledPoints);
+  shape.setAttribute('d', d);
+  shape.setAttribute('stroke', color);
+  shape.setAttribute('stroke-width', strokeWidth);
+  if (hitShape) {
+    hitShape.setAttribute('d', d);
+    hitShape.setAttribute('stroke-width', Math.max(20, strokeWidth + 16));
+  }
+
+  setOrTween(shape, { opacity }, animate, duration);
+}
+
+function applyIconStyle(iconSvg, iconPath, data, animate, duration = 0.8) {
+  const opacity = data.opacity !== undefined ? data.opacity : 1;
+  setOrTween(iconSvg, { width: data.width, height: data.height, opacity }, animate, duration);
+  iconSvg.setAttribute('fill', data.color || '#1f2937');
+  const d = ICON_PATHS[data.iconName] || ICON_PATHS.star;
+  if (iconPath.getAttribute('d') !== d) iconPath.setAttribute('d', d);
+}
+
+/**
+ * Flattens every fill/stroke/gradient-stop in an uploaded SVG to a single
+ * accent colour — the "single accent colour" recolour model this type
+ * deliberately settled on over a per-shape palette. An element with no
+ * `fill` attribute at all still defaults to black per the SVG spec, so it's
+ * treated the same as an explicit non-"none" fill (recoloured); an explicit
+ * `fill="none"` (an outline-only shape) is left alone so stroke-only icons
+ * still read as outlines rather than gaining a fill. Re-run on every style
+ * update rather than baked into the stored `svgMarkup`, same as icon's own
+ * `color` field re-applying `fill` on every render.
+ */
+function applySvgAccentColor(root, color) {
+  const FILLABLE_TAGS = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline']);
+  root.querySelectorAll('*').forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    const fill = el.getAttribute('fill');
+    if (fill !== 'none' && (fill || FILLABLE_TAGS.has(tag))) {
+      el.setAttribute('fill', color);
+    }
+    if (el.hasAttribute('stroke') && el.getAttribute('stroke') !== 'none') {
+      el.setAttribute('stroke', color);
+    }
+    if (tag === 'stop' && el.hasAttribute('stop-color')) {
+      el.setAttribute('stop-color', color);
+    }
+  });
+}
+
+function applySvgStyle(svgWrap, data, animate, duration = 0.8) {
+  const opacity = data.opacity !== undefined ? data.opacity : 1;
+  setOrTween(svgWrap, { width: data.width, height: data.height, opacity }, animate, duration);
+  if (data.originalViewBox) svgWrap.setAttribute('viewBox', data.originalViewBox);
+  applySvgAccentColor(svgWrap, data.accentColor || '#1f2937');
+}
+
+
+
+/* ==========================================================================
+   Animated Slides v2 — Slide Manager
+   Owns the multi-slide project state and the actual "animated slides"
+   mechanic: switching slides diffs element IDs between the old and new
+   slide — elements present in both animate to their new state, elements
+   only in the old slide fade out, elements only in the new slide fade in.
+
+   Layer order (z-index / stacking) is just the order of a slide's
+   `elements` array — no separate concept to maintain. Reordering layers
+   IS reordering that array; DOM order is kept in sync with it after every
+   transition.
+
+   `elements` / `nodes` (id -> data / id -> node) always describe the
+   CURRENTLY ACTIVE slide only, and are mutated in place rather than
+   replaced — CanvasEditor holds a reference to these same objects, so
+   mutating in place is what keeps it working across slide switches
+   without needing to be reconstructed each time.
+   ========================================================================== */
+
+/** Ruler guides — like snapToGrid/gridSize, an authoring-only aid (see
+ *  canvas-editor.js's guide rendering/snapping, and index.html's Settings
+ *  "Guides" section). `enabled` gates both visibility AND snapping as one
+ *  toggle (Settings switch or Shift+R) — a hidden guide that still
+ *  silently snapped things would be confusing. `horizontal`/`vertical`
+ *  are tracked by stable `id`, never index, same reasoning as everything
+ *  else in this file (elements, slides). */
+function defaultGuides() {
+  return { enabled: true, horizontal: [], vertical: [] };
+}
+
+/**
+ * Project-wide canvas settings — artboard size, background, snap-to-grid,
+ * guides, and nav bar styling (nested under `nav`, using nav-bar.js's own
+ * defaults). One object for the whole project, not per-slide — the exact
+ * mistake fixed in v1 was nav styling accidentally living on each slide
+ * and drifting apart. Guides are project-wide for the same reason: they're
+ * a layout aid meant to stay put as an author moves between slides, not
+ * something to redefine per slide.
+ */
+function defaultCanvasSettings() {
+  return {
+    width: 1920, height: 1080,
+    backgroundColor: '#ffffff',
+    snapToGrid: false, gridSize: 20,
+    guides: defaultGuides(),
+    nav: defaultNavStyle(),
+  };
+}
+
+class SlideManager {
+  /**
+   * @param svg, layer     the canvas SVG root and its element layer <g>
+   * @param slides         [{ id, name, elements: [data, ...] }, ...]
+   * @param canvasSettings optional — defaults via defaultCanvasSettings()
+   */
+  constructor({ svg, layer, slides, canvasSettings }) {
+    this.svg = svg;
+    this.layer = layer;
+    this.slides = slides;
+    this.canvasSettings = canvasSettings || defaultCanvasSettings(); // mutated in place — see setState
+    this.activeIndex = 0;
+    this.elements = {}; // mutated in place — see class comment
+    this.nodes = {};    // mutated in place
+    this.editor = null; // set via attachEditor(), since CanvasEditor needs `elements`/`nodes` to already exist
+    this.onSlideChange = () => {}; // hook for UI (nav bar, slide list) to refresh
+    this.lastAddedSlideId = null; // one-shot: set before onSlideChange fires (see addSlide/duplicateSlide) so a UI entrance
+    // animation can target the right slide — setting this only from the caller's return value would be one render too
+    // late, since onSlideChange (triggered inside these methods) runs before they return the new id.
+
+    this._rebuildActiveSlide(false);
+  }
+
+  attachEditor(editor) {
+    this.editor = editor;
+  }
+
+  /** Public wrapper — flushes in-progress edits on the live elements map
+   *  back into slides[activeIndex].elements, without switching slides.
+   *  Used by anything (like slide thumbnails) that needs slides[]
+   *  to be current without triggering a transition. */
+  commitActiveSlideElements() {
+    this._commitActiveSlideElements();
+  }
+
+  getActiveSlide() {
+    return this.slides[this.activeIndex];
+  }
+
+  /**
+   * Switches to a different slide, animating the transition by default.
+   * animate:false is used for undo/redo jumps and the very first render,
+   * where an animated transition would be more confusing than helpful.
+   */
+  goToSlide(newIndex, animate = true) {
+    if (newIndex === this.activeIndex || newIndex < 0 || newIndex >= this.slides.length) return;
+    if (this.editor) this.editor.deselect();
+    this._commitActiveSlideElements(); // persist any in-progress edits back into slides[] before switching away
+
+    const oldIds = new Set(Object.keys(this.elements));
+    const newSlide = this.slides[newIndex];
+    const newIds = new Set(newSlide.elements.map((e) => e.id));
+
+    // Elements that don't exist on the new slide: fade out and remove.
+    oldIds.forEach((id) => {
+      if (newIds.has(id)) return;
+      const node = this.nodes[id];
+      if (animate) {
+        gsap.to(node.group, { opacity: 0, duration: 0.4, onComplete: () => node.group.remove() });
+      } else {
+        node.group.remove();
+      }
+      delete this.nodes[id];
+      delete this.elements[id];
+    });
+
+    // Elements on the new slide, in the new slide's order — appendChild on
+    // an already-attached node MOVES it, so walking them in order also
+    // keeps DOM (= stacking) order correct without any separate step.
+    newSlide.elements.forEach((newData) => {
+      const id = newData.id;
+      if (oldIds.has(id)) {
+        // Persisted across the transition — update the SAME data object
+        // other code (CanvasEditor, an open popup) may already hold a
+        // reference to, then animate it to the new slide's values.
+        const data = this.elements[id];
+        Object.assign(data, newData);
+        updateElementNode(this.nodes[id], data, { animate, duration: 0.8 });
+      } else {
+        // New on this slide.
+        const data = { ...newData };
+        const node = createElementNode(data);
+        this.layer.appendChild(node.group);
+        gsap.set(node.group, { opacity: 0 });
+        if (animate) gsap.to(node.group, { opacity: 1, duration: 0.5, delay: 0.15 });
+        else gsap.set(node.group, { opacity: 1 });
+        this.elements[id] = data;
+        this.nodes[id] = node;
+        if (this.editor) this.editor.registerNode(node);
+      }
+      this.layer.appendChild(this.nodes[id].group);
+    });
+
+    this.activeIndex = newIndex;
+    // Seed with the destination slide's REAL stored order, not null. This
+    // used to be null ("starts fresh for the newly active one"), but the
+    // _currentOrder() fallback for a null _activeOrder is
+    // Object.keys(this.elements) — and this.elements is patched
+    // incrementally above, not rebuilt, so persisted (linked) elements
+    // keep whatever key position they had on the PREVIOUS slide while
+    // newly-appearing elements land at the end. That silently diverged
+    // from this slide's actual stored order (even though the canvas
+    // itself still rendered correctly, since the loop above walks
+    // newSlide.elements directly) — any drag-reorder done from the layer
+    // panel right after arriving on a slide was then computed against
+    // that wrong baseline and got committed back, making reorders look
+    // like they randomly didn't stick or reverted after navigating.
+    this._activeOrder = newSlide.elements.map((e) => e.id);
+    this.onSlideChange();
+  }
+
+  /** Full, non-animated rebuild of whatever slide is at this.activeIndex —
+   *  used on first load and after an undo/redo jump. */
+  _rebuildActiveSlide() {
+    Object.values(this.nodes).forEach((node) => node.group.remove());
+    // Clear IN PLACE rather than reassigning to a new object — CanvasEditor
+    // holds a reference to this exact object from construction time, and
+    // reassigning `this.nodes = {}` here would silently desync the two,
+    // since CanvasEditor would keep looking at the old, abandoned object.
+    Object.keys(this.nodes).forEach((k) => delete this.nodes[k]);
+    Object.keys(this.elements).forEach((k) => delete this.elements[k]);
+    this.slides[this.activeIndex].elements.forEach((data) => {
+      const d = { ...data };
+      const node = createElementNode(d);
+      this.layer.appendChild(node.group);
+      gsap.set(node.group, { opacity: 1 });
+      this.elements[d.id] = d;
+      this.nodes[d.id] = node;
+      if (this.editor) this.editor.registerNode(node);
+    });
+  }
+
+  /** Returns the active slide's element order, reconciled against what
+   *  actually exists right now: known ids keep their custom order, any id
+   *  present in `elements` but missing from the stored order (added since
+   *  the order was last set) gets appended, and any id no longer in
+   *  `elements` (deleted) gets dropped. Without this, _activeOrder was a
+   *  frozen snapshot that silently excluded anything added after a
+   *  reorder — new elements existed in the live data but never made it
+   *  into the committed slide array. */
+  _currentOrder() {
+    const liveIds = Object.keys(this.elements);
+    if (!this._activeOrder) return liveIds;
+    const known = this._activeOrder.filter((id) => this.elements[id]);
+    const newIds = liveIds.filter((id) => !known.includes(id));
+    const merged = [...known, ...newIds];
+    this._activeOrder = merged;
+    return merged;
+  }
+
+  _commitActiveSlideElements() {
+    // `elements` order may have been changed by layer reordering — see
+    // reorderLayer() — so this walks that order, not Object.values()'
+    // insertion order, to keep the array the true source of truth for
+    // stacking order.
+    const order = this._currentOrder();
+    this.slides[this.activeIndex].elements = order
+      .filter((id) => this.elements[id])
+      .map((id) => ({ ...this.elements[id] }));
+  }
+
+  /** Moves an element earlier/later in the active slide's stacking order.
+   *  direction: -1 to move up (later = on top), 1 to move down. */
+  reorderLayer(id, direction) {
+    const order = this._currentOrder();
+    const i = order.indexOf(id);
+    // Array order is bottom-to-top (index 0 = furthest back — see class
+    // comment), so moving to a LATER index is moving UP the stack. direction
+    // -1 ("up") therefore needs to INCREASE the index, hence `i - direction`
+    // rather than `i + direction`, which had this exactly backwards: passing
+    // -1 moved the element to an earlier (lower) index, i.e. further back,
+    // the opposite of what the doc comment above and the layer panel's
+    // "up"/"down" buttons intended.
+    const j = i - direction;
+    if (i === -1 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    this._activeOrder = order;
+    // Re-append in the new order to update actual DOM/render stacking.
+    order.forEach((elId) => this.layer.appendChild(this.nodes[elId].group));
+    this.onSlideChange();
+  }
+
+  /** Moves `draggedId` to sit immediately after `targetId` in the array
+   *  (= immediately BEFORE it in the layer panel's displayed order, which
+   *  shows top-of-stack first — the reverse of array order). Used by
+   *  drag-and-drop reordering in the layer panel. */
+  moveLayerBefore(draggedId, targetId) {
+    const order = this._currentOrder();
+    const fromIndex = order.indexOf(draggedId);
+    if (fromIndex === -1 || draggedId === targetId) return;
+    order.splice(fromIndex, 1);
+    const targetIndex = order.indexOf(targetId); // recomputed AFTER removal, so this is correct regardless of drag direction
+    if (targetIndex === -1) { order.splice(fromIndex, 0, draggedId); return; } // target vanished somehow — put it back where it was
+    order.splice(targetIndex + 1, 0, draggedId);
+    this._activeOrder = order;
+    order.forEach((elId) => this.layer.appendChild(this.nodes[elId].group));
+    this.onSlideChange();
+  }
+
+  getLayerOrder() {
+    return this._currentOrder();
+  }
+
+  /** Moves a slide to a new position in the deck. Tracks the active slide
+   *  by its stable id (not index) across the move, since indices shift —
+   *  the same care taken in deleteSlide(). */
+  reorderSlide(fromIndex, toIndex) {
+    if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= this.slides.length || toIndex < 0 || toIndex >= this.slides.length) return;
+    this._commitActiveSlideElements();
+    const activeSlideId = this.slides[this.activeIndex].id;
+
+    const [moved] = this.slides.splice(fromIndex, 1);
+    this.slides.splice(toIndex, 0, moved);
+
+    this.activeIndex = this.slides.findIndex((s) => s.id === activeSlideId);
+    this.onSlideChange();
+  }
+
+  addSlide(afterIndex = this.activeIndex) {
+    this._commitActiveSlideElements();
+    const newSlide = { id: 'slide-' + Date.now(), name: 'Slide ' + (this.slides.length + 1), elements: [] };
+    this.slides.splice(afterIndex + 1, 0, newSlide);
+    this.lastAddedSlideId = newSlide.id; // set BEFORE goToSlide, which triggers onSlideChange (and therefore the render) synchronously
+    this.goToSlide(afterIndex + 1, false);
+    return newSlide.id;
+  }
+
+  /** Duplicates a whole slide — every element on the copy keeps the SAME
+   *  id as its counterpart on the original, so they're automatically
+   *  linked (will animate between the two) without any manual re-linking.
+   *  This is usually exactly what "duplicate this slide" means in
+   *  practice: a continuation of the same content, not an unrelated copy. */
+  duplicateSlide(index) {
+    this._commitActiveSlideElements();
+    const original = this.slides[index];
+    const newSlide = {
+      id: 'slide-' + Date.now(),
+      name: original.name + ' copy',
+      elements: original.elements.map((e) => ({ ...e })),
+    };
+    this.slides.splice(index + 1, 0, newSlide);
+    this.lastAddedSlideId = newSlide.id; // see addSlide() — must be set before goToSlide triggers the render
+    this.goToSlide(index + 1, false);
+    return newSlide.id;
+  }
+
+  deleteSlide(index) {
+    if (this.slides.length <= 1) return; // never delete the last slide
+    const deletingActive = index === this.activeIndex;
+    this.slides.splice(index, 1);
+
+    if (deletingActive) {
+      // The active slide itself was deleted from under us — land on a
+      // sensible neighbor and force a rebuild rather than animate, since
+      // there's no real "from -> to" transition here.
+      this.activeIndex = Math.min(index, this.slides.length - 1);
+      this._activeOrder = null;
+      this._rebuildActiveSlide();
+    } else if (index < this.activeIndex) {
+      // A slide before the one being viewed was removed — everything
+      // after it shifts down by one position, but it's still the same
+      // slide on screen, so just correct the index. No re-render needed.
+      this.activeIndex -= 1;
+    }
+    // else: a slide after the active one was deleted — activeIndex and
+    // what's currently rendered are both still correct as they are.
+
+    this.onSlideChange();
+  }
+
+  /* ---- History integration: state spans every slide + which is active ---- */
+
+  getState() {
+    this._commitActiveSlideElements();
+    return {
+      activeIndex: this.activeIndex,
+      canvasSettings: {
+        ...this.canvasSettings,
+        nav: { ...this.canvasSettings.nav },
+        guides: {
+          enabled: this.canvasSettings.guides.enabled,
+          horizontal: this.canvasSettings.guides.horizontal.map((g) => ({ ...g })),
+          vertical: this.canvasSettings.guides.vertical.map((g) => ({ ...g })),
+        },
+      },
+      slides: this.slides.map((s) => ({ id: s.id, name: s.name, elements: s.elements.map((e) => ({ ...e })) })),
+    };
+  }
+
+  setState(snap) {
+    this.slides = snap.slides.map((s) => ({ id: s.id, name: s.name, elements: s.elements.map((e) => ({ ...e })) }));
+
+    // Mutate canvasSettings (and its nested nav object) in place rather
+    // than reassign — anything holding a direct reference to either (the
+    // nav bar, a settings panel) needs to see the same objects update in
+    // place, not get silently orphaned. Same reference-identity issue
+    // fixed earlier for elements/nodes in _rebuildActiveSlide.
+    const incoming = snap.canvasSettings || defaultCanvasSettings();
+    const incomingNav = incoming.nav || defaultNavStyle();
+    if (!incoming.guides) incoming.guides = defaultGuides(); // backfill for a project saved before guides existed
+    Object.keys(this.canvasSettings).forEach((k) => { if (k !== 'nav') delete this.canvasSettings[k]; });
+    Object.entries(incoming).forEach(([k, v]) => { if (k !== 'nav') this.canvasSettings[k] = v; });
+    Object.keys(this.canvasSettings.nav).forEach((k) => delete this.canvasSettings.nav[k]);
+    Object.assign(this.canvasSettings.nav, incomingNav);
+
+    this.activeIndex = snap.activeIndex;
+    this._activeOrder = null;
+    this.lastAddedSlideId = null; // a fresh load/undo/redo is never itself an "add" — don't carry over a stale entrance-animation target
+    this._rebuildActiveSlide();
+    if (this.editor) this.editor.deselect();
+    this.onSlideChange();
+  }
+}
+
+
+
+/* ==========================================================================
+   Animated Slides v2 — Nav Bar
+   The learner-facing navigation that lives INSIDE the exported bounding
+   area — not authoring-tool chrome. This is the single implementation
+   used by both the authoring preview and the export, so there's nothing
+   that can drift out of sync the way v1's two separate copies did.
+
+   Styling is project-wide (one navStyle object), not per-slide — the
+   exact bug fixed in v1 was nav styling accidentally living on each slide
+   individually and drifting apart. There's no settings UI for this yet
+   (that's the separate canvas-settings panel, still to come); for now
+   defaultNavStyle() is the single source of truth.
+
+   OVERFLOW MODEL: buttons are grouped into PAGES that each fit entirely
+   within the visible width, and exactly one page is shown at a time — a
+   partial/cut-off button is never displayed. Left/right buttons move one
+   page at a time and hide themselves at either end. There's no scrolling
+   involved at all — pages are laid out once per resize, and moving
+   between them animates the outgoing page's buttons out and the incoming
+   page's buttons in with GSAP.
+   ========================================================================== */
+
+function defaultNavStyle() {
+  return {
+    navPosition: 'bottom',   // 'top' | 'bottom'
+    navGap: 12,
+    buttonColor: '#0C5E82', buttonTextColor: '#ffffff', buttonBottomColor: '#094A68',
+    buttonInactiveColor: '#DCEBF2', buttonInactiveTextColor: '#073048', buttonInactiveBottomColor: '#B8D4DF',
+    buttonFontSize: 14, buttonFontWeight: '700', buttonPaddingX: 20, buttonPaddingY: 8, buttonRadius: 8,
+  };
+}
+
+function styleNavButton(btn, isActive, navStyle) {
+  btn.style.fontFamily = 'inherit';
+  btn.style.fontWeight = navStyle.buttonFontWeight || '700';
+  btn.style.fontSize = navStyle.buttonFontSize + 'px';
+  btn.style.padding = navStyle.buttonPaddingY + 'px ' + navStyle.buttonPaddingX + 'px';
+  btn.style.borderRadius = navStyle.buttonRadius + 'px';
+  btn.style.border = 'none';
+  btn.style.borderBottom = '4px solid ' + (isActive ? navStyle.buttonBottomColor : navStyle.buttonInactiveBottomColor);
+  btn.style.background = isActive ? navStyle.buttonColor : navStyle.buttonInactiveColor;
+  btn.style.color = isActive ? navStyle.buttonTextColor : navStyle.buttonInactiveTextColor;
+  btn.style.cursor = 'pointer';
+  btn.style.whiteSpace = 'nowrap';
+  btn.style.transition = 'filter 0.15s';
+}
+
+const SIDE_BUTTON_RESERVE = 72; // px reserved for both side buttons combined, even while hidden, so layout doesn't jump when they appear
+
+/**
+ * Sets up the nav bar inside `container`. Returns a
+ * `refresh(slides, activeIndex)` to call whenever the slide list or the
+ * active slide changes.
+ */
+function setupNavBar(container, navStyle, onNavigate) {
+  container.innerHTML = '';
+  container.style.display = 'flex';
+  container.style.alignItems = 'center';
+  container.style.justifyContent = 'center';
+  container.style.gap = '6px';
+  container.style.width = '100%';
+
+  const measureRow = document.createElement('div');
+  measureRow.style.position = 'absolute';
+  measureRow.style.visibility = 'hidden';
+  measureRow.style.pointerEvents = 'none';
+  measureRow.style.display = 'flex';
+  measureRow.style.gap = navStyle.navGap + 'px';
+  measureRow.style.whiteSpace = 'nowrap';
+
+  const leftBtn = document.createElement('button');
+  const rightBtn = document.createElement('button');
+  [leftBtn, rightBtn].forEach((b) => {
+    b.style.border = 'none'; b.style.background = 'none'; b.style.cursor = 'pointer';
+    b.style.display = 'none'; b.style.flexShrink = '0'; b.style.fontSize = '20px';
+    b.style.color = navStyle.buttonColor; b.style.padding = '4px 8px'; b.style.lineHeight = '1';
+  });
+  leftBtn.textContent = '\u2039';
+  rightBtn.textContent = '\u203A';
+  leftBtn.setAttribute('aria-label', 'Previous slides');
+  rightBtn.setAttribute('aria-label', 'Next slides');
+
+  const pageRow = document.createElement('div');
+  pageRow.style.display = 'flex';
+  pageRow.style.gap = navStyle.navGap + 'px';
+  pageRow.style.overflow = 'hidden'; // clips buttons mid-slide during the transition animation
+
+  container.appendChild(measureRow);
+  container.appendChild(leftBtn);
+  container.appendChild(pageRow);
+  container.appendChild(rightBtn);
+
+  let slidesRef = [];
+  let activeIndexRef = 0;
+  let pages = [];          // array of arrays of slide indices
+  let currentPageIndex = 0;
+
+  function computePages() {
+    measureRow.innerHTML = '';
+    const widths = slidesRef.map((slide) => {
+      const b = document.createElement('button');
+      b.textContent = slide.name;
+      styleNavButton(b, false, navStyle);
+      measureRow.appendChild(b);
+      return b.offsetWidth;
+    });
+
+    const available = (container.clientWidth || measureRow.offsetWidth) - SIDE_BUTTON_RESERVE;
+    const gap = navStyle.navGap;
+    const result = [];
+    let page = [];
+    let width = 0;
+    widths.forEach((w, i) => {
+      const added = page.length === 0 ? w : w + gap;
+      if (width + added > available && page.length > 0) {
+        result.push(page);
+        page = [i];
+        width = w;
+      } else {
+        page.push(i);
+        width += added;
+      }
+    });
+    if (page.length) result.push(page);
+    pages = result.length ? result : [[]];
+    if (currentPageIndex >= pages.length) currentPageIndex = pages.length - 1;
+  }
+
+  function makeButton(slideIndex) {
+    const slide = slidesRef[slideIndex];
+    const btn = document.createElement('button');
+    btn.className = 'nav-pill' + (slideIndex === activeIndexRef ? ' active' : '');
+    btn.textContent = slide.name;
+    styleNavButton(btn, slideIndex === activeIndexRef, navStyle);
+    btn.addEventListener('mouseenter', () => { btn.style.filter = 'brightness(0.95)'; });
+    btn.addEventListener('mouseleave', () => { btn.style.filter = ''; });
+    btn.addEventListener('click', () => onNavigate(slideIndex));
+    return btn;
+  }
+
+  /** Renders whichever page is at `index`. Pass a `dir` (1 or -1) to
+   *  animate the swap (outgoing page slides/fades out that direction,
+   *  incoming page slides/fades in from the opposite side); omit it for
+   *  an instant render (initial load, resize, refresh). */
+  function renderPage(index, dir) {
+    const slideIndices = pages[index] || [];
+
+    if (dir === undefined) {
+      pageRow.innerHTML = '';
+      slideIndices.forEach((i) => pageRow.appendChild(makeButton(i)));
+      return;
+    }
+
+    const oldButtons = Array.from(pageRow.children);
+
+    const showNewPage = () => {
+      const newButtons = slideIndices.map(makeButton);
+      newButtons.forEach((b) => pageRow.appendChild(b));
+      gsap.fromTo(newButtons,
+        { opacity: 0 },
+        { opacity: 1, duration: 0.22, stagger: 0.03, ease: 'power2.out' }
+      );
+    };
+
+    if (oldButtons.length) {
+      gsap.to(oldButtons, {
+        opacity: 0, duration: 0.16, ease: 'power1.in',
+        onComplete: () => { oldButtons.forEach((b) => b.remove()); showNewPage(); },
+      });
+    } else {
+      showNewPage();
+    }
+  }
+
+  function updateSideButtons() {
+    leftBtn.style.display = currentPageIndex > 0 ? '' : 'none';
+    rightBtn.style.display = currentPageIndex < pages.length - 1 ? '' : 'none';
+  }
+
+  function goToPage(newIndex) {
+    if (newIndex < 0 || newIndex >= pages.length || newIndex === currentPageIndex) return;
+    const dir = newIndex > currentPageIndex ? 1 : -1;
+    currentPageIndex = newIndex;
+    renderPage(currentPageIndex, dir);
+    updateSideButtons();
+  }
+
+  leftBtn.addEventListener('click', () => goToPage(currentPageIndex - 1));
+  rightBtn.addEventListener('click', () => goToPage(currentPageIndex + 1));
+
+  const ro = new ResizeObserver(() => {
+    if (!slidesRef.length) return;
+    computePages();
+    renderPage(currentPageIndex);
+    updateSideButtons();
+  });
+  ro.observe(container);
+
+  function refresh(slides, activeIndex) {
+    slidesRef = slides;
+    activeIndexRef = activeIndex;
+    // Re-applied every refresh, not just at setup — otherwise changing
+    // the gap setting later has no visible effect, since these were only
+    // ever set once at construction time.
+    pageRow.style.gap = navStyle.navGap + 'px';
+    measureRow.style.gap = navStyle.navGap + 'px';
+    computePages();
+    // Follow the active slide: whichever page contains it becomes the
+    // shown page, so the bar stays in sync when navigation happens
+    // elsewhere (editor tabs, keyboard, etc.). Instant, not animated —
+    // this is a "jump to where we are," not a page-to-page move.
+    const idx = pages.findIndex((p) => p.includes(activeIndex));
+    if (idx !== -1) currentPageIndex = idx;
+    renderPage(currentPageIndex);
+    updateSideButtons();
+  }
+
+  return { refresh };
+}
+
+
+
+const slides = [{"id":"slide-1786703067599","name":"Slide 1","elements":[{"id":"el-1786703068167","type":"rect","x":1350,"y":700,"name":"Shape","width":420,"height":260,"fill":"#cdeac0","radiusTL":0,"radiusTR":0,"radiusBR":0,"radiusBL":0,"opacity":1},{"id":"el-1786703068247","type":"text","x":120,"y":380,"name":"Text","width":900,"height":120,"content":"Welcome to Animated Slides","fontFamily":"sans","fontSize":52,"fontWeight":"700","color":"#1f2937","align":"center","padding":10,"lineHeight":1.3,"opacity":1}]},{"id":"slide-1786703068317","name":"Slide 2","elements":[{"id":"el-1786703068664","type":"rect","x":120,"y":700,"name":"Shape","width":420,"height":260,"fill":"#c7dcf5","radiusTL":0,"radiusTR":0,"radiusBR":0,"radiusBL":0,"opacity":1},{"id":"el-1786703068730","type":"text","x":700,"y":380,"name":"Text","width":900,"height":155.20000000000002,"content":"Slides can animate elements across each other.","fontFamily":"sans","fontSize":52,"fontWeight":"700","color":"#1f2937","align":"center","padding":10,"lineHeight":1.3,"opacity":1},{"id":"el-1786703068781","type":"arrow","x":248,"y":198,"name":"Arrow","width":8,"height":200,"length":200,"angle":180,"strokeWidth":8,"color":"#1f2937","opacity":1}]}];
+const canvasSettings = {"width":1920,"height":1080,"backgroundColor":"#ffffff","snapToGrid":false,"gridSize":20,"guides":{"enabled":true,"horizontal":[],"vertical":[]},"nav":{"navPosition":"bottom","navGap":12,"buttonColor":"#0C5E82","buttonTextColor":"#ffffff","buttonBottomColor":"#094A68","buttonInactiveColor":"#DCEBF2","buttonInactiveTextColor":"#073048","buttonInactiveBottomColor":"#B8D4DF","buttonFontSize":14,"buttonFontWeight":"700","buttonPaddingX":20,"buttonPaddingY":8,"buttonRadius":8}};
+const svg = document.getElementById('canvas-svg');
+const layer = document.getElementById('elements-layer');
+const canvasWrapperEl = document.getElementById('canvas-wrapper');
+svg.setAttribute('viewBox', `0 0 ${canvasSettings.width} ${canvasSettings.height}`);
+canvasWrapperEl.style.background = canvasSettings.backgroundColor;
+
+const slideManager = new SlideManager({ svg, layer, slides, canvasSettings });
+const navBarEl = document.getElementById('player-nav-bar');
+// Falls back to the canvas's own parent if #player-root is missing. That
+// should be impossible, but it WAS the exact failure above, and losing the
+// learner's only means of navigation is far worse than a slightly different
+// wrapper — so this never throws again.
+const playerRootEl = document.getElementById('player-root') || canvasWrapperEl.parentNode;
+if (canvasSettings.nav.navPosition === 'top') {
+  playerRootEl.insertBefore(navBarEl, canvasWrapperEl);
+} else {
+  playerRootEl.appendChild(navBarEl);
+}
+const navBar = setupNavBar(navBarEl, canvasSettings.nav, (i) => slideManager.goToSlide(i));
+slideManager.onSlideChange = () => navBar.refresh(slideManager.slides, slideManager.activeIndex);
+navBar.refresh(slideManager.slides, slideManager.activeIndex);
+</script>
+</body>
+</html>

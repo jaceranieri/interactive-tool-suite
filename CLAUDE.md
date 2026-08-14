@@ -1374,13 +1374,13 @@ the record of what was decided, so a future session can execute against
 it without re-litigating the choices. Update/remove each bullet as its
 item gets done.
 
-1. **Deploy checklist**: turn the existing 5-substitution Apps Script
-   pipeline checklist (see "The Apps Script deployment pipeline" above)
-   into a standalone `DEPLOY_CHECKLIST.md` with literal checkboxes per
-   file/substitution, rather than leaving it as prose inside this file.
-   Goal: make it harder to half-follow under time pressure, the same
-   failure mode behind the `MODULE_SOURCES`/truncated-`<link>` incidents
-   documented above. Not done yet.
+1. **Deploy checklist**: done — see `DEPLOY_CHECKLIST.md`, a standalone
+   file with literal checkboxes per file/substitution, built from the
+   5-substitution pipeline explained in "The Apps Script deployment
+   pipeline" above (which remains the source of truth for *why* each
+   step exists; the checklist file is the executable version for
+   actually doing a sync). Use it every time `AppScript/*.html` is
+   hand-synced from `tools/` source.
 2. **`clasp`/build automation**: stays deferred, but now on an explicit
    trigger rather than an open-ended "someday" — **revisit automating
    the Apps Script deploy (`clasp` or equivalent) the next time a

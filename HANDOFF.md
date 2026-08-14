@@ -191,10 +191,15 @@ asked for this explicitly; keep doing it unprompted.
 ## Older, still-outstanding items from earlier in the project
 
 - **GitHub → Apps Script auto-deploy via `clasp`** — deferred at project
-  start, never revisited. This session alone hand-synced 4 AppScript
-  files and *the single biggest bug of the session was a hand-sync
-  corruption*, so the cost of not having this is no longer theoretical.
-  Strongest argument yet for finally doing it.
+  start, never revisited for a long time. A later planning session (see
+  CLAUDE.md's "Scaling decisions" #2) turned this from an open-ended
+  "someday" into an explicit trigger: **revisit it the next time a
+  hand-sync bug actually ships to production**, rather than at a fixed
+  tool-count checkpoint. Three incidents are already on record in
+  CLAUDE.md's deployment-pipeline section (including one from this
+  session's hand-sync work) — a fourth is the agreed signal to stop
+  deferring. Don't treat "we've had incidents" alone as license to start
+  this unprompted; the trigger is specifically the *next* one.
 
 ## Where to find things
 

@@ -1381,13 +1381,18 @@ item gets done.
    step exists; the checklist file is the executable version for
    actually doing a sync). Use it every time `AppScript/*.html` is
    hand-synced from `tools/` source.
-2. **`clasp`/build automation**: stays deferred, but now on an explicit
-   trigger rather than an open-ended "someday" — **revisit automating
-   the Apps Script deploy (`clasp` or equivalent) the next time a
-   hand-sync bug actually ships to production**, rather than waiting for
-   a fixed tool-count checkpoint. Three such incidents are already on
-   record (see the deployment-pipeline section above); a fourth is the
-   agreed trigger to stop deferring this.
+2. **`clasp`/build automation**: settled — stays deferred, but now on an
+   explicit trigger rather than an open-ended "someday": **revisit
+   automating the Apps Script deploy (`clasp` or equivalent) the next
+   time a hand-sync bug actually ships to production**, not at a fixed
+   tool-count checkpoint. Three such incidents are already on record
+   (see the deployment-pipeline section above); a fourth is the agreed
+   trigger to stop deferring this — not "we've had incidents before," a
+   genuinely new one. `HANDOFF.md`'s "Older, still-outstanding items"
+   section carries the same trigger language so a future session doesn't
+   see two docs disagreeing about whether this is due now. There is
+   nothing left to implement for this item until that trigger fires —
+   it's a decision record, not a pending task.
 3. **Shared canvas engine**: promote `canvas-editor.js`,
    `element-types.js`, `element-renderer.js`, and `history.js` out of
    `tools/animated-slides-v2/` and into `shared/`, becoming the fork

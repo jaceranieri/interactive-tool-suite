@@ -46,7 +46,7 @@
   .hub-detail {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm); padding: var(--space-5); display: flex; flex-direction: column;
-    gap: var(--space-4); min-height: 0;
+    gap: var(--space-4); min-height: 0; min-width: 0;
   }
   .hub-detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); }
   .hub-detail-header h2 { margin: var(--space-1) 0 0; font-size: var(--text-xl); }
@@ -54,13 +54,24 @@
   .hub-detail-actions { flex-shrink: 0; }
 
   .hub-preview {
-    flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: var(--radius-md);
+    flex: 1; min-height: 0; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md);
     background: var(--surface-sunken); overflow: hidden; display: flex;
+    align-items: center; justify-content: center;
     padding: var(--space-5); box-sizing: border-box;
   }
-  .hub-preview iframe {
-    flex: 1; width: 100%; height: 100%; border: none; border-radius: var(--radius-sm);
-    background: var(--surface);
+  /* The iframe renders the export at a fixed reference width (see
+     PREVIEW_DESIGN_WIDTH in the script below), completely independent of
+     the visible box's actual size — .hub-preview-sizer is then set to
+     the SCALED display footprint (so it lays out/centers correctly) and
+     .hub-preview-scale-wrap (the iframe's actual full-size box) is
+     CSS-transform-scaled down (or up) to fit inside it. This guarantees
+     the whole export — canvas AND nav bar — is visible with no internal
+     scrollbar, at any panel size, since the scale factor is derived from
+     the export's own real measured content height rather than guessed. */
+  .hub-preview-sizer { overflow: hidden; min-width: 0; min-height: 0; }
+  .hub-preview-scale-wrap { transform-origin: top left; }
+  .hub-preview-scale-wrap iframe {
+    display: block; border: none; border-radius: var(--radius-sm); background: var(--surface);
   }
   .hub-preview-empty {
     flex: 1; display: flex; align-items: center; justify-content: center;
@@ -103,6 +114,13 @@
     const baseUrl = <?!= JSON.stringify(baseUrl) ?>;
 
     let selectedId = tools.length ? tools[0].id : null;
+
+    // Reference width the preview export renders at internally — fixed,
+    // regardless of the visible panel's actual size. Keeping it fixed
+    // means a window resize only ever needs a cheap CSS transform-scale
+    // recalculation (see rescaleActivePreview), never a re-measurement of
+    // the export's own layout.
+    const PREVIEW_DESIGN_WIDTH = 1000;
 
     function statusBadge(tool) {
       return tool.status === 'beta'
@@ -154,10 +172,7 @@
         // A fresh iframe per tool switch — only the selected tool's
         // preview is ever mounted, so switching tools tears down the
         // previous one instead of keeping multiple live iframes around.
-        const iframe = document.createElement('iframe');
-        iframe.title = tool.title + ' preview';
-        iframe.srcdoc = tool.previewHtml;
-        preview.appendChild(iframe);
+        mountPreviewIframe(tool, preview);
       } else {
         const empty = document.createElement('div');
         empty.className = 'hub-preview-empty';
@@ -166,12 +181,97 @@
       }
     }
 
+    /** Builds the sizer/scale-wrap/iframe structure (see the CSS comment
+     *  above .hub-preview-sizer) and, once the export has actually
+     *  loaded, measures its true content size and scales it to fit. */
+    function mountPreviewIframe(tool, container) {
+      const sizer = document.createElement('div');
+      sizer.className = 'hub-preview-sizer';
+      const wrap = document.createElement('div');
+      wrap.className = 'hub-preview-scale-wrap';
+      const iframe = document.createElement('iframe');
+      iframe.title = tool.title + ' preview';
+      // Hidden until sized, so switching tools never flashes a
+      // wrong-size/scrolling frame before the fit calculation lands.
+      iframe.style.visibility = 'hidden';
+      iframe.style.width = PREVIEW_DESIGN_WIDTH + 'px';
+      wrap.appendChild(iframe);
+      sizer.appendChild(wrap);
+      container.appendChild(sizer);
+
+      iframe.addEventListener('load', () => {
+        fitPreviewIframe(iframe, wrap, sizer);
+        // Google Fonts (in a real deployment, reachable over the real
+        // internet unlike local/sandboxed testing) can swap in and
+        // reflow text slightly after the initial load event — re-measure
+        // once more shortly after to correct for that.
+        setTimeout(() => fitPreviewIframe(iframe, wrap, sizer), 400);
+      });
+      iframe.srcdoc = tool.previewHtml;
+    }
+
+    /** Measures the export's real (unscaled) content size at
+     *  PREVIEW_DESIGN_WIDTH, sizes the iframe to exactly that (so it
+     *  never scrolls internally), then scales the whole wrap down/up via
+     *  applyPreviewScale so it fits the visible box with nothing cut
+     *  off — the canvas AND the nav bar, no vertical or horizontal
+     *  scrollbar. */
+    function fitPreviewIframe(iframe, wrap, sizer) {
+      let contentHeight;
+      try {
+        contentHeight = iframe.contentDocument.documentElement.scrollHeight;
+      } catch (err) {
+        return; // shouldn't happen for a same-document srcdoc iframe
+      }
+      if (!contentHeight) return;
+
+      iframe.style.height = contentHeight + 'px';
+      wrap.dataset.designHeight = contentHeight;
+      iframe.style.visibility = '';
+      applyPreviewScale(wrap, sizer);
+    }
+
+    /** Pure CSS-transform recalculation — no re-measurement of the
+     *  export's own content — so a window resize can call this directly. */
+    function applyPreviewScale(wrap, sizer) {
+      const designHeight = Number(wrap.dataset.designHeight);
+      if (!designHeight) return;
+
+      // .hub-preview's own padding has to come out of its box before it's
+      // "available space" for the sizer — clientWidth/clientHeight include
+      // padding, so subtract it explicitly. Using the raw border-box size
+      // here previously overshot by exactly that padding, which the flex
+      // layout then silently resolved by shrinking (and clipping, since
+      // the sizer has overflow: hidden) the sizer below its assigned
+      // width instead of erroring — the bug looked like nothing was
+      // wrong until you measured actual vs. requested pixel widths.
+      const previewEl = sizer.parentElement;
+      const previewStyle = getComputedStyle(previewEl);
+      const availW = previewEl.clientWidth - parseFloat(previewStyle.paddingLeft) - parseFloat(previewStyle.paddingRight);
+      const availH = previewEl.clientHeight - parseFloat(previewStyle.paddingTop) - parseFloat(previewStyle.paddingBottom);
+      const scale = Math.min(availW / PREVIEW_DESIGN_WIDTH, availH / designHeight);
+
+      wrap.style.width = PREVIEW_DESIGN_WIDTH + 'px';
+      wrap.style.height = designHeight + 'px';
+      wrap.style.transform = 'scale(' + scale + ')';
+      sizer.style.width = Math.round(PREVIEW_DESIGN_WIDTH * scale) + 'px';
+      sizer.style.height = Math.round(designHeight * scale) + 'px';
+    }
+
+    function rescaleActivePreview() {
+      const sizer = document.querySelector('.hub-preview-sizer');
+      const wrap = sizer && sizer.querySelector('.hub-preview-scale-wrap');
+      if (sizer && wrap) applyPreviewScale(wrap, sizer);
+    }
+
     function selectTool(id) {
       if (id === selectedId) return;
       selectedId = id;
       renderList();
       renderDetail();
     }
+
+    window.addEventListener('resize', rescaleActivePreview);
 
     renderList();
     renderDetail();

@@ -8,15 +8,15 @@ panel, or wiring panel behavior into a new tool. Update it when the
 pattern changes — a stale doc here is worse than no doc, since it reads
 as ground truth.
 
-**Current state as of this writing: the three tools are NOT consistent.**
-Animated Slides v2 has the newest, most complete version of this pattern
-(property editing moved into a side panel, origin-aware panel routing).
-Tabbed Panels has an independently-evolved but philosophically similar
-version. Toggle Slides has NOT been migrated — it still uses the older
-floating contextual popup for element properties, and its side panels
-use the pattern that just got fixed in v2 for a real bug (see "Known
-gaps" at the end). Don't assume any rule below is true of all three
-without checking that tool's own section.
+**Current state as of this writing: the two tools are NOT fully
+consistent.** Animated Slides v2 has the newest, most complete version
+of this pattern (property editing moved into a side panel, origin-aware
+panel routing). Tabbed Panels has an independently-evolved but
+philosophically similar version, predating v2's most recent refinements.
+Don't assume a rule below is true of both without checking that tool's
+own section. (A third tool, Toggle Slides, had a third, unmigrated
+variant of this pattern — see its section here in git history before
+2026-08-14 if relevant; it was removed for not meeting requirements.)
 
 ## Universal rules (true in every tool that has this pattern)
 
@@ -46,8 +46,8 @@ without checking that tool's own section.
   stands in for native checkboxes inside panel fields.
 - **Schema-driven fields, not hand-written per-type forms.** Every tool's
   property panel is generated from that tool's field schema
-  (`ELEMENT_TYPES` for v2/Toggle Slides, `BLOCK_TYPES` for Tabbed
-  Panels) — adding a field to the schema gets it a panel input for free.
+  (`ELEMENT_TYPES` for v2, `BLOCK_TYPES` for Tabbed Panels) — adding a
+  field to the schema gets it a panel input for free.
   This predates the side-panel move; it was already true of the old
   floating popup.
 
@@ -101,11 +101,13 @@ end) — a real bug, fixed across two passes:
    on first paint.
 
 Both pieces matter, and are easy to half-copy: the rule to reuse if
-another tool's bottom bar has the same problem (see "Known gaps" —
-Toggle Slides currently does) is the pairing of `bottom: var(--bar-
-height, 0px)` on the panel AND `position: relative; z-index` (higher
-than the panel's) on the bar — not z-index alone, which only solves the
-problem for a panel short enough to never need scrolling.
+another tool's bottom bar has the same problem is the pairing of
+`bottom: var(--bar-height, 0px)` on the panel AND `position: relative;
+z-index` (higher than the panel's) on the bar — not z-index alone, which
+only solves the problem for a panel short enough to never need
+scrolling. (A third tool, Toggle Slides, had exactly this unfixed gap —
+see git history before 2026-08-14; it was removed for unrelated
+reasons.)
 
 ### The three panels and how they share one slot
 
@@ -244,81 +246,3 @@ concept to begin with (`tab-types.js`'s `BLOCK_TYPES` schema has no
 `tier` key), so there was nothing to remove here when v2's toggle was
 deleted. No multi-select concept either — Tabbed Panels has no
 multi-select at all (each block is edited one at a time).
-
-## Toggle Slides (`tools/toggle-slides/`)
-
-**Not migrated.** Toggle Slides copies `canvas-editor.js` from v2
-"verbatim" per CLAUDE.md's usual reuse pattern, but that copy predates
-this session's property-panel refactor — it still has the OLD
-`_renderPopup()`/`popupHost`/floating `.element-popup` machinery for
-editing an element's own properties (colour, opacity, icon, etc.). If
-you're looking for Toggle Slides' equivalent of v2's `#property-panel`,
-it doesn't exist yet.
-
-What Toggle Slides *does* have, as genuine side panels, is three
-purpose-specific drawers — Layers, Settings, and **Button overrides**
-(this tool's own concept: per-button show/hide/reposition rules for any
-element, see CLAUDE.md's "Button overrides panel" section) — all built
-on the same fixed/viewport-height/`z-index: 90` CSS v2 used to have:
-
-```css
-.side-panel {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 360px;
-  z-index: 90;
-}
-```
-
-Switching between them is plain pairwise mutual exclusion — each
-`open*Panel()` function calls the other two panels' `close*Panel()`
-directly (`openSettingsPanel()` closes Layers and Button-overrides,
-etc.) — no shared `activePanel` variable, no restore-previous-panel
-memory, because there's no fourth "Properties" panel yet whose
-auto-open/restore behavior would need coordinating with these three.
-
-### Known gap: the same bottom-bar overlap bug v2 just fixed
-
-Toggle Slides' `#editor-button-bar` (its "+ Button" button, the analogue
-of v2's `#editor-slide-bar`/**+ Slide**) has **no elevated z-index or
-stacking context of its own, and none of its three side panels have a
-height-matched `bottom` offset either** — meaning it's exposed to
-BOTH bugs described in v2's "Positioning" section above: any of the
-three fixed, viewport-height side panels will paint over the right end
-of that bar (including **+ Button**) whenever one is open, AND (once a
-panel's own content is tall enough to scroll) part of that panel is a
-permanent dead zone behind the bar that no internal scrolling can
-reach. This was found while writing this document, not fixed — the
-request that prompted this document was scoped to v2. If/when Toggle
-Slides gets fixed, copy BOTH pieces from v2, not just the z-index
-one-liner: give `#editor-button-bar` `position: relative; z-index`
-higher than `90` (e.g. `95`, matching v2) AND give its three
-`.side-panel`s a `bottom: var(--button-bar-height, 0px)` synced from the
-bar's real rendered height the same way `syncSlideBarHeight()` does in
-v2's `index.html`.
-
-### If/when Toggle Slides gets the same property-panel migration v2 got
-
-Worth deciding deliberately, not by default, when that work happens:
-
-- Whether element properties move into a real `#property-panel` side
-  panel (a fourth panel alongside Layers/Settings/Button-overrides), and
-  if so, how opening it interacts with the existing three — v2's
-  `panelBeforeProperty` restore mechanic is the obvious template, but
-  Toggle Slides has one more panel in the rotation than v2 does, which
-  v2's two-variable model wasn't designed against.
-  Button overrides panel already force-exits the main learner-facing
-  Preview mode on open (`if (previewMode) togglePreview();`) — any new
-  interaction between a Properties panel and Preview mode would need the
-  same kind of explicit thought, not an assumption that v2's rules
-  transfer unchanged.
-- Whether multi-select field-editing (v2's `commonFieldsForSelection`/
-  `setFieldOnSelection`) is worth porting — Toggle Slides' multi-select
-  story today is whatever `canvas-editor.js` still has from before v2's
-  refactor (the old small "N selected" toolbar), since its copy of that
-  file hasn't been touched.
-- Whether Layers-panel-row selection should keep Layers open (v2's
-  current behavior) or jump to Properties (Tabbed Panels' current
-  behavior, and what Toggle Slides' unmigrated popup effectively also
-  does today, since the popup opens on any selection regardless of
-  source). Both existing tools disagree with each other — this doc
-  won't resolve that for a still-hypothetical Toggle Slides panel, but
-  flags that it needs an explicit decision, not a default.

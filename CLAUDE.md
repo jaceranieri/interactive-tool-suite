@@ -99,18 +99,19 @@ database.
     save/load round-trip is still unverified end to end — see "What's NOT
     built yet" under "Tabbed Panels" below. See that section for its
     architecture.
-  - `toggle-slides/` — a single SVG canvas (reuses Animated Slides v2's
-    element engine, not Tabbed Panels' block model) where nav buttons
-    independently toggle groups of elements on and off, any number on at
-    once, instead of v2's mutually-exclusive slide switching; buttons can
-    also hide/reposition elements they don't own, so combinations of
-    buttons can read as content reflowing (see "Multi-button reflow"
-    under "Toggle Slides" below). Authoring UI, Preview mode, and Export
-    all work in local preview. `AppScript/ToggleSlides*.html` exist and
-    `Code.gs`'s `PAGES` entry is uncommented, but the round-trip has
-    never actually been verified against a live Apps Script deployment
-    — see "Toggle Slides" below for its architecture, the Apps Script
-    drift warning, and what's left.
+  - **Toggle Slides — removed 2026-08-14.** Was a single-canvas tool
+    where nav buttons independently toggled groups of elements on and
+    off; didn't meet requirements and was deleted (repo source and
+    deployed `AppScript/Toggle*.html` files) rather than kept around
+    half-finished. May be redeveloped later — see git history at or
+    before this commit for its full architecture, the multi-button
+    reflow/override-ghosts design, and the live-deployment bug this
+    review surfaced (the shared `AppScript/CanvasEditorJs.html` had
+    already been synced to v2's popup-free version while
+    `AppScript/ToggleSlides.html` still expected the old internal-popup
+    behavior, so element property editing was likely broken in the live
+    deployment at time of removal). `Code.gs`'s `PAGES` entry is
+    commented out, not deleted, in case this is picked back up.
 
 ## Animated Slides v2's internal architecture
 
@@ -462,10 +463,11 @@ clean and the change looked additive — nothing in the diff hinted that
 the live file contained code the repo had never seen. Ask "have you made
 any edits directly in the Apps Script editor that aren't in GitHub?"
 before recommending a wholesale paste, and prefer targeted patches
-against shared anchor text when there's any doubt (that's how Toggle
-Slides' overrides work was synced, for exactly this reason). The general
-rule this project keeps relearning: **the deployed Apps Script project,
-not this repo, is the source of truth for what's actually running.**
+against shared anchor text when there's any doubt (a patch-against-
+anchor-text sync was used successfully in the now-removed Toggle Slides
+tool, for exactly this reason — see git history). The general rule this
+project keeps relearning: **the deployed Apps Script project, not this
+repo, is the source of truth for what's actually running.**
 
 **A real, shipped bug from getting substitution 2 wrong**: the Draw
 feature (and, separately, the Handwriting font feature) were added to
@@ -489,8 +491,8 @@ whenever `element-types.js` or `element-renderer.js` changes, regenerate
 the `MODULE_SOURCES` object literal in `AnimatedSlidesV2.html`) and
 verify byte-for-byte against the source before considering the sync
 done, the same "generated programmatically, verified via direct
-comparison" approach Tabbed Panels and Toggle Slides already used for
-their own `MODULE_SOURCES`. **This is exactly the failure mode
+comparison" approach Tabbed Panels already uses for its own
+`MODULE_SOURCES`. **This is exactly the failure mode
 substitution 2 above warns about** — it just took a real incident to
 show how silent and structurally-separated-from-the-real-bug the
 symptom can be.
@@ -1092,277 +1094,6 @@ export ships its own hardcoded copy rather than reusing
   oversight — see "Content model" above); revisit only if an author
   specifically asks for rich text inside table cells.
 
-## Toggle Slides
-
-An adaptation of Animated Slides v2 for a genuinely different interaction:
-instead of navigating between mutually-exclusive slides, nav buttons each
-independently toggle a group of elements on or off, on ONE persistent
-canvas. Any number of buttons can be on at once. Worked example: with
-buttons A/B/C, pressing A shows Element-A; then pressing C leaves
-Element-A shown and also shows Element-C; then pressing B leaves both and
-adds Element-B; then pressing C again leaves A and B shown and hides C.
-Despite the tool's name there are no "slides" at all — see the four
-scoping decisions this was built against (structure/grouping/animation/
-initial-state), settled up front before any code was written:
-single canvas (not multiple pages each with their own toggle nav), a
-button can own a group of several elements (not just one), toggling
-fades in/out with GSAP (not an instant show/hide), and each button's
-starting on/off state is author-configurable per button (not a single
-global default).
-
-**Multi-button reflow (added in a second scoping round, after the base
-tool above already existed)**: the original scoping explicitly ruled out
-"multiple slides" — but a real request came in for something that reads
-like slides from the outside (elements sliding to new positions as
-buttons toggle) without actually needing separate slide objects. Worked
-through with a concrete example before any code was written: a visible
-sentence "A man jumped." with three buttons, Adverb/Adjective/Proper
-Noun. Pressing Adverb inserts "quickly" and slides "jumped." right to
-make room. Pressing Adjective too (on top) inserts "tall" and slides
-"man"/"quickly"/"jumped." right again. Un-pressing Adverb removes
-"quickly" and closes the gap **back to Adjective's own layout**, not all
-the way back to the original — i.e., whichever buttons are still on
-keep asserting their own positions for the elements they touch. Pressing
-Proper Noun replaces "A tall man" with "John" by explicitly hiding "A",
-"tall", and "man" (not just failing to show them) while showing "John".
-None of this needed real multiple slides: it's implemented as
-per-button **overrides** on top of the base single-canvas model above —
-see `toggle-manager.js`'s class comment (OVERRIDES / CONFLICT RULE) for
-the mechanism, and the "Button overrides panel" bullet below for how an
-author edits it. The one governing rule, settled explicitly before
-implementation: when more than one currently-on button has an override
-for the same element, **the most-recently-toggled-ON button wins** —
-never a fixed priority/slide order. This was verified against the
-worked sentence example end-to-end (see git history for the Playwright
-script used) before being considered done.
-
-### Internal architecture (`tools/toggle-slides/`)
-
-Reuses Animated Slides v2's SVG canvas + element engine wholesale, since
-the element model (x/y/width/height, text/rect/arrow/icon) is exactly
-what this tool needs too — unlike Tabbed Panels, which needed a different
-content model entirely. `element-types.js`, `element-renderer.js`,
-`canvas-editor.js`, and `history.js` are copied verbatim from
-`animated-slides-v2/` (only their header comments were touched); v2's
-`slide-manager.js` and `nav-bar.js` are NOT reused, since both are built
-around exactly the mutually-exclusive-slide mechanic this tool replaces.
-
-- `toggle-manager.js` — `ToggleManager` is the single-canvas analogue of
-  v2's `SlideManager`: owns `elements`/`nodes` (one flat set, no
-  per-slide grouping) and `canvasSettings` (artboard/grid/nav style,
-  same shape as v2's), plus the toggle mechanic itself: a `buttons` array
-  (`{ id, label, elementIds: [...], hideElementIds: [...],
-  positionOverrides: { elementId: {x,y} }, defaultOn }`). An element with
-  no owning button (not in any button's `elementIds`) is visible by
-  default (static content, e.g. a title); one with 1+ owning buttons is
-  visible whenever ANY of them is on ("any-of" — most elements will only
-  ever have one owning button in practice, but this stays correct if an
-  author deliberately assigns the same element to two). That's the base
-  case; `hideElementIds` and `positionOverrides` layer the "reflow"
-  mechanic on top (see the section above and the file's class comment)
-  — a button can hide or reposition ANY element, not just ones it owns.
-  `resolve(elementId, activeButtons?)` is the single place the "most
-  recently toggled ON wins" conflict rule lives: it walks `toggleOrder`
-  (buttonId[], oldest first) in reverse, returns the first show/hide and
-  first position override it finds among currently-active buttons, and
-  falls back to base ownership visibility / the element's own stored x,y
-  if none of the active buttons say anything about that element.
-  `toggleButton()` maintains `toggleOrder` (push to the end on ON, remove
-  on OFF); `resetVisibleState()` rebuilds it from each button's
-  `defaultOn`, in button-list order, whenever preview is (re-)entered —
-  same "runtime-only, not part of getState()/setState()" status as
-  `visibleState` itself, for the same reason (playback state, not
-  project data — only the overrides that PRODUCE it are project data).
-  `applyVisibility()` now animates x/y alongside opacity for exactly this
-  reason — GSAP's `x`/`y` shorthand on the element group already tweens a
-  transform natively (see `element-renderer.js`'s `createElementNode`),
-  so no proxy-object trick was needed here unlike the cases described
-  under "Animating something GSAP can't tween natively" further down
-  this file. `previewButtonOverrides(buttonId)` is a second, separate
-  entry point into the same `resolve()` — used only by the button
-  overrides panel below to show "what would this look like if only this
-  button were on", without touching real `visibleState`/`toggleOrder` at
-  all. Layer ordering (`reorderLayer`/`moveLayerBefore`/
-  `getLayerOrder`) is copied over near-verbatim from `SlideManager`,
-  since "one flat bottom-to-top array" is exactly the same problem with
-  or without slides.
-  **EDIT vs PREVIEW is the one genuinely new state-management problem
-  here, with no v2 equivalent**: v2 can just always show whatever slide
-  is active, since only one slide is ever "the truth" at a time. Here,
-  the SAME canvas needs to serve two different truths — "everything
-  editable and visible so an author can work with it" vs. "only currently
-  -on elements visible, exactly what a learner would see" — and showing
-  real on/off opacity WHILE also allowing normal drag/select editing
-  would make it impossible to tell "this is off" from "I haven't looked
-  at it yet." Resolved by never running both at once:
-  `applyVisibility(animate)` (opacity + `pointerEvents` per element, from
-  `visibleState`) is ONLY ever called while in Preview mode;
-  `showAllElements()` (forces every element back to opacity 1,
-  interactive) is what runs the rest of the time, including immediately
-  on exiting preview. `visibleState` itself (buttonId -> boolean) is
-  runtime-only, seeded from each button's `defaultOn` via
-  `resetVisibleState()` on every preview entry — it is NOT part of
-  `getState()`/`setState()`, since "which buttons are currently on" is
-  playback state, not project data.
-- `toggle-nav.js` — copied from v2's `nav-bar.js` (same pagination-by-
-  page, GSAP page-swap-animation, styling code) with exactly one
-  substantive change: v2 tracks a single `activeIndexRef` (one active
-  slide); this tracks a whole `Set` of on button ids (`activeIdsRef`),
-  and a click always means "flip THIS button, leave every other one
-  alone" rather than "switch to this one." Buttons are matched by `id`
-  in the active/inactive check, not index, since (unlike v2) the set of
-  "on" ids doesn't shift just because the button list was reordered. See
-  the file's header comment for the full v2 diff.
-- `layer-panel.js` — copied from v2's, with the "linked across slides"
-  badge (meaningless here — there's no second canvas to be linked to)
-  replaced by a small pill showing which button(s), if any, currently own
-  the row's element (via `toggleManager.buttonsForElement()`).
-- `index.html` — page shell + UI glue. Left rail: the same 4
-  add-element buttons as v2, then Layers/Settings drawer-openers — no
-  "add linked element" button, since there's no cross-canvas linking
-  concept to link from. Bottom bar (`#editor-button-bar`) is the toggle-
-  button equivalent of v2's slide bar: one chip per button (label,
-  double-click rename, drag-to-reorder, hover-reveal duplicate/delete),
-  plus a small dot toggling that button's `defaultOn`. Assigning an
-  element to buttons is a checkbox list (`renderAssignButtonsSection()`)
-  rendered into the Layers side-panel below the layer list, reacting to
-  `CanvasEditor`'s `onSelect` hook — shows a placeholder when 0 or 2+
-  elements are selected, checkboxes (one per current button) when
-  exactly 1 is. A top-bar **Preview** button (`togglePreview()`) is the
-  only thing that flips between the edit/preview split described above:
-  entering preview closes both side panels, deselects, sets
-  `#canvas-wrapper` to `pointer-events: none` (blocks direct
-  drag/select while a learner-facing preview is live), and calls
-  `resetVisibleState()` + `applyVisibility(false)`; exiting reverses all
-  of that via `showAllElements()`. The nav bar's `onToggle` callback is
-  gated on `previewMode` — clicking a button while NOT previewing is a
-  no-op, since `showAllElements()` would just mask it anyway and a
-  silent state change armed for the next preview would be confusing.
-  Export reuses `element-types.js`/`element-renderer.js`/
-  `toggle-manager.js`/`toggle-nav.js` verbatim (same "one engine, no
-  second copy to drift" rule as v2 and Tabbed Panels) — the exported
-  player is effectively always in "preview mode": it calls
-  `resetVisibleState()` + `applyVisibility(false)` once on load, then
-  wires the nav bar straight to `toggleManager.toggleButton(id)`, with no
-  edit-mode branch to speak of since a learner never edits anything.
-  "Load from code" parses `const elements = ...` / `const buttons = ...`
-  / `const canvasSettings = ...` back out of a pasted export — same
-  approach as v2's import, adapted for the extra `buttons` array.
-- **Button overrides panel** (`#button-overrides-panel`, a fourth
-  `.side-panel` alongside Layers/Settings — same slide-out mechanism,
-  same "only one open at a time" rule: opening it closes the other two
-  and vice versa, via `closeButtonOverridesPanel()` calls added into
-  `openLayersPanel()`/`openSettingsPanel()`). Opened by clicking a
-  button chip in the bottom bar (not its dot/duplicate/delete
-  sub-buttons, which `stopPropagation()`). Lists every element on the
-  canvas (`renderButtonOverridesPanel()`) with a three-way segmented
-  control (No override / Show / Hide, backed by
-  `ToggleManager.setElementVisibilityOverride()`) and a "Move" checkbox
-  + X/Y number inputs (backed by `setElementPositionOverride()` /
-  `clearElementPositionOverride()`) — deliberately numeric fields, not
-  drag-on-canvas, since redirecting `CanvasEditor`'s existing drag
-  handler to write into a button's override object instead of the
-  element's base `x`/`y` would have meant forking its drag-handling
-  code; revisit only if numeric-only editing turns out to be a real
-  friction point in practice. A **"Preview this button ON"** switch at
-  the top of the panel calls `toggleManager.previewButtonOverrides()`
-  (same `#canvas-wrapper.preview-active` pointer-events-none treatment
-  as the main learner-facing Preview button) so an author can see the
-  effect of their overrides without leaving the panel; every edit made
-  while it's on calls `refreshButtonOverridePreviewIfActive()`
-  afterward so typing a new number or flipping Show/Hide updates the
-  live preview immediately rather than only on the next real toggle.
-  Opening the panel force-exits the main Preview mode first
-  (`if (previewMode) togglePreview();`) since the two are different
-  "what does the canvas mean right now" states and were never meant to
-  run simultaneously.
-  **Override ghosts** (`#override-ghost-layer`, a `<g>` sibling of
-  `elements-layer` inside the authoring SVG only — never present in the
-  exported player): numeric X/Y fields alone turned out to be hard to
-  reason about spatially, so while the overrides panel is open (and NOT
-  live-previewing — the real elements already show the resolved state
-  then, a ghost on top would be redundant) `renderOverrideGhosts()` draws
-  a translucent (opacity 0.45) duplicate of every element that has a
-  `positionOverride` for the button being edited, sitting AT that
-  override position, plus a dashed line back to the element's own base
-  `(x, y)` — so an author can see where something is going without
-  reading coordinates. The ghost is a real, separate SVG node built via
-  `createElementNode()` (given `id: 'ghost-' + elementId` so an arrow
-  ghost's `<marker>` id never collides with the real element's), NOT
-  registered with `CanvasEditor` — dragging it is a small self-contained
-  pointerdown/pointermove/pointerup handler in `index.html`
-  (`attachGhostDrag()`) using the same `screenToSVGPoint()` helper
-  `canvas-editor.js` uses, rather than routing through
-  `CanvasEditor`'s own drag machinery (which only ever knows how to
-  write to an element's base position — forking it to redirect into a
-  button's override object would have meant duplicating its drag-state
-  handling for one field). Dragging writes directly into
-  `btn.positionOverrides[elementId]` (mutated in place, same convention
-  as everywhere else) and updates the ghost/line/number-inputs live via
-  direct DOM refs (`panelInputRefs`, populated by
-  `renderButtonOverridesPanel()`) rather than a full panel re-render on
-  every pointermove — same reasoning as `CanvasEditor`'s own drag loop
-  not wanting to rebuild unrelated UI every frame, just applied to a
-  smaller surface. `history.beginAction()`/`commitAction()` bracket the
-  whole drag (one undo step per drag, not one per frame), and
-  `refreshUI()` on pointerup does one clean full re-render — this is
-  also what makes the numeric fields still work as a precision fallback:
-  typing a value re-renders the panel, which re-renders the ghosts from
-  the committed state, same as a drag would have.
-
-### Apps Script deployment
-
-Deployed via the same 5-substitution pipeline as v2/Tabbed Panels (see
-"The Apps Script deployment pipeline" above), and `Code.gs`'s `PAGES`
-entry is uncommented, so it's reachable from the hub once redeployed.
-Four of the seven `.js`/module files this tool needs already existed as
-reusable AppScript includes from Animated Slides v2 — `ElementTypesJs.html`,
-`ElementRendererJs.html`, `CanvasEditorJs.html`, `HistoryJs.html` — byte-
-identical to `tools/toggle-slides/`'s copies, so nothing new was created
-for those, just referenced via `include()`. Three genuinely new files were
-needed for the parts with no v2 equivalent: `ToggleManagerJs.html`,
-`ToggleNavJs.html`, and `ToggleLayerPanelJs.html` — note the "Toggle"
-prefix on the last one specifically to avoid colliding with v2's own
-existing `LayerPanelJs.html` (Apps Script's file namespace is flat across
-the whole project, unlike `tools/{tool-id}/` folders). Export's
-module-fetching code was swapped for an embedded `MODULE_SOURCES` object
-(substitution 2), generated programmatically from the real source files
-(byte-for-byte, verified via direct comparison) rather than hand-typed,
-same approach Tabbed Panels used, to avoid escaping mistakes.
-**Still unverified end to end**: none of this has actually been pasted
-into a live Apps Script project yet — do a real Save/Load round-trip
-(same as Tabbed Panels' own open item) before treating this as fully done.
-
-**Multi-button-overrides work is now hand-synced into both deployed
-files**: `AppScript/ToggleManagerJs.html` was re-synced byte-for-byte
-from `tools/toggle-slides/toggle-manager.js` (pure `<script>` wrap,
-substitution 1 only). `AppScript/ToggleSlides.html` got the same
-button-overrides panel (HTML/CSS/JS) added from `tools/toggle-slides/
-index.html`, applied as a pure additive patch (191 lines, 0 deletions)
-against the exact anchor text shared by both files — the new code
-doesn't touch `<link>`/`<script src>` tags, the module-fetching/
-`MODULE_SOURCES` code, the hub link, `<base target>`, or
-`STORAGE_API_KEY`, so none of the other four substitutions were
-affected or needed redoing. The follow-up override-ghosts work (see
-"Override ghosts" above) was synced the same way, same-session, same
-patch-against-shared-anchor-text approach. This tool is still otherwise
-"unverified end to end" — the Save/Load round-trip against a real Apps
-Script project hasn't been exercised yet — so a real deploy is the next
-thing to confirm, not something already checked off here.
-
-### What's NOT built yet
-
-- **Touch/tablet drag-and-drop** — the button bar's reorder uses native
-  HTML5 drag-and-drop, same known touchscreen gap as v2's slide/layer
-  reordering.
-- No accessibility pass, no narrow-window layout testing — same standing
-  gaps as v2 and Tabbed Panels.
-- No thumbnail preview on the button chips (v2's slide tabs render a
-  live mini-SVG per slide; a button chip here has no single "the content"
-  to thumbnail, since a button's elements sit among everyone else's on
-  the same canvas) — revisit only if authors report losing track of
-  which button owns what without opening the Layers panel.
-
 ## Scaling decisions — agreed, not yet implemented
 
 A planning-only review session (no code touched) looked at how this
@@ -1401,13 +1132,18 @@ item gets done.
    etc. across multiple `PAGES` entries — no plugin/import system
    needed). Do this **before** the next canvas-based tool is started,
    not retroactively-only. Not done yet.
-4. **Reconcile existing forks**: alongside #3, also reconcile
-   `tools/toggle-slides/`'s already-diverged copies of those same four
-   files against v2's current versions (see `SIDEBAR.md`'s "Known gap:
-   the same bottom-bar overlap bug v2 just fixed" for one concrete,
-   already-identified divergence to fix as part of this). Decided
-   explicitly rather than leaving Toggle Slides on its fork indefinitely
-   or deferring reconciliation to "someday." Not done yet.
+4. **Reconcile existing forks**: moot for now — Toggle Slides, the only
+   tool with a diverged fork of these four files, was removed entirely
+   (see the "Toggle Slides" bullet under Architecture above; it didn't
+   meet requirements). The investigation for this item did surface a
+   real, separate, already-live bug worth remembering if a future
+   canvas-based tool forks these files again: a *shared* Apps Script
+   include (e.g. `AppScript/CanvasEditorJs.html`) can silently drift out
+   of sync with what a *specific* tool page still expects (constructor
+   options, DOM hooks) even while the include itself stays byte-valid —
+   diff what a forking tool's own deployed page expects against the
+   shared include's actual current API before assuming a shared file is
+   still compatible, don't just diff repo source against repo source.
 5. **Cross-tool pattern docs**: standardize the `SIDEBAR.md` model —
    once a second tool implements a shared UI pattern (folders/project-
    list, toasts/modals, etc.), that pattern gets its own standalone
@@ -1418,9 +1154,10 @@ item gets done.
    this decision, unless/until it's touched again.
 6. **Verification/production backlog**: clear the existing "unverified
    against a live Apps Script deployment" backlog (Tabbed Panels'
-   Save/Load/Export round-trip, Toggle Slides' ghost-drag interaction,
-   SVG upload, folder-support round-trip — all tracked in `HANDOFF.md`
-   and cross-referenced throughout this file) **before** starting any
+   Save/Load/Export round-trip, SVG upload, folder-support round-trip —
+   all tracked in `HANDOFF.md` and cross-referenced throughout this
+   file; Toggle Slides' items dropped off this list with its removal)
+   **before** starting any
    new tool, rather than letting it keep growing alongside new work.
 7. **`AppScript/x`**: deleted — was a stray tracked, apparently
    content-free file from an unrelated stray commit, not part of any

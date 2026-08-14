@@ -1417,6 +1417,6 @@ item gets done.
    SVG upload, folder-support round-trip — all tracked in `HANDOFF.md`
    and cross-referenced throughout this file) **before** starting any
    new tool, rather than letting it keep growing alongside new work.
-7. **`AppScript/x`**: delete this stray tracked file (an apparently
-   content-free file from an unrelated stray commit — not part of any
-   tool's real file set). Not done yet.
+7. **`AppScript/x`**: deleted — was a stray tracked, apparently
+   content-free file from an unrelated stray commit, not part of any
+   tool's real file set. Done.

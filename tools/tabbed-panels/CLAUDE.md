@@ -32,6 +32,27 @@ exported player uses, so editing genuinely previews the learner-facing
 result rather than approximating it (see "Internal architecture" below
 for how that's structured to stay true).
 
+## Deployed Apps Script files
+
+`AppScript/` is Apps Script's flat namespace — it has no real
+subdirectories at all, so it can't mirror `tools/tabbed-panels/` the
+way this doc's own location does. `Code.gs`'s `PAGES['tabbed-panels']`
+points at `TabbedPanels.html`, which `include()`s the rest:
+
+- **Tabbed-Panels-specific** (map 1:1 to files in
+  `tools/tabbed-panels/`): `TabbedPanels.html` (← `index.html`),
+  `TabTypesJs.html`, `RichtextEditorJs.html`, `BlockRendererJs.html`,
+  `TabNavJs.html`, `TabManagerJs.html`.
+- **Shared includes** (correspond to `shared/`, not to this tool):
+  `DesignTokens.html`, `AppShellCss.html`, `AppShellJs.html`,
+  `StorageConnectorJs.html` (pulled in by every tool in the suite), and
+  `HistoryJs.html` (the same fully-generic file Animated Slides v2 uses
+  — no Tabbed-Panels-specific fork of it exists, deployed or otherwise).
+
+See root CLAUDE.md's "The Apps Script deployment pipeline" section for
+the 5-substitution mechanism that generates these from repo source, and
+`DEPLOY_CHECKLIST.md` for the step-by-step sync process.
+
 ## Internal architecture
 
 Deliberately mirrors v2's file-per-concern split, but simpler where the

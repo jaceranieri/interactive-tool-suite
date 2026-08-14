@@ -9,6 +9,29 @@ v2-specific. Update it as the tool evolves — a stale doc here actively
 misleads, since it's read as ground truth rather than double-checked
 against the code.
 
+## Deployed Apps Script files
+
+`AppScript/` is Apps Script's flat namespace — it has no real
+subdirectories at all, so it can't mirror `tools/animated-slides-v2/`
+the way this doc's own location does. `Code.gs`'s `PAGES['animated-slides-v2']`
+points at `AnimatedSlidesV2.html`, which `include()`s the rest:
+
+- **v2-specific** (map 1:1 to files in `tools/animated-slides-v2/`):
+  `AnimatedSlidesV2.html` (← `index.html`), `SlideManagerJs.html`,
+  `LayerPanelJs.html`, `NavBarJs.html`, `SvgSanitizerJs.html`.
+- **Shared includes** (correspond to `shared/`, not to this tool —
+  `ElementTypesJs`/`ElementRendererJs`/`CanvasEditorJs`/`HistoryJs` are
+  also `include()`d by any other tool that uses the promoted canvas
+  engine; `AppShellCss`/`AppShellJs`/`DesignTokens`/`StorageConnectorJs`
+  are pulled in by every tool in the suite): `DesignTokens.html`,
+  `AppShellCss.html`, `AppShellJs.html`, `StorageConnectorJs.html`,
+  `ElementTypesJs.html`, `ElementRendererJs.html`, `CanvasEditorJs.html`,
+  `HistoryJs.html`.
+
+See root CLAUDE.md's "The Apps Script deployment pipeline" section for
+the 5-substitution mechanism that generates these from repo source, and
+`DEPLOY_CHECKLIST.md` for the step-by-step sync process.
+
 ## Internal architecture
 
 `element-types.js`, `element-renderer.js`, `canvas-editor.js`, and

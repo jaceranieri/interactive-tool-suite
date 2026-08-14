@@ -808,6 +808,42 @@ There's no automated test suite. What exists:
 - **Not yet migrated / not yet built**: nothing is currently being
   migrated from a legacy tool — see "Starting a new tool" below instead.
 
+## Starting a new tool
+
+(This section was referenced from "Current status" above for a while
+without actually existing — a dangling pointer, fixed alongside writing
+it for real as part of "Scaling decisions" #5 below.)
+
+- **Don't start from scratch.** Every tool includes `shared/`'s
+  foundation — `design-tokens.css`, `app-shell.css` / `app-shell.js`
+  (top bar, modals, toasts, project list, `Shell.confirm`/
+  `Shell.prompt`), `storage-connector.js` — plus `Code.gs`'s
+  `apiSaveProject`/`apiListProjects`/etc. pattern for persistence. If the
+  new tool is canvas-based (an SVG canvas of positioned/sized elements,
+  the way v2 is and Tabbed Panels deliberately isn't), also start from
+  `shared/canvas-editor.js` / `element-types.js` / `element-renderer.js`
+  / `history.js` — the promoted engine described under "Animated Slides
+  v2's internal architecture" above — rather than copy-pasting v2's
+  tool-specific files the way the now-removed Toggle Slides did (see the
+  Architecture section's Toggle Slides bullet for how that diverged and
+  why it was a real, live-shipped bug by the time it was investigated).
+- **Register it**: add an entry to `Code.gs`'s `PAGES` map (this alone
+  makes it reachable from the hub — no separate manifest to update) and
+  set up the matching deployed `AppScript/*.html` files per
+  `DEPLOY_CHECKLIST.md`.
+- **Cross-tool pattern docs**: if the new tool implements a UI pattern a
+  second tool already has (side panels, folder browsing, toast/modal
+  conventions, etc.), and the two implementations aren't identical, write
+  a standalone reference doc for that pattern — `SIDEBAR.md` is the
+  model to follow — rather than opportunistically documenting it only
+  after a bug forces the comparison (which is how `SIDEBAR.md` itself
+  came about), and rather than folding it into this file. This was
+  "Scaling decisions" #5 below; it's now the standing rule, not a
+  one-off.
+- Local preview (`python3 -m http.server 8000` from repo root) works for
+  everything except Save/Load, which needs `google.script.run` and
+  therefore a real Apps Script deployment — see "Local preview" above.
+
 ## Tabbed Panels
 
 An author builds a series of tabs; learners navigate between them. Each
@@ -1177,14 +1213,17 @@ item gets done.
    diff what a forking tool's own deployed page expects against the
    shared include's actual current API before assuming a shared file is
    still compatible, don't just diff repo source against repo source.
-5. **Cross-tool pattern docs**: standardize the `SIDEBAR.md` model —
-   once a second tool implements a shared UI pattern (folders/project-
-   list, toasts/modals, etc.), that pattern gets its own standalone
-   reference doc (like `SIDEBAR.md`), rather than only writing one
-   opportunistically after a bug forces the cross-tool comparison, and
-   rather than folding everything into this file. Applies going forward;
-   no existing pattern needs a doc written retroactively just because of
-   this decision, unless/until it's touched again.
+5. **Cross-tool pattern docs**: done — standardized as a written rule in
+   the new "Starting a new tool" section above: once a second tool
+   implements a shared UI pattern (folders/project-list, toasts/modals,
+   side panels, etc.) and the two implementations aren't identical, that
+   pattern gets its own standalone reference doc (like `SIDEBAR.md`),
+   rather than only writing one opportunistically after a bug forces the
+   cross-tool comparison, and rather than folding everything into this
+   file. This item was always "applies going forward, no retroactive doc
+   needed" — no existing pattern besides `SIDEBAR.md`'s (side panels)
+   needed a doc written just because of this decision, so there's no
+   further backlog here, only the standing rule for next time.
 6. **Verification/production backlog**: clear the existing "unverified
    against a live Apps Script deployment" backlog (Tabbed Panels'
    Save/Load/Export round-trip, SVG upload, folder-support round-trip —

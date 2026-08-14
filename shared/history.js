@@ -1,10 +1,11 @@
 /* ==========================================================================
-   Tabbed Panels — History (undo/redo)
+   Shared History (undo/redo)
    Deliberately generic — works with any serializable state via a
-   getState()/setState() pair, so it isn't tied to TabManager internals
-   and could equally undo changes made anywhere else in the tool later.
-   Copied verbatim from animated-slides-v2/history.js — no tool-specific
-   logic in here, so there was nothing to adapt.
+   getState()/setState() pair, so it isn't tied to any one tool's
+   internals; used as-is by both Animated Slides v2 (CanvasEditor,
+   slide/canvas-settings state) and Tabbed Panels (TabManager state).
+   Promoted from tools/animated-slides-v2/ to shared/ — see CLAUDE.md's
+   "Scaling decisions" #3.
 
    Snapshot-based rather than diff/command-based: given how small this
    tool's state is, cloning the whole thing on each discrete action is far

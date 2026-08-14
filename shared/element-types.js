@@ -1,9 +1,12 @@
 /* ==========================================================================
-   Animated Slides v2 — Element Type Schema
+   Shared Canvas Engine — Element Type Schema
    One declaration per element type. This is the "packing list" — the
    properties panel gets generated from these field lists instead of each
    type having its own hand-written form, and the renderer (element-
    renderer.js) reads the same field names when drawing/updating a node.
+   Promoted from tools/animated-slides-v2/ to shared/ so future
+   canvas-based tools fork from here instead of copy-pasting v2's copy —
+   see CLAUDE.md's "Scaling decisions" #3.
 
    Every element also has these, handled by the engine directly rather than
    declared per-type since ALL types share them: id, type, x, y, width,

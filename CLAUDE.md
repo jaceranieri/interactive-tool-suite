@@ -84,6 +84,14 @@ database.
   they can't be styled and look broken next to the rest of the UI),
   `storage-connector.js`. Every tool includes all of these. Building a
   new tool should start here, not from scratch — see "Starting a new
+  tool" below. Also here, since a scaling-decisions review promoted them
+  out of `tools/animated-slides-v2/`: the shared canvas engine —
+  `canvas-editor.js`, `element-types.js`, `element-renderer.js` — used by
+  any canvas-based (SVG element) tool, and `history.js` (fully generic
+  undo/redo, used by both v2 and Tabbed Panels even though the latter
+  isn't canvas-based). See "Animated Slides v2's internal architecture"
+  below for what each does; see "Scaling decisions" #3 for why they
+  moved.
   tool" below.
 - **Tools** live in `tools/{tool-id}/`. Currently:
   - `animated-slides/` (v1) — stable, in production use, not under active
@@ -99,20 +107,29 @@ database.
     save/load round-trip is still unverified end to end — see "What's NOT
     built yet" under "Tabbed Panels" below. See that section for its
     architecture.
-  - `toggle-slides/` — a single SVG canvas (reuses Animated Slides v2's
-    element engine, not Tabbed Panels' block model) where nav buttons
-    independently toggle groups of elements on and off, any number on at
-    once, instead of v2's mutually-exclusive slide switching; buttons can
-    also hide/reposition elements they don't own, so combinations of
-    buttons can read as content reflowing (see "Multi-button reflow"
-    under "Toggle Slides" below). Authoring UI, Preview mode, and Export
-    all work in local preview. `AppScript/ToggleSlides*.html` exist and
-    `Code.gs`'s `PAGES` entry is uncommented, but the round-trip has
-    never actually been verified against a live Apps Script deployment
-    — see "Toggle Slides" below for its architecture, the Apps Script
-    drift warning, and what's left.
+  - **Toggle Slides — removed 2026-08-14.** Was a single-canvas tool
+    where nav buttons independently toggled groups of elements on and
+    off; didn't meet requirements and was deleted (repo source and
+    deployed `AppScript/Toggle*.html` files) rather than kept around
+    half-finished. May be redeveloped later — see git history at or
+    before this commit for its full architecture, the multi-button
+    reflow/override-ghosts design, and the live-deployment bug this
+    review surfaced (the shared `AppScript/CanvasEditorJs.html` had
+    already been synced to v2's popup-free version while
+    `AppScript/ToggleSlides.html` still expected the old internal-popup
+    behavior, so element property editing was likely broken in the live
+    deployment at time of removal). `Code.gs`'s `PAGES` entry is
+    commented out, not deleted, in case this is picked back up.
 
 ## Animated Slides v2's internal architecture
+
+`element-types.js`, `element-renderer.js`, `canvas-editor.js`, and
+`history.js` live in `shared/`, not `tools/animated-slides-v2/` — see
+"Scaling decisions" #3. They're described here because this is still
+where their design rationale belongs (v2 is where they were built and
+is still their most complete consumer); `slide-manager.js`,
+`layer-panel.js`, `nav-bar.js`, and `svg-sanitizer.js` remain genuinely
+v2-specific and stay in `tools/animated-slides-v2/`.
 
 - `element-types.js` — the `ELEMENT_TYPES` schema (field definitions per
   element type: text/rect/arrow/icon/draw). Adding a field here
@@ -145,8 +162,9 @@ database.
   on different slides sharing the same `id` — nothing more than that.
   Layer stacking order is the `elements` array's order (index 0 =
   furthest back) — see the "Getting this wrong" bullet under Conventions.
-- `history.js`, `layer-panel.js`, `nav-bar.js` — undo/redo, the layer
-  list, and the learner-facing nav bar (also reused verbatim by export).
+- `history.js` (shared, see above), `layer-panel.js`, `nav-bar.js` —
+  undo/redo, the layer list, and the learner-facing nav bar (also reused
+  verbatim by export).
 
 ### Free draw (the `draw` element type)
 
@@ -462,10 +480,11 @@ clean and the change looked additive — nothing in the diff hinted that
 the live file contained code the repo had never seen. Ask "have you made
 any edits directly in the Apps Script editor that aren't in GitHub?"
 before recommending a wholesale paste, and prefer targeted patches
-against shared anchor text when there's any doubt (that's how Toggle
-Slides' overrides work was synced, for exactly this reason). The general
-rule this project keeps relearning: **the deployed Apps Script project,
-not this repo, is the source of truth for what's actually running.**
+against shared anchor text when there's any doubt (a patch-against-
+anchor-text sync was used successfully in the now-removed Toggle Slides
+tool, for exactly this reason — see git history). The general rule this
+project keeps relearning: **the deployed Apps Script project, not this
+repo, is the source of truth for what's actually running.**
 
 **A real, shipped bug from getting substitution 2 wrong**: the Draw
 feature (and, separately, the Handwriting font feature) were added to
@@ -489,8 +508,8 @@ whenever `element-types.js` or `element-renderer.js` changes, regenerate
 the `MODULE_SOURCES` object literal in `AnimatedSlidesV2.html`) and
 verify byte-for-byte against the source before considering the sync
 done, the same "generated programmatically, verified via direct
-comparison" approach Tabbed Panels and Toggle Slides already used for
-their own `MODULE_SOURCES`. **This is exactly the failure mode
+comparison" approach Tabbed Panels already uses for its own
+`MODULE_SOURCES`. **This is exactly the failure mode
 substitution 2 above warns about** — it just took a real incident to
 show how silent and structurally-separated-from-the-real-bug the
 symptom can be.
@@ -570,11 +589,12 @@ renders its nav bar with `<div id="player-root">` deliberately deleted.
 ## Local preview (no Apps Script needed for most of it)
 
 `tools/animated-slides-v2/index.html` loads its own engine as plain
-`<script src>` files — `element-types.js`, `element-renderer.js`,
-`canvas-editor.js`, `history.js`, `slide-manager.js`, `layer-panel.js`,
-`nav-bar.js` — all of which now exist as real standalone files in that
-same folder (they didn't for a while; CLAUDE.md described them but they'd
-only ever been uploaded as `AppScript/*Js.html`, so the page 404'd on all
+`<script src>` files — four from `../../shared/` (`element-types.js`,
+`element-renderer.js`, `canvas-editor.js`, `history.js` — see "Scaling
+decisions" #3), and three from its own folder (`slide-manager.js`,
+`layer-panel.js`, `nav-bar.js`) — all of which exist as real standalone
+files (they didn't for a while; CLAUDE.md described them but they'd only
+ever been uploaded as `AppScript/*Js.html`, so the page 404'd on all
 seven outside Apps Script — fixed by extracting them verbatim from the
 AppScript wrapper files). This means:
 
@@ -788,6 +808,42 @@ There's no automated test suite. What exists:
 - **Not yet migrated / not yet built**: nothing is currently being
   migrated from a legacy tool — see "Starting a new tool" below instead.
 
+## Starting a new tool
+
+(This section was referenced from "Current status" above for a while
+without actually existing — a dangling pointer, fixed alongside writing
+it for real as part of "Scaling decisions" #5 below.)
+
+- **Don't start from scratch.** Every tool includes `shared/`'s
+  foundation — `design-tokens.css`, `app-shell.css` / `app-shell.js`
+  (top bar, modals, toasts, project list, `Shell.confirm`/
+  `Shell.prompt`), `storage-connector.js` — plus `Code.gs`'s
+  `apiSaveProject`/`apiListProjects`/etc. pattern for persistence. If the
+  new tool is canvas-based (an SVG canvas of positioned/sized elements,
+  the way v2 is and Tabbed Panels deliberately isn't), also start from
+  `shared/canvas-editor.js` / `element-types.js` / `element-renderer.js`
+  / `history.js` — the promoted engine described under "Animated Slides
+  v2's internal architecture" above — rather than copy-pasting v2's
+  tool-specific files the way the now-removed Toggle Slides did (see the
+  Architecture section's Toggle Slides bullet for how that diverged and
+  why it was a real, live-shipped bug by the time it was investigated).
+- **Register it**: add an entry to `Code.gs`'s `PAGES` map (this alone
+  makes it reachable from the hub — no separate manifest to update) and
+  set up the matching deployed `AppScript/*.html` files per
+  `DEPLOY_CHECKLIST.md`.
+- **Cross-tool pattern docs**: if the new tool implements a UI pattern a
+  second tool already has (side panels, folder browsing, toast/modal
+  conventions, etc.), and the two implementations aren't identical, write
+  a standalone reference doc for that pattern — `SIDEBAR.md` is the
+  model to follow — rather than opportunistically documenting it only
+  after a bug forces the comparison (which is how `SIDEBAR.md` itself
+  came about), and rather than folding it into this file. This was
+  "Scaling decisions" #5 below; it's now the standing rule, not a
+  one-off.
+- Local preview (`python3 -m http.server 8000` from repo root) works for
+  everything except Save/Load, which needs `google.script.run` and
+  therefore a real Apps Script deployment — see "Local preview" above.
+
 ## Tabbed Panels
 
 An author builds a series of tabs; learners navigate between them. Each
@@ -795,12 +851,15 @@ tab's content is an ordered list of blocks — heading (with optional
 subtitle), paragraph, list, button (external hyperlink), badge, table,
 separator. Genuinely different content model from Animated Slides —
 that tool's SVG canvas + `x`/`y`/`width`/`height` element schema doesn't
-fit flowed content, so it does **not** reuse `element-types.js` /
-`element-renderer.js` / `canvas-editor.js`. What it does share:
-`shared/design-tokens.css`, `shared/app-shell.css` + `app-shell.js` (top
-bar, modals, toasts, `Shell.confirm`/`Shell.prompt`, project list
-rendering), `shared/storage-connector.js`, and the same `Code.gs`
-`PAGES` + `apiSaveProject`/`apiListProjects`/etc. pattern — same
+fit flowed content, so it does **not** reuse `shared/element-types.js` /
+`shared/element-renderer.js` / `shared/canvas-editor.js` — the canvas
+engine — even though those now live in `shared/` too (promoted there
+for future canvas-based tools, not because Tabbed Panels needed them).
+What it does share: `shared/design-tokens.css`, `shared/app-shell.css` +
+`app-shell.js` (top bar, modals, toasts, `Shell.confirm`/`Shell.prompt`,
+project list rendering), `shared/storage-connector.js`,
+`shared/history.js` (fully generic, no canvas dependency), and the same
+`Code.gs` `PAGES` + `apiSaveProject`/`apiListProjects`/etc. pattern — same
 persistence plumbing as Animated Slides, just a different `content`
 shape.
 
@@ -871,9 +930,12 @@ diffing, which is fine at this scale.
   shallow `{...block}` copy still shares nested-array references, so
   editing the live block was silently corrupting entries already pushed
   onto the undo stack.
-- `history.js` — copied verbatim from `animated-slides-v2/history.js`;
-  it's fully generic (works off any `getState`/`setState` pair), so
-  there was nothing tool-specific to change.
+- `history.js` — loaded from `shared/` (see "Scaling decisions" #3), not
+  a per-tool copy. Originally a verbatim copy of
+  `animated-slides-v2/history.js`; since it's fully generic (works off
+  any `getState`/`setState` pair, no tool-specific logic ever needed),
+  the duplicate copy was retired in favor of both tools loading the same
+  file once it was promoted to `shared/`.
 - `index.html` — page shell + all the UI glue: left rail of "add block"
   buttons plus a Styles drawer opener, the player-card canvas
   (`tab-nav.js` for the strip, `block-renderer.js` for content, both
@@ -1092,273 +1154,83 @@ export ships its own hardcoded copy rather than reusing
   oversight — see "Content model" above); revisit only if an author
   specifically asks for rich text inside table cells.
 
-## Toggle Slides
+## Scaling decisions — agreed, not yet implemented
 
-An adaptation of Animated Slides v2 for a genuinely different interaction:
-instead of navigating between mutually-exclusive slides, nav buttons each
-independently toggle a group of elements on or off, on ONE persistent
-canvas. Any number of buttons can be on at once. Worked example: with
-buttons A/B/C, pressing A shows Element-A; then pressing C leaves
-Element-A shown and also shows Element-C; then pressing B leaves both and
-adds Element-B; then pressing C again leaves A and B shown and hides C.
-Despite the tool's name there are no "slides" at all — see the four
-scoping decisions this was built against (structure/grouping/animation/
-initial-state), settled up front before any code was written:
-single canvas (not multiple pages each with their own toggle nav), a
-button can own a group of several elements (not just one), toggling
-fades in/out with GSAP (not an instant show/hide), and each button's
-starting on/off state is author-configurable per button (not a single
-global default).
+A planning-only review session (no code touched) looked at how this
+project's structure holds up as more tools get added — expectation set
+at the time was **5-8 tools total, added over months**, not a much
+larger platform. The person made seven decisions during that session.
+None of the code/doc changes below have been made yet — this section is
+the record of what was decided, so a future session can execute against
+it without re-litigating the choices. Update/remove each bullet as its
+item gets done.
 
-**Multi-button reflow (added in a second scoping round, after the base
-tool above already existed)**: the original scoping explicitly ruled out
-"multiple slides" — but a real request came in for something that reads
-like slides from the outside (elements sliding to new positions as
-buttons toggle) without actually needing separate slide objects. Worked
-through with a concrete example before any code was written: a visible
-sentence "A man jumped." with three buttons, Adverb/Adjective/Proper
-Noun. Pressing Adverb inserts "quickly" and slides "jumped." right to
-make room. Pressing Adjective too (on top) inserts "tall" and slides
-"man"/"quickly"/"jumped." right again. Un-pressing Adverb removes
-"quickly" and closes the gap **back to Adjective's own layout**, not all
-the way back to the original — i.e., whichever buttons are still on
-keep asserting their own positions for the elements they touch. Pressing
-Proper Noun replaces "A tall man" with "John" by explicitly hiding "A",
-"tall", and "man" (not just failing to show them) while showing "John".
-None of this needed real multiple slides: it's implemented as
-per-button **overrides** on top of the base single-canvas model above —
-see `toggle-manager.js`'s class comment (OVERRIDES / CONFLICT RULE) for
-the mechanism, and the "Button overrides panel" bullet below for how an
-author edits it. The one governing rule, settled explicitly before
-implementation: when more than one currently-on button has an override
-for the same element, **the most-recently-toggled-ON button wins** —
-never a fixed priority/slide order. This was verified against the
-worked sentence example end-to-end (see git history for the Playwright
-script used) before being considered done.
-
-### Internal architecture (`tools/toggle-slides/`)
-
-Reuses Animated Slides v2's SVG canvas + element engine wholesale, since
-the element model (x/y/width/height, text/rect/arrow/icon) is exactly
-what this tool needs too — unlike Tabbed Panels, which needed a different
-content model entirely. `element-types.js`, `element-renderer.js`,
-`canvas-editor.js`, and `history.js` are copied verbatim from
-`animated-slides-v2/` (only their header comments were touched); v2's
-`slide-manager.js` and `nav-bar.js` are NOT reused, since both are built
-around exactly the mutually-exclusive-slide mechanic this tool replaces.
-
-- `toggle-manager.js` — `ToggleManager` is the single-canvas analogue of
-  v2's `SlideManager`: owns `elements`/`nodes` (one flat set, no
-  per-slide grouping) and `canvasSettings` (artboard/grid/nav style,
-  same shape as v2's), plus the toggle mechanic itself: a `buttons` array
-  (`{ id, label, elementIds: [...], hideElementIds: [...],
-  positionOverrides: { elementId: {x,y} }, defaultOn }`). An element with
-  no owning button (not in any button's `elementIds`) is visible by
-  default (static content, e.g. a title); one with 1+ owning buttons is
-  visible whenever ANY of them is on ("any-of" — most elements will only
-  ever have one owning button in practice, but this stays correct if an
-  author deliberately assigns the same element to two). That's the base
-  case; `hideElementIds` and `positionOverrides` layer the "reflow"
-  mechanic on top (see the section above and the file's class comment)
-  — a button can hide or reposition ANY element, not just ones it owns.
-  `resolve(elementId, activeButtons?)` is the single place the "most
-  recently toggled ON wins" conflict rule lives: it walks `toggleOrder`
-  (buttonId[], oldest first) in reverse, returns the first show/hide and
-  first position override it finds among currently-active buttons, and
-  falls back to base ownership visibility / the element's own stored x,y
-  if none of the active buttons say anything about that element.
-  `toggleButton()` maintains `toggleOrder` (push to the end on ON, remove
-  on OFF); `resetVisibleState()` rebuilds it from each button's
-  `defaultOn`, in button-list order, whenever preview is (re-)entered —
-  same "runtime-only, not part of getState()/setState()" status as
-  `visibleState` itself, for the same reason (playback state, not
-  project data — only the overrides that PRODUCE it are project data).
-  `applyVisibility()` now animates x/y alongside opacity for exactly this
-  reason — GSAP's `x`/`y` shorthand on the element group already tweens a
-  transform natively (see `element-renderer.js`'s `createElementNode`),
-  so no proxy-object trick was needed here unlike the cases described
-  under "Animating something GSAP can't tween natively" further down
-  this file. `previewButtonOverrides(buttonId)` is a second, separate
-  entry point into the same `resolve()` — used only by the button
-  overrides panel below to show "what would this look like if only this
-  button were on", without touching real `visibleState`/`toggleOrder` at
-  all. Layer ordering (`reorderLayer`/`moveLayerBefore`/
-  `getLayerOrder`) is copied over near-verbatim from `SlideManager`,
-  since "one flat bottom-to-top array" is exactly the same problem with
-  or without slides.
-  **EDIT vs PREVIEW is the one genuinely new state-management problem
-  here, with no v2 equivalent**: v2 can just always show whatever slide
-  is active, since only one slide is ever "the truth" at a time. Here,
-  the SAME canvas needs to serve two different truths — "everything
-  editable and visible so an author can work with it" vs. "only currently
-  -on elements visible, exactly what a learner would see" — and showing
-  real on/off opacity WHILE also allowing normal drag/select editing
-  would make it impossible to tell "this is off" from "I haven't looked
-  at it yet." Resolved by never running both at once:
-  `applyVisibility(animate)` (opacity + `pointerEvents` per element, from
-  `visibleState`) is ONLY ever called while in Preview mode;
-  `showAllElements()` (forces every element back to opacity 1,
-  interactive) is what runs the rest of the time, including immediately
-  on exiting preview. `visibleState` itself (buttonId -> boolean) is
-  runtime-only, seeded from each button's `defaultOn` via
-  `resetVisibleState()` on every preview entry — it is NOT part of
-  `getState()`/`setState()`, since "which buttons are currently on" is
-  playback state, not project data.
-- `toggle-nav.js` — copied from v2's `nav-bar.js` (same pagination-by-
-  page, GSAP page-swap-animation, styling code) with exactly one
-  substantive change: v2 tracks a single `activeIndexRef` (one active
-  slide); this tracks a whole `Set` of on button ids (`activeIdsRef`),
-  and a click always means "flip THIS button, leave every other one
-  alone" rather than "switch to this one." Buttons are matched by `id`
-  in the active/inactive check, not index, since (unlike v2) the set of
-  "on" ids doesn't shift just because the button list was reordered. See
-  the file's header comment for the full v2 diff.
-- `layer-panel.js` — copied from v2's, with the "linked across slides"
-  badge (meaningless here — there's no second canvas to be linked to)
-  replaced by a small pill showing which button(s), if any, currently own
-  the row's element (via `toggleManager.buttonsForElement()`).
-- `index.html` — page shell + UI glue. Left rail: the same 4
-  add-element buttons as v2, then Layers/Settings drawer-openers — no
-  "add linked element" button, since there's no cross-canvas linking
-  concept to link from. Bottom bar (`#editor-button-bar`) is the toggle-
-  button equivalent of v2's slide bar: one chip per button (label,
-  double-click rename, drag-to-reorder, hover-reveal duplicate/delete),
-  plus a small dot toggling that button's `defaultOn`. Assigning an
-  element to buttons is a checkbox list (`renderAssignButtonsSection()`)
-  rendered into the Layers side-panel below the layer list, reacting to
-  `CanvasEditor`'s `onSelect` hook — shows a placeholder when 0 or 2+
-  elements are selected, checkboxes (one per current button) when
-  exactly 1 is. A top-bar **Preview** button (`togglePreview()`) is the
-  only thing that flips between the edit/preview split described above:
-  entering preview closes both side panels, deselects, sets
-  `#canvas-wrapper` to `pointer-events: none` (blocks direct
-  drag/select while a learner-facing preview is live), and calls
-  `resetVisibleState()` + `applyVisibility(false)`; exiting reverses all
-  of that via `showAllElements()`. The nav bar's `onToggle` callback is
-  gated on `previewMode` — clicking a button while NOT previewing is a
-  no-op, since `showAllElements()` would just mask it anyway and a
-  silent state change armed for the next preview would be confusing.
-  Export reuses `element-types.js`/`element-renderer.js`/
-  `toggle-manager.js`/`toggle-nav.js` verbatim (same "one engine, no
-  second copy to drift" rule as v2 and Tabbed Panels) — the exported
-  player is effectively always in "preview mode": it calls
-  `resetVisibleState()` + `applyVisibility(false)` once on load, then
-  wires the nav bar straight to `toggleManager.toggleButton(id)`, with no
-  edit-mode branch to speak of since a learner never edits anything.
-  "Load from code" parses `const elements = ...` / `const buttons = ...`
-  / `const canvasSettings = ...` back out of a pasted export — same
-  approach as v2's import, adapted for the extra `buttons` array.
-- **Button overrides panel** (`#button-overrides-panel`, a fourth
-  `.side-panel` alongside Layers/Settings — same slide-out mechanism,
-  same "only one open at a time" rule: opening it closes the other two
-  and vice versa, via `closeButtonOverridesPanel()` calls added into
-  `openLayersPanel()`/`openSettingsPanel()`). Opened by clicking a
-  button chip in the bottom bar (not its dot/duplicate/delete
-  sub-buttons, which `stopPropagation()`). Lists every element on the
-  canvas (`renderButtonOverridesPanel()`) with a three-way segmented
-  control (No override / Show / Hide, backed by
-  `ToggleManager.setElementVisibilityOverride()`) and a "Move" checkbox
-  + X/Y number inputs (backed by `setElementPositionOverride()` /
-  `clearElementPositionOverride()`) — deliberately numeric fields, not
-  drag-on-canvas, since redirecting `CanvasEditor`'s existing drag
-  handler to write into a button's override object instead of the
-  element's base `x`/`y` would have meant forking its drag-handling
-  code; revisit only if numeric-only editing turns out to be a real
-  friction point in practice. A **"Preview this button ON"** switch at
-  the top of the panel calls `toggleManager.previewButtonOverrides()`
-  (same `#canvas-wrapper.preview-active` pointer-events-none treatment
-  as the main learner-facing Preview button) so an author can see the
-  effect of their overrides without leaving the panel; every edit made
-  while it's on calls `refreshButtonOverridePreviewIfActive()`
-  afterward so typing a new number or flipping Show/Hide updates the
-  live preview immediately rather than only on the next real toggle.
-  Opening the panel force-exits the main Preview mode first
-  (`if (previewMode) togglePreview();`) since the two are different
-  "what does the canvas mean right now" states and were never meant to
-  run simultaneously.
-  **Override ghosts** (`#override-ghost-layer`, a `<g>` sibling of
-  `elements-layer` inside the authoring SVG only — never present in the
-  exported player): numeric X/Y fields alone turned out to be hard to
-  reason about spatially, so while the overrides panel is open (and NOT
-  live-previewing — the real elements already show the resolved state
-  then, a ghost on top would be redundant) `renderOverrideGhosts()` draws
-  a translucent (opacity 0.45) duplicate of every element that has a
-  `positionOverride` for the button being edited, sitting AT that
-  override position, plus a dashed line back to the element's own base
-  `(x, y)` — so an author can see where something is going without
-  reading coordinates. The ghost is a real, separate SVG node built via
-  `createElementNode()` (given `id: 'ghost-' + elementId` so an arrow
-  ghost's `<marker>` id never collides with the real element's), NOT
-  registered with `CanvasEditor` — dragging it is a small self-contained
-  pointerdown/pointermove/pointerup handler in `index.html`
-  (`attachGhostDrag()`) using the same `screenToSVGPoint()` helper
-  `canvas-editor.js` uses, rather than routing through
-  `CanvasEditor`'s own drag machinery (which only ever knows how to
-  write to an element's base position — forking it to redirect into a
-  button's override object would have meant duplicating its drag-state
-  handling for one field). Dragging writes directly into
-  `btn.positionOverrides[elementId]` (mutated in place, same convention
-  as everywhere else) and updates the ghost/line/number-inputs live via
-  direct DOM refs (`panelInputRefs`, populated by
-  `renderButtonOverridesPanel()`) rather than a full panel re-render on
-  every pointermove — same reasoning as `CanvasEditor`'s own drag loop
-  not wanting to rebuild unrelated UI every frame, just applied to a
-  smaller surface. `history.beginAction()`/`commitAction()` bracket the
-  whole drag (one undo step per drag, not one per frame), and
-  `refreshUI()` on pointerup does one clean full re-render — this is
-  also what makes the numeric fields still work as a precision fallback:
-  typing a value re-renders the panel, which re-renders the ghosts from
-  the committed state, same as a drag would have.
-
-### Apps Script deployment
-
-Deployed via the same 5-substitution pipeline as v2/Tabbed Panels (see
-"The Apps Script deployment pipeline" above), and `Code.gs`'s `PAGES`
-entry is uncommented, so it's reachable from the hub once redeployed.
-Four of the seven `.js`/module files this tool needs already existed as
-reusable AppScript includes from Animated Slides v2 — `ElementTypesJs.html`,
-`ElementRendererJs.html`, `CanvasEditorJs.html`, `HistoryJs.html` — byte-
-identical to `tools/toggle-slides/`'s copies, so nothing new was created
-for those, just referenced via `include()`. Three genuinely new files were
-needed for the parts with no v2 equivalent: `ToggleManagerJs.html`,
-`ToggleNavJs.html`, and `ToggleLayerPanelJs.html` — note the "Toggle"
-prefix on the last one specifically to avoid colliding with v2's own
-existing `LayerPanelJs.html` (Apps Script's file namespace is flat across
-the whole project, unlike `tools/{tool-id}/` folders). Export's
-module-fetching code was swapped for an embedded `MODULE_SOURCES` object
-(substitution 2), generated programmatically from the real source files
-(byte-for-byte, verified via direct comparison) rather than hand-typed,
-same approach Tabbed Panels used, to avoid escaping mistakes.
-**Still unverified end to end**: none of this has actually been pasted
-into a live Apps Script project yet — do a real Save/Load round-trip
-(same as Tabbed Panels' own open item) before treating this as fully done.
-
-**Multi-button-overrides work is now hand-synced into both deployed
-files**: `AppScript/ToggleManagerJs.html` was re-synced byte-for-byte
-from `tools/toggle-slides/toggle-manager.js` (pure `<script>` wrap,
-substitution 1 only). `AppScript/ToggleSlides.html` got the same
-button-overrides panel (HTML/CSS/JS) added from `tools/toggle-slides/
-index.html`, applied as a pure additive patch (191 lines, 0 deletions)
-against the exact anchor text shared by both files — the new code
-doesn't touch `<link>`/`<script src>` tags, the module-fetching/
-`MODULE_SOURCES` code, the hub link, `<base target>`, or
-`STORAGE_API_KEY`, so none of the other four substitutions were
-affected or needed redoing. The follow-up override-ghosts work (see
-"Override ghosts" above) was synced the same way, same-session, same
-patch-against-shared-anchor-text approach. This tool is still otherwise
-"unverified end to end" — the Save/Load round-trip against a real Apps
-Script project hasn't been exercised yet — so a real deploy is the next
-thing to confirm, not something already checked off here.
-
-### What's NOT built yet
-
-- **Touch/tablet drag-and-drop** — the button bar's reorder uses native
-  HTML5 drag-and-drop, same known touchscreen gap as v2's slide/layer
-  reordering.
-- No accessibility pass, no narrow-window layout testing — same standing
-  gaps as v2 and Tabbed Panels.
-- No thumbnail preview on the button chips (v2's slide tabs render a
-  live mini-SVG per slide; a button chip here has no single "the content"
-  to thumbnail, since a button's elements sit among everyone else's on
-  the same canvas) — revisit only if authors report losing track of
-  which button owns what without opening the Layers panel.
+1. **Deploy checklist**: done — see `DEPLOY_CHECKLIST.md`, a standalone
+   file with literal checkboxes per file/substitution, built from the
+   5-substitution pipeline explained in "The Apps Script deployment
+   pipeline" above (which remains the source of truth for *why* each
+   step exists; the checklist file is the executable version for
+   actually doing a sync). Use it every time `AppScript/*.html` is
+   hand-synced from `tools/` source.
+2. **`clasp`/build automation**: settled — stays deferred, but now on an
+   explicit trigger rather than an open-ended "someday": **revisit
+   automating the Apps Script deploy (`clasp` or equivalent) the next
+   time a hand-sync bug actually ships to production**, not at a fixed
+   tool-count checkpoint. Three such incidents are already on record
+   (see the deployment-pipeline section above); a fourth is the agreed
+   trigger to stop deferring this — not "we've had incidents before," a
+   genuinely new one. `HANDOFF.md`'s "Older, still-outstanding items"
+   section carries the same trigger language so a future session doesn't
+   see two docs disagreeing about whether this is due now. There is
+   nothing left to implement for this item until that trigger fires —
+   it's a decision record, not a pending task.
+3. **Shared canvas engine**: done — `canvas-editor.js`, `element-types.js`,
+   `element-renderer.js`, and `history.js` moved from
+   `tools/animated-slides-v2/` into `shared/`. v2's `index.html` and
+   Export code (`fetchModuleSources()`) now load them from `../../shared/`;
+   Tabbed Panels' own duplicate `history.js` was retired and it now loads
+   the shared copy too (it was already byte-identical, just comment
+   headers differed). Verified: both tools load cleanly in a real browser
+   (Playwright, local preview) with no console/page errors and the
+   expected globals (`CanvasEditor`, `ELEMENT_TYPES`, `History`,
+   `TabManager`) present; `AppScript/{ElementTypesJs,ElementRendererJs,
+   CanvasEditorJs,HistoryJs}.html`'s header comments were updated to
+   match (comment-only, no functional change) and `AnimatedSlidesV2.html`'s
+   `MODULE_SOURCES.elementTypes`/`.elementRenderer` were regenerated and
+   confirmed byte-for-byte against the new `shared/` files. This becomes
+   the fork point for every future canvas-based tool (Apps Script's flat
+   file namespace already supports one shared `include('ElementRendererJs')`
+   etc. across multiple `PAGES` entries — no plugin/import system needed).
+4. **Reconcile existing forks**: moot for now — Toggle Slides, the only
+   tool with a diverged fork of these four files, was removed entirely
+   (see the "Toggle Slides" bullet under Architecture above; it didn't
+   meet requirements). The investigation for this item did surface a
+   real, separate, already-live bug worth remembering if a future
+   canvas-based tool forks these files again: a *shared* Apps Script
+   include (e.g. `AppScript/CanvasEditorJs.html`) can silently drift out
+   of sync with what a *specific* tool page still expects (constructor
+   options, DOM hooks) even while the include itself stays byte-valid —
+   diff what a forking tool's own deployed page expects against the
+   shared include's actual current API before assuming a shared file is
+   still compatible, don't just diff repo source against repo source.
+5. **Cross-tool pattern docs**: done — standardized as a written rule in
+   the new "Starting a new tool" section above: once a second tool
+   implements a shared UI pattern (folders/project-list, toasts/modals,
+   side panels, etc.) and the two implementations aren't identical, that
+   pattern gets its own standalone reference doc (like `SIDEBAR.md`),
+   rather than only writing one opportunistically after a bug forces the
+   cross-tool comparison, and rather than folding everything into this
+   file. This item was always "applies going forward, no retroactive doc
+   needed" — no existing pattern besides `SIDEBAR.md`'s (side panels)
+   needed a doc written just because of this decision, so there's no
+   further backlog here, only the standing rule for next time.
+6. **Verification/production backlog**: clear the existing "unverified
+   against a live Apps Script deployment" backlog (Tabbed Panels'
+   Save/Load/Export round-trip, SVG upload, folder-support round-trip —
+   all tracked in `HANDOFF.md` and cross-referenced throughout this
+   file; Toggle Slides' items dropped off this list with its removal)
+   **before** starting any
+   new tool, rather than letting it keep growing alongside new work.
+7. **`AppScript/x`**: deleted — was a stray tracked, apparently
+   content-free file from an unrelated stray commit, not part of any
+   tool's real file set. Done.

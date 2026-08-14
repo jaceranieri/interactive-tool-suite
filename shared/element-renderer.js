@@ -1,9 +1,12 @@
 /* ==========================================================================
-   Toggle Slides — Shared Element Renderer (copied verbatim from animated-slides-v2)
+   Shared Canvas Engine — Element Renderer
    The single "recipe card" for drawing and updating each element type.
    Used identically by the authoring canvas AND the exported player — no
    second copy to drift out of sync. Requires GSAP and element-types.js to
    be loaded first.
+   Promoted from tools/animated-slides-v2/ to shared/ so future
+   canvas-based tools fork from here instead of copy-pasting v2's copy —
+   see CLAUDE.md's "Scaling decisions" #3.
 
    This engine is deliberately "dumb": given element data, it creates or
    updates the visual SVG node. It knows nothing about selection, drag
@@ -29,7 +32,18 @@
    ========================================================================== */
 
 const svgNS = "http://www.w3.org/2000/svg";
-const TEXT_FONT_FAMILY = "'IBM Plex Sans', system-ui, sans-serif";
+
+/* Text's available font choices — the CSS the exported page/authoring page
+   loads from Google Fonts (see index.html's <head> link and the Export
+   template's own copy) must include every font listed here. Add a new
+   entry here and it shows up in the properties popup's font picker
+   automatically (see element-types.js's 'fontpicker' field type / canvas-
+   editor.js's _buildField) — same "add it here, wired up everywhere"
+   pattern ICON_PATHS below already uses for icons. */
+const FONT_FAMILIES = {
+  sans: { label: 'Sans', css: "'IBM Plex Sans', system-ui, sans-serif" },
+  handwriting: { label: 'Handwriting', css: "'Caveat', cursive" },
+};
 
 const ICON_PATHS = {
   "star": "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
@@ -49,8 +63,8 @@ const ICON_PATHS = {
    the same font is accurate enough for wrapping while costing nothing. */
 const _measureCanvas = document.createElement('canvas').getContext('2d');
 
-function measureTextWidth(str, fontSize, fontWeight) {
-  _measureCanvas.font = `${fontWeight || 700} ${fontSize}px ${TEXT_FONT_FAMILY}`;
+function measureTextWidth(str, fontSize, fontWeight, fontFamily) {
+  _measureCanvas.font = `${fontWeight || 700} ${fontSize}px ${fontFamily}`;
   return _measureCanvas.measureText(str).width;
 }
 
@@ -60,7 +74,7 @@ function measureTextWidth(str, fontSize, fontWeight) {
  * A single word longer than maxWidth is left overflowing rather than
  * broken mid-word — breaking it would usually be more surprising.
  */
-function wrapTextLines(content, maxWidth, fontSize, fontWeight) {
+function wrapTextLines(content, maxWidth, fontSize, fontWeight, fontFamily) {
   const lines = [];
   (content || '').split('\n').forEach(paragraph => {
     const words = paragraph.split(/\s+/).filter(Boolean);
@@ -68,7 +82,7 @@ function wrapTextLines(content, maxWidth, fontSize, fontWeight) {
     let line = words[0];
     for (let i = 1; i < words.length; i++) {
       const candidate = line + ' ' + words[i];
-      if (measureTextWidth(candidate, fontSize, fontWeight) <= maxWidth) {
+      if (measureTextWidth(candidate, fontSize, fontWeight, fontFamily) <= maxWidth) {
         line = candidate;
       } else {
         lines.push(line);
@@ -88,12 +102,13 @@ function wrapTextLines(content, maxWidth, fontSize, fontWeight) {
 function layoutText(textEl, data) {
   const fontSize = data.fontSize || 52;
   const fontWeight = data.fontWeight || '700';
+  const fontFamily = (FONT_FAMILIES[data.fontFamily] || FONT_FAMILIES.sans).css;
   const padding = data.padding !== undefined ? data.padding : 10;
   const lineHeight = (data.lineHeight || 1.3) * fontSize;
   const align = data.align || 'center';
   const innerWidth = Math.max(1, data.width - padding * 2);
 
-  const lines = wrapTextLines(data.content, innerWidth, fontSize, fontWeight);
+  const lines = wrapTextLines(data.content, innerWidth, fontSize, fontWeight, fontFamily);
 
   // Grow the element's box to fit the wrapped text.
   const naturalHeight = lines.length * lineHeight + padding * 2;
@@ -154,6 +169,34 @@ function roundedRectPath(width, height, tl, tr, br, bl) {
     Z
   `.trim();
 }
+/**
+ * Turns a sequence of already-simplified points into a smooth SVG path `d`
+ * string via a Catmull-Rom-to-Bezier conversion (the standard tension-1/6
+ * form) — this is what actually removes the "jitter" a raw mouse trace has,
+ * by curving *through* every point rather than connecting them with
+ * straight segments. Runs identically at authoring time and inside the
+ * exported player, since it only depends on `points` — no live pointer
+ * data involved (that part is CanvasEditor's job, see simplifyPoints there).
+ */
+function smoothedPathFromPoints(points) {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
 function createElementNode(data) {
   const g = document.createElementNS(svgNS, "g");
   g.setAttribute("id", data.id);
@@ -162,7 +205,6 @@ function createElementNode(data) {
 
   if (data.type === 'text') {
     const textEl = document.createElementNS(svgNS, "text");
-    textEl.setAttribute('font-family', TEXT_FONT_FAMILY);
     g.appendChild(textEl);
     applyTextStyle(textEl, data, false);
     _textNodes.add({ textEl, data });
@@ -213,6 +255,27 @@ function createElementNode(data) {
     return { group: g, line, markerPath, hitLine, visualGroup };
   }
 
+  if (data.type === 'draw') {
+    const shape = document.createElementNS(svgNS, "path");
+    shape.setAttribute('fill', 'none');
+    shape.setAttribute('stroke-linecap', 'round');
+    shape.setAttribute('stroke-linejoin', 'round');
+    g.appendChild(shape);
+
+    // Same "invisible wide stroke purely to catch pointer events" trick as
+    // the arrow's hitLine — a 1-6px smoothed stroke is otherwise very hard
+    // to click precisely.
+    const hitShape = document.createElementNS(svgNS, "path");
+    hitShape.setAttribute('fill', 'none');
+    hitShape.setAttribute('stroke', '#000');
+    hitShape.setAttribute('opacity', '0');
+    hitShape.setAttribute('pointer-events', 'stroke');
+    g.appendChild(hitShape);
+
+    applyDrawStyle(shape, hitShape, data, false);
+    return { group: g, shape, hitShape };
+  }
+
   if (data.type === 'icon') {
     const iconSvg = document.createElementNS(svgNS, "svg");
     iconSvg.setAttribute("viewBox", "0 0 24 24");
@@ -223,6 +286,18 @@ function createElementNode(data) {
     g.appendChild(iconSvg);
     applyIconStyle(iconSvg, iconPath, data, false);
     return { group: g, iconSvg, iconPath };
+  }
+
+  if (data.type === 'svg') {
+    const svgWrap = document.createElementNS(svgNS, "svg");
+    svgWrap.setAttribute("width", data.width);
+    svgWrap.setAttribute("height", data.height);
+    // svgMarkup is already-sanitized *inner* content (see svg-sanitizer.js)
+    // — safe to inject directly, no outer <svg> tag to strip.
+    svgWrap.innerHTML = data.svgMarkup || '';
+    g.appendChild(svgWrap);
+    applySvgStyle(svgWrap, data, false);
+    return { group: g, svgWrap };
   }
 
   throw new Error(`Unknown element type: ${data.type}`);
@@ -245,8 +320,12 @@ function updateElementNode(node, data, { animate = false, duration = 0.8 } = {})
     applyRectStyle(node.shape, data, animate, duration);
   } else if (data.type === 'arrow') {
     applyArrowStyle(node.line, node.markerPath, node.hitLine, node.visualGroup, data, animate, duration);
+  } else if (data.type === 'draw') {
+    applyDrawStyle(node.shape, node.hitShape, data, animate, duration);
   } else if (data.type === 'icon') {
     applyIconStyle(node.iconSvg, node.iconPath, data, animate, duration);
+  } else if (data.type === 'svg') {
+    applySvgStyle(node.svgWrap, data, animate, duration);
   }
 }
 
@@ -266,6 +345,7 @@ function setOrTween(el, attrs, animate, duration) {
 
 function applyTextStyle(textEl, data, animate, duration = 0.8) {
   textEl.setAttribute('font-weight', data.fontWeight || '700');
+  textEl.setAttribute('font-family', (FONT_FAMILIES[data.fontFamily] || FONT_FAMILIES.sans).css);
   textEl.setAttribute('fill', data.color || '#1f2937');
 
   const targetFontSize = data.fontSize || 52;
@@ -396,11 +476,74 @@ function applyArrowStyle(line, markerPath, hitLine, visualGroup, data, animate, 
   line._lastGeom = target;
 }
 
+/**
+ * `data.points` are stored normalized to the element's own width/height
+ * (each x/y in 0..1) — exactly like rect reading data.width/height to build
+ * its path — so a plain corner-drag resize (no draw-specific resize code
+ * needed in canvas-editor.js) scales the whole drawing for free. The path
+ * shape itself is never tweened frame-by-frame during animate:true
+ * transitions (same "reflow is discrete" reasoning as text) — only opacity
+ * eases; a resized/linked drawing just snaps to its new scaled geometry
+ * while the group's x/y/opacity animate around it.
+ */
+function applyDrawStyle(shape, hitShape, data, animate, duration = 0.8) {
+  const color = data.color || '#1f2937';
+  const strokeWidth = data.strokeWidth || 6;
+  const opacity = data.opacity !== undefined ? data.opacity : 1;
+
+  const scaledPoints = (data.points || []).map(p => ({ x: p.x * data.width, y: p.y * data.height }));
+  const d = smoothedPathFromPoints(scaledPoints);
+  shape.setAttribute('d', d);
+  shape.setAttribute('stroke', color);
+  shape.setAttribute('stroke-width', strokeWidth);
+  if (hitShape) {
+    hitShape.setAttribute('d', d);
+    hitShape.setAttribute('stroke-width', Math.max(20, strokeWidth + 16));
+  }
+
+  setOrTween(shape, { opacity }, animate, duration);
+}
+
 function applyIconStyle(iconSvg, iconPath, data, animate, duration = 0.8) {
   const opacity = data.opacity !== undefined ? data.opacity : 1;
   setOrTween(iconSvg, { width: data.width, height: data.height, opacity }, animate, duration);
   iconSvg.setAttribute('fill', data.color || '#1f2937');
   const d = ICON_PATHS[data.iconName] || ICON_PATHS.star;
   if (iconPath.getAttribute('d') !== d) iconPath.setAttribute('d', d);
+}
+
+/**
+ * Flattens every fill/stroke/gradient-stop in an uploaded SVG to a single
+ * accent colour — the "single accent colour" recolour model this type
+ * deliberately settled on over a per-shape palette. An element with no
+ * `fill` attribute at all still defaults to black per the SVG spec, so it's
+ * treated the same as an explicit non-"none" fill (recoloured); an explicit
+ * `fill="none"` (an outline-only shape) is left alone so stroke-only icons
+ * still read as outlines rather than gaining a fill. Re-run on every style
+ * update rather than baked into the stored `svgMarkup`, same as icon's own
+ * `color` field re-applying `fill` on every render.
+ */
+function applySvgAccentColor(root, color) {
+  const FILLABLE_TAGS = new Set(['path', 'rect', 'circle', 'ellipse', 'polygon', 'polyline']);
+  root.querySelectorAll('*').forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    const fill = el.getAttribute('fill');
+    if (fill !== 'none' && (fill || FILLABLE_TAGS.has(tag))) {
+      el.setAttribute('fill', color);
+    }
+    if (el.hasAttribute('stroke') && el.getAttribute('stroke') !== 'none') {
+      el.setAttribute('stroke', color);
+    }
+    if (tag === 'stop' && el.hasAttribute('stop-color')) {
+      el.setAttribute('stop-color', color);
+    }
+  });
+}
+
+function applySvgStyle(svgWrap, data, animate, duration = 0.8) {
+  const opacity = data.opacity !== undefined ? data.opacity : 1;
+  setOrTween(svgWrap, { width: data.width, height: data.height, opacity }, animate, duration);
+  if (data.originalViewBox) svgWrap.setAttribute('viewBox', data.originalViewBox);
+  applySvgAccentColor(svgWrap, data.accentColor || '#1f2937');
 }
 

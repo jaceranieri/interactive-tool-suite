@@ -152,49 +152,52 @@ asked for this explicitly; keep doing it unprompted.
   `apiMoveProject`/`apiCreateFolder`/`apiDeleteFolder`. Re-paste
   `Code.gs` (and `storage-backend.gs` if using the standalone fallback)
   and do a real folder round-trip before trusting it in production.
-- **Toggle Slides**: the multi-button-overrides panel was confirmed
-  working in a real Apps Script deployment by the person in an earlier
-  session, but the **ghost-overlay/drag addition that came afterward has
-  never been confirmed there** — only in local Playwright preview. Try
-  dragging a ghost with a real mouse/trackpad; it's genuinely new
-  interaction code, not just a data-model change.
-- **PR #10** (https://github.com/jaceranieri/interactive-tool-suite/pull/10)
-  against `claude/toggle-slides-multi-slide-hyhuh7` may still be open —
-  check its state. Nobody has decided whether to subscribe a session to
-  its activity for auto CI-fix / review-comment handling; ask, don't
-  assume.
+- **Toggle Slides — removed 2026-08-14**, didn't meet requirements. Its
+  verification items (ghost-drag, live deployment) are moot. **PR #10**
+  (against `claude/toggle-slides-multi-slide-hyhuh7`) is now stale if
+  still open — worth closing on GitHub, not something this file can do.
+  See CLAUDE.md's Architecture section for the one-line removal note and
+  git history before this commit for the tool's full former state.
 
 ## What's next
 
+0. **Read CLAUDE.md's "Scaling decisions" section.** Seven decisions
+   were made about deploy tooling, the shared canvas engine, fork
+   reconciliation, and doc/verification conventions as the suite grows.
+   #1, #2, and #7 are done; #4 became moot when Toggle Slides was
+   removed; #3, #5, #6 are still open.
 1. **Confirm the export nav-bar + font fix live** (see the top section).
    Nothing else about v2 should be considered done until this is.
 2. **Exercise SVG upload against the live deployment** — upload a real
    SVG, save, reload, export, embed. Only local-preview verified so far.
 3. **Do the real Apps Script round-trips for Tabbed Panels** — still the
    single most important unverified thing project-wide.
-4. Confirm Toggle Slides' ghost-drag interaction in a real deployment.
-5. Consider backporting the explicit Save-folder-picker from Tabbed
+4. Consider backporting the explicit Save-folder-picker from Tabbed
    Panels to v2, for consistency.
-6. **Wire folder browsing into v1's Open modal** — the only tool left
+5. **Wire folder browsing into v1's Open modal** — the only tool left
    without it.
-7. **v2 Canvas Settings swatch consistency audit** — older backlog item,
+6. **v2 Canvas Settings swatch consistency audit** — older backlog item,
    raised while reviewing Tabbed Panels' Styles drawer, never started.
-8. Touch/tablet drag-and-drop, accessibility pass, narrow-window layout —
-   standing gaps across v2 / Tabbed Panels / Toggle Slides, deferred
-   many times now.
+7. Touch/tablet drag-and-drop, accessibility pass, narrow-window layout —
+   standing gaps across v2 / Tabbed Panels, deferred many times now.
 
 ## Older, still-outstanding items from earlier in the project
 
 - **GitHub → Apps Script auto-deploy via `clasp`** — deferred at project
-  start, never revisited. This session alone hand-synced 4 AppScript
-  files and *the single biggest bug of the session was a hand-sync
-  corruption*, so the cost of not having this is no longer theoretical.
-  Strongest argument yet for finally doing it.
+  start, never revisited for a long time. A later planning session (see
+  CLAUDE.md's "Scaling decisions" #2) turned this from an open-ended
+  "someday" into an explicit trigger: **revisit it the next time a
+  hand-sync bug actually ships to production**, rather than at a fixed
+  tool-count checkpoint. Three incidents are already on record in
+  CLAUDE.md's deployment-pipeline section (including one from this
+  session's hand-sync work) — a fourth is the agreed signal to stop
+  deferring. Don't treat "we've had incidents" alone as license to start
+  this unprompted; the trigger is specifically the *next* one.
 
 ## Where to find things
 
 `CLAUDE.md` has the durable record: Animated Slides v2's architecture
 (including the new "Uploaded SVGs" and "Handwriting font" sections), the
 Apps Script deployment pipeline and its 5 substitutions, all three
-"nav bar missing" post-mortems written up in full, Tabbed Panels' and
-Toggle Slides' architecture, and the local-preview workflow.
+"nav bar missing" post-mortems written up in full, Tabbed Panels'
+architecture, and the local-preview workflow.

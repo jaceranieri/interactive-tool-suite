@@ -1,11 +1,14 @@
 <script>
 /* ==========================================================================
-   Animated Slides v2 — Canvas Editor
+   Shared Canvas Engine — Canvas Editor
    Selection (including multi-select), drag-to-move, and resize handles.
    Sits entirely ON TOP of element-renderer.js — never modifies it, only
    reads/writes the same element `data` objects and calls
    updateElementNode() to reflect changes. This is what keeps the renderer
    reusable unchanged inside the exported player, which has none of this.
+   Promoted from tools/animated-slides-v2/ to shared/ so future
+   canvas-based tools fork from here instead of copy-pasting v2's copy —
+   see CLAUDE.md's "Scaling decisions" #3.
 
    Property editing used to live here too, as a floating contextual popup
    positioned beside the selected element. It now lives in index.html's

@@ -37,11 +37,7 @@ const PAGES = {
     description: 'Build tabbed content with headings, text, lists, and linking buttons.',
     status: 'in development',
   },
-  'toggle-slides': {
-    file: 'ToggleSlides', title: 'Toggle Slides',
-    description: 'A single canvas where nav buttons independently toggle groups of elements on and off.',
-    status: 'in development',
-  },
+  // 'toggle-slides': { file: 'ToggleSlides', title: 'Toggle Slides', description: 'A single canvas where nav buttons independently toggle groups of elements on and off.', status: 'in development' },  <- removed 2026-08-14, didn't meet requirements, see CLAUDE.md
   // 'tabbed-container': { file: 'TabbedContainer', title: 'Tabbed Container', description: '...', status: 'stable' },  <- add once migrated
   // 'worked-example': { file: 'WorkedExample', title: 'Worked Example', description: '...', status: 'stable' },        <- add once migrated
 };

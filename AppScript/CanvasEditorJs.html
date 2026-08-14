@@ -105,6 +105,10 @@ class CanvasEditor {
     this.drawMode = false; // true while the freehand ("Draw") tool is armed
     this.freehand = null; // active in-progress stroke, or null
     this.onDrawModeChange = onDrawModeChange;
+    this.guidesLayer = null; // the <g> guide lines render into — see renderGuides()
+    this.selectedGuide = null; // { orientation, id } of a clicked guide, or null — independent of selectedIds (an element and a guide are never selected at once)
+    this.guideDrag = null; // active guide-reposition drag state, or null
+    this._activeSnapGuideIds = new Set(); // guide ids currently engaged by a drag-in-progress, for the live highlight
 
     this.svg.addEventListener('pointerdown', (e) => {
       // Draw mode intercepts pointerdown regardless of what's underneath —
@@ -113,7 +117,10 @@ class CanvasEditor {
       // check the same flag and bail out before stopPropagation(), so this
       // still fires even when the pointerdown started on top of a node.
       if (this.drawMode) { this._startFreehand(e); return; }
-      if (e.target === this.svg) this._startMarquee(e);
+      if (e.target === this.svg) {
+        if (this.selectedGuide) { this.selectedGuide = null; this.renderGuides(); }
+        this._startMarquee(e);
+      }
     });
 
     Object.values(nodes).forEach((node) => this._attachSelection(node));
@@ -130,6 +137,22 @@ class CanvasEditor {
 
       if (e.key === 'Escape' && this.drawMode) {
         this.setDrawMode(false);
+        return;
+      }
+
+      // Shift+R toggles guides on/off (visibility AND snapping — see
+      // defaultGuides()'s doc comment) — checked before the
+      // selectedIds-gated shortcuts below since it should work regardless
+      // of what, if anything, is selected.
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        this.toggleGuidesEnabled();
+        return;
+      }
+
+      if (this.selectedGuide && (e.key === 'Delete' || e.key === 'Backspace')) {
+        this.removeGuide(this.selectedGuide.orientation, this.selectedGuide.id);
+        this.selectedGuide = null;
         return;
       }
 
@@ -538,6 +561,7 @@ class CanvasEditor {
 
   _onPointerMove(e) {
     if (this.freehand) { this._updateFreehand(e); return; }
+    if (this.guideDrag) { this._updateGuideDrag(e); return; }
     if (this.marqueeDrag) { this._updateMarquee(e); return; }
     if (!this.drag) return;
     const data = this.elements[this.drag.id];
@@ -563,13 +587,13 @@ class CanvasEditor {
     }
 
     if (this.drag.type === 'move' && this.drag.multiStart) {
-      // Snap the grabbed element's new position, derive the actual delta
+      // Snap the grabbed element's new position (guide-snap first, falling
+      // back to grid-snap — see _resolveMoveSnap), derive the actual delta
       // that resulted, then apply that SAME delta to everything else
       // selected — keeps the group's relative layout intact rather than
       // snapping each element to the grid independently.
       const anchor = this.drag.multiStart.find((m) => m.id === this.drag.id);
-      const snappedX = this._snap(anchor.x + moveDx);
-      const snappedY = this._snap(anchor.y + moveDy);
+      const { x: snappedX, y: snappedY } = this._resolveMoveSnap(data, anchor.x + moveDx, anchor.y + moveDy);
       const appliedDx = snappedX - anchor.x;
       const appliedDy = snappedY - anchor.y;
       this.drag.multiStart.forEach((m) => {
@@ -585,8 +609,9 @@ class CanvasEditor {
     }
 
     if (this.drag.type === 'move') {
-      data.x = this._snap(this.drag.startData.x + moveDx);
-      data.y = this._snap(this.drag.startData.y + moveDy);
+      const snapped = this._resolveMoveSnap(data, this.drag.startData.x + moveDx, this.drag.startData.y + moveDy);
+      data.x = snapped.x;
+      data.y = snapped.y;
     } else if (this.drag.type === 'resize') {
       this._applyResize(data, dx, dy, this.drag.corner);
     } else if (this.drag.type === 'arrow-tip') {
@@ -607,11 +632,13 @@ class CanvasEditor {
 
   _onPointerUp() {
     if (this.freehand) { this._finishFreehand(); return; }
+    if (this.guideDrag) { this._finishGuideDrag(); return; }
     if (this.marqueeDrag) { this._finishMarquee(); return; }
     if (!this.drag) return;
     const narrowTo = this.drag.narrowCandidate;
     if (this.history) this.history.commitAction();
     this.drag = null;
+    if (this._activeSnapGuideIds.size > 0) { this._activeSnapGuideIds = new Set(); this.renderGuides(); } // clear the live snap highlight
     if (narrowTo) this.select(narrowTo); // was a plain click on a multi-selected element, no real drag — narrow to just this one
   }
 
@@ -639,6 +666,263 @@ class CanvasEditor {
     if (corner.includes('top'))    { newH = Math.max(20, s.height - dy); newY = s.y + dy; }
     data.x = this._snap(newX); data.y = this._snap(newY);
     data.width = this._snap(newW); data.height = this._snap(newH);
+  }
+
+  /* ---- Ruler guides ----
+     Persistent (project-wide, not per-slide) vertical/horizontal lines an
+     author places to line elements up against — see defaultGuides() in
+     slide-manager.js for the data shape and defaultsRationale. Scoped
+     deliberately to MOVE-drags only: an element's edges/center can snap
+     to a guide while being dragged into position, but resize handles
+     don't (grid-snap is all resize gets, same as before this feature) —
+     a smaller, well-defined slice of "snap to guides" rather than trying
+     to cover every drag interaction in one pass. */
+
+  /** Resolves a proposed top-left (rawX, rawY) for `data` into the actual
+   *  position used this move-drag frame: guide-snap wins per-axis when
+   *  within threshold (see _snapToGuides), grid-snap (or plain rounding)
+   *  covers whichever axis didn't snap to a guide. Works in the element's
+   *  LOCAL bbox space (via _getLocalBBox) rather than assuming (x,y,width,
+   *  height) directly describes the box, so it's correct for arrows too
+   *  (whose visual box can extend up/left of their own x,y origin).
+   *  Also updates _activeSnapGuideIds and re-renders guides, but only
+   *  when the engaged set actually changed — not every single frame. */
+  _resolveMoveSnap(data, rawX, rawY) {
+    const local = this._getLocalBBox(data);
+    const guideSnap = this._snapToGuides(rawX + local.x, rawY + local.y, local.width, local.height);
+    const x = guideSnap.x !== null ? Math.round(guideSnap.x - local.x) : this._snap(rawX);
+    const y = guideSnap.y !== null ? Math.round(guideSnap.y - local.y) : this._snap(rawY);
+
+    const nextIds = new Set(guideSnap.snappedIds);
+    const changed = nextIds.size !== this._activeSnapGuideIds.size || [...nextIds].some((id) => !this._activeSnapGuideIds.has(id));
+    this._activeSnapGuideIds = nextIds;
+    if (changed) this.renderGuides();
+
+    return { x, y };
+  }
+
+  /** Checks a box's left/right/horizontal-center edges against vertical
+   *  guides, and its top/bottom/vertical-center edges against horizontal
+   *  guides — whichever candidate edge is CLOSEST to a guide, and within
+   *  the on-screen snap threshold, wins that axis. Returns
+   *  { x, y, snappedIds } — x/y are null on an axis with no guide close
+   *  enough (caller falls back to grid-snap for that axis); snappedIds
+   *  are the engaged guides' ids, prefixed 'h:'/'v:' since horizontal and
+   *  vertical guides are separate id spaces. No-ops (all null) when
+   *  guides are off, exactly like they don't render when off. */
+  _snapToGuides(x, y, width, height) {
+    const result = { x: null, y: null, snappedIds: [] };
+    const cs = this.getCanvasSettings();
+    const guides = cs && cs.guides;
+    if (!guides || !guides.enabled) return result;
+    const threshold = this._guideSnapThresholdSVG();
+
+    let bestXDist = threshold, bestX = null, bestXId = null;
+    [x, x + width / 2, x + width].forEach((edge) => {
+      guides.vertical.forEach((g) => {
+        const dist = Math.abs(edge - g.x);
+        if (dist < bestXDist) { bestXDist = dist; bestX = g.x - (edge - x); bestXId = g.id; }
+      });
+    });
+    if (bestX !== null) { result.x = bestX; result.snappedIds.push('v:' + bestXId); }
+
+    let bestYDist = threshold, bestY = null, bestYId = null;
+    [y, y + height / 2, y + height].forEach((edge) => {
+      guides.horizontal.forEach((g) => {
+        const dist = Math.abs(edge - g.y);
+        if (dist < bestYDist) { bestYDist = dist; bestY = g.y - (edge - y); bestYId = g.id; }
+      });
+    });
+    if (bestY !== null) { result.y = bestY; result.snappedIds.push('h:' + bestYId); }
+
+    return result;
+  }
+
+  /** Converts the ~8-screen-pixel snap distance into SVG user-space units
+   *  via the canvas's current on-screen scale — the same "never guess a
+   *  scale factor manually" reasoning as screenToSVGPoint() at the top of
+   *  this file, since the canvas can render at any zoom/size. */
+  _guideSnapThresholdSVG() {
+    const ctm = this.svg.getScreenCTM();
+    const scale = (ctm && ctm.a) ? ctm.a : 1;
+    return 8 / scale;
+  }
+
+  /** Adds a new guide at the canvas's own centre, selects it, and leaves
+   *  it ready to drag into position — same "instant, editable placement"
+   *  feel as adding any other element via the left rail. */
+  addGuide(orientation) {
+    const cs = this.getCanvasSettings();
+    if (!cs || !cs.guides) return;
+    const id = 'guide-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+    if (this.history) this.history.beginAction();
+    if (orientation === 'horizontal') cs.guides.horizontal.push({ id, y: Math.round(cs.height / 2) });
+    else cs.guides.vertical.push({ id, x: Math.round(cs.width / 2) });
+    if (this.history) this.history.commitAction();
+    this.selectedGuide = { orientation, id };
+    this.renderGuides();
+    this.onChange({});
+    return id;
+  }
+
+  removeGuide(orientation, id) {
+    const cs = this.getCanvasSettings();
+    if (!cs || !cs.guides) return;
+    if (this.history) this.history.beginAction();
+    this._deleteGuideFromState(cs, orientation, id);
+    if (this.history) this.history.commitAction();
+  }
+
+  /** The actual removal, with no history bracketing of its own — shared
+   *  by removeGuide() (brackets itself) and _finishGuideDrag()'s "dropped
+   *  outside the canvas" path (which reuses the begin() already opened by
+   *  _startGuideDrag(), so the whole drag-then-delete collapses into ONE
+   *  undo step that restores the guide to its PRE-drag position, not two
+   *  separate steps). */
+  _deleteGuideFromState(cs, orientation, id) {
+    const list = orientation === 'horizontal' ? cs.guides.horizontal : cs.guides.vertical;
+    const i = list.findIndex((g) => g.id === id);
+    if (i === -1) return false;
+    list.splice(i, 1);
+    if (this.selectedGuide && this.selectedGuide.orientation === orientation && this.selectedGuide.id === id) this.selectedGuide = null;
+    this.renderGuides();
+    this.onChange({});
+    return true;
+  }
+
+  /** Sets an existing guide's position directly — used by the Settings
+   *  panel's numeric field, as an alternative to dragging it on the
+   *  canvas. Not itself history-bracketed; callers (a field's focus/
+   *  change handlers) bracket it the same way every other settings field
+   *  already does. */
+  setGuidePosition(orientation, id, value) {
+    const cs = this.getCanvasSettings();
+    if (!cs || !cs.guides) return;
+    const list = orientation === 'horizontal' ? cs.guides.horizontal : cs.guides.vertical;
+    const guide = list.find((g) => g.id === id);
+    if (!guide) return;
+    if (orientation === 'horizontal') guide.y = value; else guide.x = value;
+    this.renderGuides();
+    this.onChange({});
+  }
+
+  /** Flips the one enabled flag that gates both guide visibility AND
+   *  snapping — wired to both the Settings panel switch and Shift+R. Not
+   *  history-bracketed: this is a view/tool-mode preference, not project
+   *  content, the same reasoning snapToGrid's own toggle already follows
+   *  (bindSettingInput brackets it in history regardless, for consistency
+   *  with every other settings field, but undoing it back and forth isn't
+   *  meaningfully different from undoing any other minor setting). */
+  toggleGuidesEnabled() {
+    const cs = this.getCanvasSettings();
+    if (!cs || !cs.guides) return;
+    cs.guides.enabled = !cs.guides.enabled;
+    if (!cs.guides.enabled) this.selectedGuide = null;
+    this.renderGuides();
+    this.onChange({});
+  }
+
+  /** Full rebuild of the guides <g> — same "destroy and recreate" idiom
+   *  _renderHandles()/_clearHandles() already use, rather than diffing
+   *  children. Always re-appended as the LAST child of the svg root, so
+   *  guides paint on top of elements-layer (and its selection handles)
+   *  regardless of what slide-switching/layer-reordering did to sibling
+   *  order elsewhere. Hidden entirely (not just visually) while guides
+   *  are off, so a hidden guide can never be clicked/dragged/snapped to —
+   *  the single enabled flag really does mean "off", not "invisible". */
+  renderGuides() {
+    if (this.guidesLayer) { this.guidesLayer.remove(); this.guidesLayer = null; }
+    const cs = this.getCanvasSettings();
+    const guides = cs && cs.guides;
+    if (!guides || !guides.enabled) return;
+
+    const layer = document.createElementNS(svgNS, 'g');
+    layer.setAttribute('id', 'guides-layer');
+    this.svg.appendChild(layer);
+    this.guidesLayer = layer;
+
+    guides.horizontal.forEach((g) => this._renderOneGuide(layer, 'horizontal', g, cs));
+    guides.vertical.forEach((g) => this._renderOneGuide(layer, 'vertical', g, cs));
+  }
+
+  _renderOneGuide(layer, orientation, guide, cs) {
+    const selected = !!(this.selectedGuide && this.selectedGuide.orientation === orientation && this.selectedGuide.id === guide.id);
+    const active = this._activeSnapGuideIds.has((orientation === 'horizontal' ? 'h:' : 'v:') + guide.id);
+    const color = selected ? '#0C5E82' : (active ? '#FF7A00' : '#FF3EA5');
+    const width = selected || active ? 2 : 1;
+
+    const x1 = orientation === 'horizontal' ? 0 : guide.x;
+    const y1 = orientation === 'horizontal' ? guide.y : 0;
+    const x2 = orientation === 'horizontal' ? cs.width : guide.x;
+    const y2 = orientation === 'horizontal' ? guide.y : cs.height;
+
+    const visible = document.createElementNS(svgNS, 'line');
+    visible.setAttribute('x1', x1); visible.setAttribute('y1', y1);
+    visible.setAttribute('x2', x2); visible.setAttribute('y2', y2);
+    visible.setAttribute('stroke', color);
+    visible.setAttribute('stroke-width', width);
+    visible.setAttribute('pointer-events', 'none');
+    layer.appendChild(visible);
+
+    // A wider, invisible-but-still-hit-testable line on top of the thin
+    // visible one — a 1-2px line is nearly impossible to grab precisely
+    // with a mouse otherwise. stroke-opacity:0 (rather than stroke:none)
+    // keeps it hit-testable via pointer-events:stroke.
+    const hit = document.createElementNS(svgNS, 'line');
+    hit.setAttribute('x1', x1); hit.setAttribute('y1', y1);
+    hit.setAttribute('x2', x2); hit.setAttribute('y2', y2);
+    hit.setAttribute('stroke', '#000');
+    hit.setAttribute('stroke-opacity', 0);
+    hit.setAttribute('stroke-width', 10);
+    hit.setAttribute('pointer-events', 'stroke');
+    hit.style.cursor = orientation === 'horizontal' ? 'ns-resize' : 'ew-resize';
+    hit.addEventListener('pointerdown', (e) => {
+      if (this.drawMode) return;
+      e.stopPropagation();
+      this.deselect(); // a guide and an element are never selected at once
+      this.selectedGuide = { orientation, id: guide.id };
+      this.renderGuides();
+      this._startGuideDrag(e, orientation, guide.id);
+    });
+    layer.appendChild(hit);
+  }
+
+  _startGuideDrag(e, orientation, id) {
+    if (this.history) this.history.beginAction();
+    this.guideDrag = { orientation, id, lastClientX: e.clientX, lastClientY: e.clientY };
+  }
+
+  _updateGuideDrag(e) {
+    const cs = this.getCanvasSettings();
+    if (!cs || !cs.guides) return;
+    this.guideDrag.lastClientX = e.clientX;
+    this.guideDrag.lastClientY = e.clientY;
+    const svgPt = screenToSVGPoint(this.svg, e.clientX, e.clientY);
+    const list = this.guideDrag.orientation === 'horizontal' ? cs.guides.horizontal : cs.guides.vertical;
+    const guide = list.find((g) => g.id === this.guideDrag.id);
+    if (!guide) return;
+    if (this.guideDrag.orientation === 'horizontal') guide.y = this._snap(svgPt.y);
+    else guide.x = this._snap(svgPt.x);
+    this.renderGuides();
+    this.onChange({});
+  }
+
+  /** Dropping a guide outside the canvas's own on-screen bounds deletes
+   *  it — the standard design-tool "drag a guide back off the ruler/
+   *  canvas to remove it" gesture. Checked in SCREEN space (not SVG
+   *  coordinates) so it means the same thing regardless of zoom: did the
+   *  pointer end up visually outside the canvas. */
+  _finishGuideDrag() {
+    const { orientation, id, lastClientX, lastClientY } = this.guideDrag;
+    this.guideDrag = null;
+    const rect = this.svg.getBoundingClientRect();
+    const outside = lastClientX < rect.left || lastClientX > rect.right || lastClientY < rect.top || lastClientY > rect.bottom;
+    const cs = this.getCanvasSettings();
+    if (outside && cs && cs.guides) this._deleteGuideFromState(cs, orientation, id);
+    // One commitAction() covers the whole gesture — whether it ended in a
+    // repositioned guide or (dropped outside the canvas) a deleted one —
+    // matching the single beginAction() _startGuideDrag() already opened.
+    if (this.history) this.history.commitAction();
   }
 
   /* ---- Selection outline + resize handles ---- */

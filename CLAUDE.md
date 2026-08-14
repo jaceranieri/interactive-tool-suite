@@ -307,6 +307,103 @@ arbitrary author-supplied art).
   driven system — the same payoff Free draw got from extending
   `ELEMENT_TYPES` instead of hand-writing a new UI path.
 
+### Ruler guides
+
+Persistent (project-wide, not per-slide) vertical/horizontal lines an
+author places to line elements up against, with elements magnetically
+snapping to them while being dragged. Lives entirely in
+`canvas-editor.js` (an authoring-only file — see "The Apps Script
+deployment pipeline" below on why that alone keeps guides out of the
+exported player) plus a small Settings-panel section in `index.html`;
+`element-renderer.js` and the exported player know nothing about guides
+at all.
+
+- **Data shape**: `canvasSettings.guides = { enabled, horizontal: [{id,
+  y}], vertical: [{id, x}] }` — project-wide like `nav`/`snapToGrid`, for
+  the same reason nav styling is: a layout aid should stay put as an
+  author moves between slides, not reset per slide. `defaultGuides()`
+  lives in `slide-manager.js` next to `defaultCanvasSettings()`;
+  `SlideManager.setState()` backfills it for a project saved before this
+  feature existed, the same pattern already used for `nav`.
+- **One enabled flag gates both visibility AND snapping** — Settings'
+  "Show & snap to guides" switch and the global Shift+R shortcut both
+  just flip `canvasSettings.guides.enabled` via
+  `CanvasEditor.toggleGuidesEnabled()`. A hidden guide that still
+  silently snapped things would be confusing, so there's deliberately no
+  second "snap without showing" mode. Shift+R lives inside
+  `CanvasEditor`'s existing keydown listener specifically to reuse its
+  `isTyping` guard — without it, typing a capital "R" into any text
+  field (a slide name, a text element's content) would hijack the
+  keystroke instead of typing the letter.
+- **Creation**: Settings' Guides section has "+ Horizontal"/"+ Vertical"
+  buttons (`CanvasEditor.addGuide()`) that add a guide at the canvas's
+  own centre, selected and immediately draggable — no ruler UI, unlike
+  Figma/Illustrator's drag-off-the-ruler gesture, a deliberate scope call
+  made before writing any code (the canvas here is small enough that a
+  full ruler felt like more UI than the feature needed). The same
+  section also lists every existing guide with a numeric position field
+  (an alternative to dragging) and a remove button.
+- **Selection is independent of element selection** — `selectedGuide`
+  (`{ orientation, id }`) is a separate field from `selectedIds`;
+  clicking a guide deselects any element and vice versa, so the two
+  concepts never overlap. Deleting a selected guide (Delete/Backspace)
+  and duplicating/deleting a selected ELEMENT are therefore two
+  completely independent code paths that happen to share a keybinding.
+- **Removal**: drag a guide off the canvas's own on-screen bounds (a
+  `getBoundingClientRect()` check in screen space, so it means the same
+  thing regardless of zoom), or select it and press Delete/Backspace.
+  `_finishGuideDrag()`'s delete-on-drop path reuses the
+  `history.beginAction()` that `_startGuideDrag()` already opened rather
+  than opening a second one — the whole drag-then-delete gesture
+  collapses into ONE undo step that puts the guide back at its PRE-drag
+  position, not two separate steps (drag position, then existence).
+- **A thin `<line>` is nearly unclickable** — every rendered guide is
+  actually two stacked `<line>`s: a 1-2px visible one
+  (`pointer-events: none`) and an invisible ~10px-wide one on top
+  (`stroke-opacity: 0` + `pointer-events: stroke`, not `stroke: none`,
+  since `none` would make it non-interactive too) that actually receives
+  clicks/drags. `renderGuides()` always destroys and recreates the whole
+  `<g id="guides-layer">` (same "destroy and recreate" idiom
+  `_renderHandles()` already uses) and always re-appends it as the LAST
+  child of the root `<svg>`, so guides paint on top of elements-layer
+  (and selection handles) no matter what slide-switching or layer
+  reordering did to sibling order elsewhere.
+- **Snapping is scoped to MOVE-drags only, not resize** — a deliberate
+  scope call, not an oversight: an element's left/right/top/bottom edges
+  and horizontal/vertical center all magnetically snap to a guide within
+  ~8 ON-SCREEN pixels (converted to SVG user-space units via
+  `svg.getScreenCTM().a`, the same "never guess a scale factor manually"
+  reasoning `screenToSVGPoint()` already follows, since the canvas can
+  render at any zoom/size) while being repositioned, but resize handles
+  still only grid-snap, same as before this feature. `_snapToGuides()`
+  works against the element's LOCAL bbox (`_getLocalBBox()`, which
+  already has an arrow-specific branch) rather than assuming `(x, y,
+  width, height)` directly describes the box — needed for arrows, whose
+  visual box can extend up/left of their own `x,y` origin. A currently-
+  engaged guide highlights (thicker + a different colour) while
+  something is snapped to it, cleared on pointerup; the highlight-set
+  comparison is skipped-if-unchanged so `renderGuides()` isn't rebuilt
+  every single pointermove frame, only when which guide(s) are engaged
+  actually changes.
+- **A real layout bug found while building this, worth knowing before
+  touching `.side-panel` again**: an earlier fix gave `#editor-slide-bar`
+  a higher z-index than `.side-panel` so the bar (and its **+ Slide**
+  button) would paint on top of any open panel instead of being covered
+  by it. That z-index rule alone turned out NOT to be enough once a
+  panel's content can be tall enough to scroll — the bar would still permanently cover whatever portion of the
+  panel's full-viewport-height box happened to sit behind it, and no
+  amount of scrolling the panel's own `.side-panel-body` could bring
+  that region out from behind the bar, since the bar isn't part of the
+  panel's scroll container at all. Adding the Guides section made
+  Settings tall enough on a modest viewport to actually hit this. Fixed
+  by giving `.side-panel` a real `bottom: var(--slide-bar-height, 0px)`
+  instead of `bottom: 0` — `syncSlideBarHeight()` in `index.html`
+  measures `#editor-slide-bar`'s actual rendered height (not a guessed
+  pixel constant) and publishes it as that custom property, called on
+  load, on window resize, and from `refreshUI()`. The z-index rule stays
+  too, as a harmless fallback for the brief instant before that JS runs
+  on first paint.
+
 ## The Apps Script deployment pipeline — read this before touching v2
 
 `tools/animated-slides-v2/*.html` and `*.js` (repo source — plain
@@ -668,6 +765,19 @@ There's no automated test suite. What exists:
   has NOT been confirmed by the author yet** — it needs
   `AppScript/AnimatedSlidesV2.html` re-pasted + redeployed, then a fresh
   Export checked in Articulate.
+  Element properties also moved out of the old floating popup into a
+  right-docked side panel (see "The Apps Script deployment pipeline"
+  section's sibling doc, `SIDEBAR.md`, for the full cross-tool writeup) —
+  opens instantly on canvas selection, shows every field at once (no more
+  "More options" toggle), and multi-select can now edit fields common to
+  every selected type at once instead of only offering Duplicate/Delete.
+  Deployed live. And ruler guides (see "Ruler guides" above) — persistent
+  vertical/horizontal snap lines, toggled via Settings or Shift+R, an
+  element's edges/center magnetically snap to one while being dragged
+  (move only, not resize) — verified in local preview (Playwright:
+  add/drag/delete a guide, exact-position snap confirmed, persistence
+  across slides and undo/redo confirmed) but **not yet hand-verified
+  against a live Apps Script deployment**.
   Remaining known gaps: custom color pickers (native color inputs still
   used, just restyled as a small square swatch rather than the full
   redesign a true custom picker would be), a thin icon library (7

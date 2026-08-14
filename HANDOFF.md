@@ -174,11 +174,9 @@ asked for this explicitly; keep doing it unprompted.
    single most important unverified thing project-wide.
 4. Consider backporting the explicit Save-folder-picker from Tabbed
    Panels to v2, for consistency.
-5. **Wire folder browsing into v1's Open modal** — the only tool left
-   without it.
-6. **v2 Canvas Settings swatch consistency audit** — older backlog item,
+5. **v2 Canvas Settings swatch consistency audit** — older backlog item,
    raised while reviewing Tabbed Panels' Styles drawer, never started.
-7. Touch/tablet drag-and-drop, accessibility pass, narrow-window layout —
+6. Touch/tablet drag-and-drop, accessibility pass, narrow-window layout —
    standing gaps across v2 / Tabbed Panels, deferred many times now.
 
 ## Older, still-outstanding items from earlier in the project

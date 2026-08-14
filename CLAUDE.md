@@ -62,9 +62,10 @@ database.
   browsing support (breadcrumbs, folder rows, a "New folder" button) via
   extra keys on its existing `actions` param (`folders`, `currentFolder`,
   `onOpenFolder`, `onNewFolder`, `onDeleteFolder`) — omit all of them and
-  it renders exactly as it did before folders existed, so tools that
-  haven't been wired up for folders yet (currently just v1) need no
-  changes. `animated-slides-v2/index.html` was the first tool wired up,
+  it renders exactly as it did before folders existed, so a tool that
+  hasn't been wired up for folders yet needs no changes (every currently-
+  active tool has been — this only matters for the next new tool).
+  `animated-slides-v2/index.html` was the first tool wired up,
   and the pattern it established — `browseFolder` (where the Open modal
   is currently browsing) and `currentProjectFolder` (where the open
   project actually lives) as separate state, `browseFolder` reset to
@@ -78,9 +79,7 @@ database.
   inside that modal via the same `renderProjectList()` opt-in params,
   just with an empty `projects` array since it's picking a destination,
   not a file. Worth considering backporting this explicit Save-folder-
-  picker to v2 too, for consistency — not done yet. Wiring folder support
-  into v1 at all is still outstanding — see "Current status" / "What's
-  NOT built yet" below.
+  picker to v2 too, for consistency — not done yet.
 - **Shared foundation** (`shared/`): `design-tokens.css` (colors, spacing,
   type — includes an explicit house style: "Colour," not "Color," in
   labels and anywhere user-facing), `app-shell.css` / `app-shell.js` (top
@@ -97,8 +96,18 @@ database.
   isn't canvas-based). See `tools/animated-slides-v2/CLAUDE.md` for what
   each does; see "Scaling decisions" #3 for why they moved.
 - **Tools** live in `tools/{tool-id}/`. Currently:
-  - `animated-slides/` (v1) — stable, in production use, not under active
-    development.
+  - **Animated Slides v1 — removed 2026-08-14.** Superseded by v2, which
+    surpassed it functionally; kept in production for a while after v2
+    launched, then retired once v2 was trusted. Repo source
+    (`tools/animated-slides/`) and the deployed `AppScript/AnimatedSlides.html`
+    were deleted; `Code.gs`'s `PAGES` entry is commented out, not
+    deleted, in case a rollback is ever needed. Saved v1 projects
+    (`projects/animated-slides/*.json`) were deliberately left in place
+    — no tool can open them anymore, but the data isn't destroyed.
+    Already-published Articulate courses built from a v1 export keep
+    working regardless, since an export is self-contained HTML with no
+    runtime dependency on the authoring tool. See git history at or
+    before this commit for v1's source if ever needed again.
   - `animated-slides-v2/` — ground-up rebuild of Animated Slides:
     schema-driven element system, undo/redo, cross-slide element linking,
     multi-select. As of this writing, considered feature-complete enough
@@ -165,12 +174,14 @@ wholesale regeneration — that's the safer way to work day-to-day; save
 a full from-scratch regeneration (and the 5-step checklist) for when
 they've drifted enough that hand-sync isn't practical.
 
-Also worth knowing: **v1's deployed copy
-(`AppScript/AnimatedSlides.html`) has manual patches that aren't
-in its repo source** (`tools/animated-slides/index.html`) — specifically
-the hub link and `<base target="_top">`. If v1 is ever regenerated
-wholesale from repo source, those need reapplying, or patch the deployed
-file directly instead (as has been done so far).
+Worth remembering even though the tool itself is gone (see the
+Architecture section's v1 removal note): **v1's deployed copy had manual
+patches that were never in its repo source** — specifically the hub link
+and `<base target="_top">`. A live file silently diverging from repo
+source is exactly the class of risk "the deployed Apps Script project,
+not this repo, is the source of truth" warns about below — worth
+recalling if a future tool's deployed copy is ever suspected of the
+same drift.
 
 **Never hand someone a whole-file replacement for an `AppScript/*.html`
 file without first establishing that their live copy hasn't diverged
@@ -415,7 +426,8 @@ There's no automated test suite. What exists:
 
 *(Keep this section current — it's the part most likely to go stale.)*
 
-- **v1**: stable, in production use, not under active development.
+- **v1**: removed 2026-08-14 — see the Architecture section's Tools
+  list for the removal note.
 - **v2**: feature-complete on the original build plan plus a further
   round of polish (Draw, Handwriting font, SVG upload, the property
   side-panel redesign, ruler guides — most deployed live, some still

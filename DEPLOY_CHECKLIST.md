@@ -108,11 +108,12 @@ other four were untouched.
       whatever this sync just confirmed, so the verification backlog
       actually shrinks instead of silently staying stale.
 
-## Known special case: v1 (`animated-slides`)
+## Historical note: v1 (`animated-slides`, removed 2026-08-14)
 
-`AppScript/AnimatedSlides.html` has manual patches (the hub link,
-`<base target="_top">`) that are **not** in its repo source
-(`tools/animated-slides/index.html`). If v1 is ever regenerated
-wholesale from repo source, those two patches need reapplying — or
-patch the deployed file directly instead, which is how this has been
-handled so far.
+No longer an active special case — v1 was removed once v2 surpassed it
+functionally (see CLAUDE.md's Architecture section). Worth remembering
+the shape of the risk it illustrated: its deployed copy had manual
+patches (the hub link, `<base target="_top">`) that were never in its
+repo source, so a wholesale regeneration would have silently dropped
+them. If a future tool's deployed copy is ever suspected of the same
+kind of drift, that's the pattern to check for.

@@ -8,7 +8,7 @@
  *
  * As more tools are migrated (Tabbed Container, Worked Example, the hub),
  * add them to the PAGES map below and upload their .html file the same
- * way AnimatedSlides.html was set up.
+ * way AnimatedSlidesV2.html was set up.
  *
  * Deploy as a Web App:
  *   Execute as: Me
@@ -22,11 +22,7 @@
 // the hub reads straight from this object, so there's no separate
 // manifest file to remember to keep in sync when a tool is added here.
 const PAGES = {
-  'animated-slides': {
-    file: 'AnimatedSlides', title: 'Animated Slides',
-    description: 'Build slide-based interactives with elements that animate into position across slides.',
-    status: 'stable',
-  },
+  // 'animated-slides': { file: 'AnimatedSlides', title: 'Animated Slides', description: 'Build slide-based interactives with elements that animate into position across slides.', status: 'stable' },  <- removed 2026-08-14, superseded by v2, see CLAUDE.md
   'animated-slides-v2': {
     file: 'AnimatedSlidesV2', title: 'Animated Slides (v2)',
     description: 'Rebuilt engine — undo/redo, layers, and a redesigned nav bar. In testing.',

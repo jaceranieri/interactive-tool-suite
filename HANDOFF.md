@@ -164,8 +164,8 @@ asked for this explicitly; keep doing it unprompted.
 0. **Read CLAUDE.md's "Scaling decisions" section.** Seven decisions
    were made about deploy tooling, the shared canvas engine, fork
    reconciliation, and doc/verification conventions as the suite grows.
-   #1, #2, and #7 are done; #4 became moot when Toggle Slides was
-   removed; #3, #5, #6 are still open.
+   #1, #2, #3, #5, and #7 are done; #4 became moot when Toggle Slides
+   was removed; only #6 (clear the verification backlog) is still open.
 1. **Confirm the export nav-bar + font fix live** (see the top section).
    Nothing else about v2 should be considered done until this is.
 2. **Exercise SVG upload against the live deployment** — upload a real

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tabbed Panels</title>
+</head>
+<body>
+<div id="player-card">
+  <div id="tabnav-host"></div>
+  <div id="player-body"><div id="block-list"></div></div>
+</div>
+<script>
+// Fonts and CSS are injected here via script rather than static <link>/
+// <style> tags in <head> — some course/LMS "embed HTML" blocks (hit in
+// practice with an Articulate embed) strip <head> children like <style>
+// and <link rel="stylesheet"> from pasted code while still executing
+// <script> content, so anything that needs to survive that has to be
+// created by script instead of sitting in the static markup.
+[
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+  'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap',
+].forEach((href) => {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  document.head.appendChild(link);
+});
+
+const playerStyle = document.createElement('style');
+playerStyle.textContent = `
+  * { box-sizing: border-box; }
+  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: #F1F0EB; }
+  #player-card { max-width: 860px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(28,35,33,0.08); overflow: hidden; }
+  .tp-tabnav { display: flex; align-items: stretch; background: #FAFAF8; border-bottom: 1px solid #E3E1DA; }
+  .tp-tabnav-chevron { flex-shrink: 0; width: 40px; border: none; background: transparent; color: #8A9291; cursor: pointer; font-size: 13px; }
+  .tp-tabnav-chevron:hover:not(:disabled) { color: #0C5E82; }
+  .tp-tabnav-chevron:disabled { opacity: 0.3; cursor: default; }
+  .tp-tabnav-strip { flex: 1; display: flex; overflow-x: auto; scrollbar-width: none; }
+  .tp-tabnav-strip::-webkit-scrollbar { display: none; }
+  .tp-tabnav-tab { flex-shrink: 0; padding: 16px 24px 12px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.9375rem; color: #4A5453; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tp-tabnav-tab.active { color: #0C5E82; border-bottom-color: #0C5E82; font-weight: 600; }
+  #player-body { padding: 32px; }
+  #block-list { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 12px; }
+  .tp-block { flex: 0 0 100%; min-width: 0; }
+  .tp-block-badge { flex: 0 0 auto; }
+  .tp-heading { margin: 0; }
+  .tp-subtitle { margin: 4px 0 0; }
+  .tp-paragraph { line-height: 1.5; }
+  .tp-list { margin: 0; padding-left: 1.4em; line-height: 1.5; }
+  .tp-button { display: inline-block; padding: 10px 20px; border-radius: 6px; border: 1px solid transparent; text-decoration: none; font-weight: 600; font-size: 0.8125rem; }
+  .tp-badge { display: inline-block; padding: 3px 12px; border-radius: 999px; border: 1px solid transparent; font-size: 0.75rem; font-weight: 600; }
+  .tp-table-wrapper { overflow: hidden; border: 1px solid #CBC8BE; }
+  .tp-table { border-collapse: collapse; width: 100%; font-size: 0.8125rem; }
+  .tp-table th, .tp-table td { border: 1px solid #CBC8BE; text-align: left; }
+  .tp-table th { background: #FAFAF8; font-weight: 600; }
+  .tp-block-separator hr { border: none; border-top: 1px solid #E3E1DA; margin: 8px 0; }
+`;
+document.head.appendChild(playerStyle);
+
+/* ==========================================================================
+   Tabbed Panels — Block Type Schema
+   Same idea as Animated Slides v2's ELEMENT_TYPES: one declaration per
+   block type, field lists drive the property panel and "add block" menu
+   instead of hand-written per-type UI. block-renderer.js reads these same
+   field names when drawing/updating a block's DOM node.
+
+   Every block also has `id` and `type`, handled by the engine directly.
+   Only what's specific to a type goes in its `fields`.
+
+   Field type `richtext` is NOT a native input — see richtext-editor.js for
+   the hand-rolled contenteditable + mark-toggling implementation. Its
+   value is always a sanitized HTML string restricted to the tags implied
+   by `inline` (b/i/u/a).
+
+   Field type `table` is also not a native input — its value is a 2D array
+   of plain-text cell strings, `data.rows`; see index.html's property-panel
+   table-grid editor (add/remove row/column) for the only place that reads
+   `field.type === 'table'` specially. Cells are plain text, not richtext —
+   a deliberate scope decision, kept simple for a dense grid.
+
+   `heading`'s `level` (h2/h3/h4) and `subtitle` text, `badge`'s `style`,
+   `button`'s `style`, and `table`'s `style` all read their actual
+   size/colour from the project-wide STYLES object (see tab-manager.js's
+   defaultStyles()) rather than storing it per-block — the same "instance
+   picks a variant, a project-level settings panel defines what that
+   variant looks like" split v2 uses for nav Active/Inactive colours.
+
+   Deliberate scope boundaries (see HANDOFF.md if reconsidering these):
+   - No nested blocks — `list.items` is a flat array of richtext strings,
+     not sub-blocks.
+   - `heading` has no inline marks on its main text (plain text only) — a
+     bold-in-the-middle heading was judged not worth the complexity. Its
+     `subtitle` field is a second, separately-styled plain-text line
+     (settled as a field on Heading rather than its own block type).
+   - Inline links (via richtext's `link` mark) and the standalone `button`
+     block are deliberately two different things, not one collapsed onto
+     the other — a link embedded mid-sentence and a standalone CTA read
+     differently to a learner.
+   - `table` cells are plain text, not richtext.
+   ========================================================================== */
+
+const BLOCK_TYPES = {
+
+  heading: {
+    label: 'Heading',
+    icon: 'fa-heading',
+    fields: {
+      level:    { type: 'select', label: 'Size',     default: 'h2', options: [['h2', 'H2 (large)'], ['h3', 'H3 (medium)'], ['h4', 'H4 (small)']] },
+      text:     { type: 'text',   label: 'Text',      default: 'Heading' },
+      subtitle: { type: 'text',   label: 'Subtitle (optional)', default: '' },
+    },
+  },
+
+  paragraph: {
+    label: 'Text',
+    icon: 'fa-align-left',
+    fields: {
+      content: { type: 'richtext', label: 'Text',  default: '', inline: ['bold', 'italic', 'underline', 'link'] },
+      align:   { type: 'select',   label: 'Align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },
+    },
+  },
+
+  list: {
+    label: 'List',
+    icon: 'fa-list-ul',
+    fields: {
+      style: { type: 'select', label: 'Style', default: 'bullet', options: [['bullet', 'Bulleted'], ['numbered', 'Numbered']] },
+      items: { type: 'array',  label: 'Items',  default: [''], of: { type: 'richtext', inline: ['bold', 'italic', 'link'] } },
+    },
+  },
+
+  button: {
+    label: 'Button',
+    icon: 'fa-link',
+    fields: {
+      // Always opens in a new tab (see block-renderer.js) — no per-block
+      // toggle, since a course button sending the learner away from the
+      // course entirely was judged to always be the wrong default.
+      label: { type: 'text',   label: 'Label',    default: 'Learn more' },
+      url:   { type: 'url',    label: 'Link URL', default: '' },
+      style: { type: 'select', label: 'Style',    default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },
+    },
+  },
+
+  badge: {
+    label: 'Badge',
+    icon: 'fa-certificate',
+    fields: {
+      label: { type: 'text',   label: 'Label', default: 'New' },
+      style: { type: 'select', label: 'Style', default: 'primary', options: [['primary', 'Primary'], ['secondary', 'Secondary']] },
+    },
+  },
+
+  table: {
+    label: 'Table',
+    icon: 'fa-table',
+    fields: {
+      style:        { type: 'select',  label: 'Style', default: 'bordered', options: [['bordered', 'Bordered'], ['plain', 'Plain']] },
+      hasHeaderRow: { type: 'boolean', label: 'First row is a header', default: true },
+      rows: {
+        type: 'table', label: 'Cells',
+        default: [['Header 1', 'Header 2'], ['Cell 1', 'Cell 2']],
+      },
+    },
+  },
+
+  separator: {
+    label: 'Separator',
+    icon: 'fa-minus',
+    fields: {},
+  },
+
+};
+
+/**
+ * Builds a fresh block's data object from its schema defaults — this is
+ * what "add block" calls. Keeps default-value logic in one place instead
+ * of repeated inline object literals scattered through the editor.
+ */
+function makeDefaultBlock(type, id) {
+  const schema = BLOCK_TYPES[type];
+  if (!schema) throw new Error(`Unknown block type: ${type}`);
+
+  const data = { id, type };
+  Object.entries(schema.fields).forEach(([key, field]) => {
+    // Deep-clone array/object defaults (JSON round-trip is enough here —
+    // every field default is plain JSON-serializable data) so each block
+    // gets its own copy rather than a shared reference to the schema's
+    // default value. A shallow [...spread] isn't enough for `table.rows`,
+    // which is an array of arrays.
+    data[key] = (typeof field.default === 'object' && field.default !== null)
+      ? JSON.parse(JSON.stringify(field.default))
+      : field.default;
+  });
+  return data;
+}
+
+
+/* ==========================================================================
+   Tabbed Panels — Block Renderer
+   Same role as Animated Slides v2's element-renderer.js: the one rendering
+   path, used unmodified by both the authoring content area and the
+   exported player. Never make this authoring-aware — it only reads plain
+   block `data` objects (plus the project-wide `styles` object) and
+   returns real DOM, no concept of selection or editing.
+
+   `styles` (see tab-manager.js's defaultStyles()) supplies the actual
+   size/colour for whichever variant a block picked (heading level,
+   badge/button primary-or-secondary) — passed in as a parameter rather
+   than imported globally so this stays a pure function of its inputs,
+   the same reasoning v2's nav-bar.js takes its style object as a
+   parameter instead of reaching for a global.
+
+   Rich text fields (`content`, list `items`) are stored as sanitized HTML
+   strings (see richtext-editor.js for how they're produced) and rendered
+   via innerHTML — trusted the same way an author-supplied value already is
+   everywhere else in this suite. Table cells are plain text (see
+   tab-types.js) and rendered via textContent.
+   ========================================================================== */
+
+// Inline links (richtext's `link` mark, created via execCommand in
+// richtext-editor.js) are stored as plain `<a href>` with no target —
+// applied at render time instead of storage time so it's a single source
+// of truth covering every link regardless of how/when it was created,
+// same reasoning the button block forces target uniformly rather than
+// storing it per-instance.
+function forceLinksToNewTab(container) {
+  container.querySelectorAll('a').forEach((a) => {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  });
+}
+
+function renderBlock(data, styles) {
+  const schema = BLOCK_TYPES[data.type];
+  if (!schema) throw new Error(`Unknown block type: ${data.type}`);
+
+  const el = document.createElement('div');
+  el.className = 'tp-block tp-block-' + data.type;
+  el.dataset.blockId = data.id;
+
+  switch (data.type) {
+    case 'heading': {
+      const level = styles[data.level] || styles.h2;
+      const tag = data.level === 'h4' ? 'h4' : data.level === 'h3' ? 'h3' : 'h2';
+      const h = document.createElement(tag);
+      h.className = 'tp-heading';
+      h.textContent = data.text || '';
+      h.style.fontSize = level.size + 'px';
+      h.style.color = level.color;
+      el.appendChild(h);
+      if (data.subtitle) {
+        const sub = document.createElement('div');
+        sub.className = 'tp-subtitle';
+        sub.textContent = data.subtitle;
+        sub.style.fontSize = styles.subtitle.size + 'px';
+        sub.style.color = styles.subtitle.color;
+        el.appendChild(sub);
+      }
+      break;
+    }
+    case 'paragraph': {
+      const p = document.createElement('div');
+      p.className = 'tp-paragraph';
+      p.innerHTML = data.content || '';
+      p.style.textAlign = data.align || 'left';
+      forceLinksToNewTab(p);
+      el.appendChild(p);
+      break;
+    }
+    case 'list': {
+      const listEl = document.createElement(data.style === 'numbered' ? 'ol' : 'ul');
+      listEl.className = 'tp-list';
+      (data.items || []).forEach((item) => {
+        const li = document.createElement('li');
+        li.innerHTML = item || '';
+        listEl.appendChild(li);
+      });
+      forceLinksToNewTab(listEl);
+      el.appendChild(listEl);
+      break;
+    }
+    case 'button': {
+      const variant = styles.button[data.style] || styles.button.primary;
+      const a = document.createElement('a');
+      a.className = 'tp-button';
+      a.textContent = data.label || '';
+      a.href = data.url || '#';
+      a.target = '_blank'; // always — see tab-types.js's button.fields comment
+      a.rel = 'noopener noreferrer';
+      a.style.background = variant.bg;
+      a.style.color = variant.text;
+      a.style.borderColor = variant.border;
+      el.appendChild(a);
+      break;
+    }
+    case 'badge': {
+      const variant = styles.badge[data.style] || styles.badge.primary;
+      const span = document.createElement('span');
+      span.className = 'tp-badge';
+      span.textContent = data.label || '';
+      span.style.background = variant.bg;
+      span.style.color = variant.text;
+      span.style.borderColor = variant.border;
+      el.appendChild(span);
+      break;
+    }
+    case 'table': {
+      const variant = styles.table[data.style] || styles.table.bordered;
+      // A wrapper div, not border-radius on the <table> itself — border-
+      // collapse and table layout don't clip reliably to a rounded corner
+      // across browsers, but overflow:hidden on a plain block div does.
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tp-table-wrapper';
+      wrapper.style.borderRadius = (styles.table.radius ?? 8) + 'px';
+      wrapper.style.borderColor = variant.border;
+      const table = document.createElement('table');
+      table.className = 'tp-table';
+      const rows = data.rows || [];
+      rows.forEach((row, r) => {
+        const tr = document.createElement('tr');
+        const isHeaderRow = data.hasHeaderRow && r === 0;
+        row.forEach((cellText) => {
+          const cell = document.createElement(isHeaderRow ? 'th' : 'td');
+          cell.textContent = cellText || '';
+          cell.style.borderColor = variant.border;
+          cell.style.padding = (styles.table.cellPadding ?? 10) + 'px';
+          cell.style.fontSize = (isHeaderRow ? styles.table.headerFontSize : styles.table.bodyFontSize) + 'px';
+          if (isHeaderRow) { cell.style.background = variant.bg; cell.style.color = variant.text; }
+          tr.appendChild(cell);
+        });
+        table.appendChild(tr);
+      });
+      wrapper.appendChild(table);
+      el.appendChild(wrapper);
+      break;
+    }
+    case 'separator': {
+      el.appendChild(document.createElement('hr'));
+      break;
+    }
+  }
+
+  return el;
+}
+
+/** Renders a tab's full block list into a container, replacing whatever
+ *  was there. Simple full-rebuild rather than incremental diffing —
+ *  there's no animation or drag state riding on individual block DOM
+ *  nodes surviving a re-render (unlike v2's element nodes), so this stays
+ *  cheap and correct rather than needing SlideManager-style careful
+ *  in-place patching. */
+function renderTabContent(tab, container, styles) {
+  container.innerHTML = '';
+  tab.blocks.forEach((data) => container.appendChild(renderBlock(data, styles)));
+}
+
+
+/* ==========================================================================
+   Tabbed Panels — Tab Navigation
+   The learner-facing tab strip: an underline under the active tab, and
+   left/right chevrons to scroll the strip when tabs overflow its width.
+   Same role as Animated Slides v2's nav-bar.js — one rendering + click-
+   handling path, used UNMODIFIED by both the authoring canvas and the
+   exported player, so the canvas is genuinely WYSIWYG rather than an
+   editor-only approximation of what learners will see.
+
+   Authoring-only concerns (add/rename/delete/reorder/duplicate tabs) live
+   entirely outside this file, in index.html's bottom tab bar — this
+   module only ever renders tabs + reports which one was clicked.
+   ========================================================================== */
+
+/**
+ * @param container      element to render into (its children are replaced).
+ * @param tabs           [{ id, title }, ...] — extra keys (e.g. `blocks`) are ignored.
+ * @param activeTabId
+ * @param onSelect       called with a tab's id when clicked.
+ * @param tabLabelStyle  optional { fontSize, paddingX, paddingY, activeColor } —
+ *                       see tab-manager.js's defaultStyles().tabLabel.
+ *                       Falls back to the CSS defaults when omitted.
+ */
+function renderTabNav(container, { tabs, activeTabId, onSelect, tabLabelStyle }) {
+  container.innerHTML = '';
+  container.className = 'tp-tabnav';
+
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.className = 'tp-tabnav-chevron';
+  prevBtn.setAttribute('aria-label', 'Scroll tabs left');
+  prevBtn.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
+
+  const strip = document.createElement('div');
+  strip.className = 'tp-tabnav-strip';
+
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.className = 'tp-tabnav-chevron';
+  nextBtn.setAttribute('aria-label', 'Scroll tabs right');
+  nextBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+
+  tabs.forEach((tab) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const isActive = tab.id === activeTabId;
+    btn.className = 'tp-tabnav-tab' + (isActive ? ' active' : '');
+    btn.textContent = tab.title;
+    if (tabLabelStyle) {
+      btn.style.fontSize = tabLabelStyle.fontSize + 'px';
+      btn.style.padding = `${tabLabelStyle.paddingY}px ${tabLabelStyle.paddingX}px`;
+      // Only the active tab needs this — the inactive colour stays
+      // whatever the host page's own .tp-tabnav-tab CSS says, same as
+      // before this field existed.
+      if (isActive && tabLabelStyle.activeColor) {
+        btn.style.color = tabLabelStyle.activeColor;
+        btn.style.borderBottomColor = tabLabelStyle.activeColor;
+      }
+    }
+    btn.addEventListener('click', () => onSelect(tab.id));
+    strip.appendChild(btn);
+  });
+
+  function updateChevrons() {
+    prevBtn.disabled = strip.scrollLeft <= 0;
+    nextBtn.disabled = strip.scrollLeft >= strip.scrollWidth - strip.clientWidth - 1;
+  }
+  prevBtn.addEventListener('click', () => strip.scrollBy({ left: -strip.clientWidth * 0.8, behavior: 'smooth' }));
+  nextBtn.addEventListener('click', () => strip.scrollBy({ left: strip.clientWidth * 0.8, behavior: 'smooth' }));
+  strip.addEventListener('scroll', updateChevrons);
+
+  container.appendChild(prevBtn);
+  container.appendChild(strip);
+  container.appendChild(nextBtn);
+
+  // Layout isn't final until after this returns and the browser paints —
+  // defer the initial enabled/disabled check one frame so scrollWidth is
+  // accurate instead of always reading as "no overflow yet".
+  requestAnimationFrame(updateChevrons);
+}
+
+
+const tabs = [{"id":"tab-1786702819434-46h5g","title":"Overview","blocks":[{"id":"block-1786702819961-8xxrv","type":"heading","level":"h2","text":"Welcome to Tabbed Panels","subtitle":"Flowed content, not a canvas"},{"id":"block-1786702819962-90ypv","type":"paragraph","content":"Build tabbed content with headings, text, lists, and linking buttons — this is a real Export of a small demo project.","align":"left"},{"id":"block-1786702819963-uhii7","type":"list","style":"bullet","items":["Heading and paragraph blocks","Bulleted or numbered lists","Buttons that link out"]}]},{"id":"tab-1786702819965-nnjy6","title":"Details","blocks":[{"id":"block-1786702819965-vibws","type":"heading","level":"h2","text":"A second tab","subtitle":""},{"id":"block-1786702819966-wjmhc","type":"badge","label":"New","style":"primary"},{"id":"block-1786702819966-jbxad","type":"button","label":"Learn more","url":"https://example.com","style":"primary"}]}];
+const styles = {"h2":{"size":28,"color":"#111827"},"h3":{"size":22,"color":"#111827"},"h4":{"size":18,"color":"#111827"},"subtitle":{"size":16,"color":"#6b7280"},"badge":{"primary":{"bg":"#2563eb","text":"#ffffff","border":"#2563eb"},"secondary":{"bg":"#f3f4f6","text":"#374151","border":"#d1d5db"}},"button":{"primary":{"bg":"#2563eb","text":"#ffffff","border":"#2563eb"},"secondary":{"bg":"#ffffff","text":"#111827","border":"#d1d5db"}},"table":{"bordered":{"bg":"#fafaf8","text":"#111827","border":"#cbc8be"},"plain":{"bg":"#ffffff","text":"#111827","border":"#ffffff"},"radius":8,"cellPadding":10,"headerFontSize":14,"bodyFontSize":14},"blockSpacing":12,"tabLabel":{"fontSize":15,"paddingX":24,"paddingY":16,"activeColor":"#0C5E82"},"pageBackground":{"color":"#F1F0EB","transparent":false}};
+let activeTabId = tabs[0].id;
+
+function render() {
+  renderTabNav(document.getElementById('tabnav-host'), {
+    tabs, activeTabId,
+    onSelect: (id) => { activeTabId = id; render(); },
+    tabLabelStyle: styles.tabLabel,
+  });
+  const tab = tabs.find((t) => t.id === activeTabId);
+  const blockList = document.getElementById('block-list');
+  blockList.style.gap = styles.blockSpacing + 'px';
+  renderTabContent(tab, blockList, styles);
+}
+render();
+</script>
+</body>
+</html>

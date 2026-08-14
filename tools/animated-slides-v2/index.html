@@ -118,9 +118,24 @@
      centered/dimmed modal — you're tuning these values live against the
      canvas (colors, artboard size), so covering the canvas while doing it
      is exactly backwards. Docked to the right edge, no backdrop, canvas
-     stays fully visible and interactive while it's open. */
+     stays fully visible and interactive while it's open.
+
+     `bottom: var(--slide-bar-height)` (synced from #editor-slide-bar's
+     real rendered height by syncSlideBarHeight() below, not a guessed
+     pixel constant) stops the panel's own box short of the bottom bar,
+     rather than letting it extend full-height and relying on z-index
+     alone to decide who paints on top. That distinction matters once a
+     panel's content is tall enough to need scrolling (the Settings panel,
+     with its Guides section, routinely is on a modest viewport): with
+     z-index alone, whichever region overlapped the bar would be a dead
+     zone no amount of internal scrolling could ever bring a control out
+     from behind — the bar would just always cover that same screen
+     rectangle. Stopping the panel's box above the bar means everything in
+     it scrolls fully into view instead. #editor-slide-bar's own
+     position:relative + z-index:95 (see its rule) stays as a fallback for
+     the brief instant before that JS sync runs on first paint. */
   .side-panel {
-    position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 90vw;
+    position: fixed; top: 0; right: 0; bottom: var(--slide-bar-height, 0px); width: 360px; max-width: 90vw;
     background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow-lg);
     display: flex; flex-direction: column; z-index: 90;
     transform: translateX(100%); transition: transform var(--duration-base) var(--ease-standard);
@@ -139,6 +154,11 @@
      a field left alone in a row (e.g. Background under Width/Height)
      just sits in the first column, matching the reference layout. */
   .settings-section .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .guide-row { display: flex; align-items: center; gap: var(--space-2); }
+  .guide-row-label { font-size: var(--text-xs); color: var(--ink-soft); width: 66px; flex-shrink: 0; }
+  .guide-row input[type=number] { flex: 1; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
+  .guide-row-remove { border: none; background: none; color: var(--ink-soft); cursor: pointer; padding: 4px 6px; font-size: 12px; flex-shrink: 0; }
+  .guide-row-remove:hover { color: var(--danger); }
   .settings-section .field-grid .popup-field { margin-bottom: 0; }
 
   .cross-slide-group { margin-bottom: var(--space-4); }
@@ -462,15 +482,29 @@
     }
   }
 
+  /** Publishes #editor-slide-bar's real rendered height as a CSS custom
+   *  property so .side-panel's `bottom` can stop exactly there instead of
+   *  guessing a pixel constant — see .side-panel's own comment for why
+   *  this matters. Called on load, on resize (the bar's height can change
+   *  at narrow widths where its contents wrap), and from refreshUI() —
+   *  cheap, and covers any other reason the bar's height might shift. */
+  function syncSlideBarHeight() {
+    const bar = document.getElementById('editor-slide-bar');
+    document.documentElement.style.setProperty('--slide-bar-height', bar.getBoundingClientRect().height + 'px');
+  }
+  window.addEventListener('resize', syncSlideBarHeight);
+
   function refreshUI() {
     applyCanvasSizing();
     applyGridOverlay();
     applyNavPosition();
+    editor.renderGuides(); // project-wide, so this needs a refresh on load/undo/redo same as the grid overlay, not just after direct guide edits
     document.getElementById('empty-state-hint').style.display = Object.keys(slideManager.elements).length === 0 ? 'flex' : 'none';
     renderLayerPanel(layerListEl, slideManager, editor);
     renderSlideTabs();
     navBar.refresh(slideManager.slides, slideManager.activeIndex);
     document.getElementById('unsaved-dot').style.display = hasUnsavedChanges() ? '' : 'none';
+    syncSlideBarHeight();
   }
 
   const undoBtn = document.getElementById('undo-btn');
@@ -983,6 +1017,95 @@
     });
 
     container.appendChild(renderColoursSection());
+    container.appendChild(renderGuidesSection());
+  }
+
+  /** Guides get their own hand-written section rather than a
+   *  CANVAS_SETTING_FIELDS entry, same reasoning as renderColoursSection()
+   *  above — the generic field-loop only knows how to read/write ONE
+   *  value per field, but this needs a variable-length list (add/remove
+   *  guides) plus per-guide numeric fields, not a single control. */
+  function renderGuidesSection() {
+    const cs = slideManager.canvasSettings;
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    const h3 = document.createElement('h3');
+    h3.textContent = 'Guides';
+    section.appendChild(h3);
+
+    const toggleWrap = document.createElement('div');
+    toggleWrap.className = 'popup-field toggle-field';
+    const toggleLabel = document.createElement('label');
+    toggleLabel.textContent = 'Show & snap to guides (Shift+R)';
+    toggleWrap.appendChild(toggleLabel);
+    const switchLabel = document.createElement('label');
+    switchLabel.className = 'switch';
+    const toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.checked = cs.guides.enabled;
+    toggleInput.addEventListener('change', () => { editor.toggleGuidesEnabled(); renderSettingsModal(); });
+    const slider = document.createElement('span');
+    slider.className = 'switch-slider';
+    switchLabel.appendChild(toggleInput);
+    switchLabel.appendChild(slider);
+    toggleWrap.appendChild(switchLabel);
+    section.appendChild(toggleWrap);
+
+    const addRow = document.createElement('div');
+    addRow.style.display = 'flex';
+    addRow.style.gap = 'var(--space-2)';
+    addRow.style.margin = 'var(--space-4) 0';
+    [['horizontal', '+ Horizontal'], ['vertical', '+ Vertical']].forEach(([orientation, label]) => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-secondary';
+      btn.style.flex = '1';
+      btn.textContent = label;
+      btn.addEventListener('click', () => { editor.addGuide(orientation); renderSettingsModal(); });
+      addRow.appendChild(btn);
+    });
+    section.appendChild(addRow);
+
+    const guideRows = [
+      ...cs.guides.horizontal.map((g) => ({ orientation: 'horizontal', guide: g, label: 'Horizontal', axisKey: 'y', max: cs.height })),
+      ...cs.guides.vertical.map((g) => ({ orientation: 'vertical', guide: g, label: 'Vertical', axisKey: 'x', max: cs.width })),
+    ];
+    if (guideRows.length) {
+      const list = document.createElement('div');
+      list.style.display = 'flex';
+      list.style.flexDirection = 'column';
+      list.style.gap = 'var(--space-2)';
+      guideRows.forEach(({ orientation, guide, label, axisKey, max }) => {
+        const row = document.createElement('div');
+        row.className = 'guide-row';
+
+        const rowLabel = document.createElement('span');
+        rowLabel.className = 'guide-row-label';
+        rowLabel.textContent = label;
+        row.appendChild(rowLabel);
+
+        const posInput = document.createElement('input');
+        posInput.type = 'number';
+        posInput.min = 0;
+        posInput.max = max;
+        posInput.value = guide[axisKey];
+        posInput.addEventListener('focus', () => history.beginAction());
+        posInput.addEventListener('input', () => editor.setGuidePosition(orientation, guide.id, parseFloat(posInput.value) || 0));
+        posInput.addEventListener('change', () => history.commitAction());
+        row.appendChild(posInput);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'guide-row-remove';
+        removeBtn.title = 'Remove guide';
+        removeBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        removeBtn.addEventListener('click', () => { editor.removeGuide(orientation, guide.id); renderSettingsModal(); });
+        row.appendChild(removeBtn);
+
+        list.appendChild(row);
+      });
+      section.appendChild(list);
+    }
+
+    return section;
   }
 
   /* ---- Side panel routing: Layers / Settings / Properties share one slot ----

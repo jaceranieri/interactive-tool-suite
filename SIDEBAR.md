@@ -62,30 +62,50 @@ popup that used to sit beside the selected element on the canvas.
 
 ```css
 .side-panel {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 90vw;
+  position: fixed; top: 0; right: 0; bottom: var(--slide-bar-height, 0px);
+  width: 360px; max-width: 90vw;
   z-index: 90;
   transform: translateX(100%); /* .active -> translateX(0) */
 }
-```
-
-`position: fixed` and full viewport height — this is NOT scoped to the
-canvas area, it's a true screen-edge drawer that can visually overlap
-anything else at the bottom-right of the page. That includes the bottom
-`#editor-slide-bar` (the "Slides (editor)" strip with the **+ Slide**
-button at its right end) — a real bug, fixed this session:
-`#editor-slide-bar` didn't have its own stacking context, so any open
-side panel painted on top of it and made **+ Slide** unclickable
-whenever a panel — any panel, not just Properties — was open. Fixed by
-giving the bar its own higher stacking context:
-
-```css
 #editor-slide-bar { position: relative; z-index: 95; /* … */ }
 ```
 
-`95 > 90` — the bar now always paints above the panel layer, so the
-panel visually slides in **behind** the bar rather than over it. This is
-the rule to copy if another tool's bottom bar has the same problem (see
-"Known gaps" — Toggle Slides currently does).
+`position: fixed` — this is NOT scoped to the canvas area, it's a true
+screen-edge drawer that can visually overlap anything else at the
+bottom-right of the page. That includes the bottom `#editor-slide-bar`
+(the "Slides (editor)" strip with the **+ Slide** button at its right
+end) — a real bug, fixed across two passes:
+
+1. **First pass, z-index only**: `#editor-slide-bar` had no stacking
+   context of its own, so any open side panel painted on top of it and
+   made **+ Slide** unclickable whenever a panel — any panel, not just
+   Properties — was open. Fixed by giving the bar `position: relative;
+   z-index: 95` (`> 90`, the panel's z-index) so it always paints above
+   the panel layer.
+2. **Second pass, found while adding a taller Settings section (the
+   Guides feature)**: z-index alone turned out not to be enough once a
+   panel's own content is tall enough to need scrolling. `.side-panel`
+   still spanned the full viewport height (`bottom: 0`) underneath the
+   bar — the bar just painted over whatever portion of that box
+   happened to sit behind it. That region was a permanent dead zone: no
+   amount of scrolling `.side-panel-body` could bring a control out from
+   behind the bar, since the bar isn't part of the panel's own scroll
+   container. Fixed by making the panel's box itself stop short of the
+   bar — `bottom: var(--slide-bar-height, 0px)` instead of `bottom: 0` —
+   so its internal scroll area never extends into the bar's screen
+   region in the first place. `syncSlideBarHeight()` in `index.html`
+   measures the bar's REAL rendered height (not a guessed pixel
+   constant) and publishes it as that custom property, called on load,
+   window resize, and from `refreshUI()`. The z-index rule from pass 1
+   stays too, as a harmless fallback for the instant before that JS runs
+   on first paint.
+
+Both pieces matter, and are easy to half-copy: the rule to reuse if
+another tool's bottom bar has the same problem (see "Known gaps" —
+Toggle Slides currently does) is the pairing of `bottom: var(--bar-
+height, 0px)` on the panel AND `position: relative; z-index` (higher
+than the panel's) on the bar — not z-index alone, which only solves the
+problem for a panel short enough to never need scrolling.
 
 ### The three panels and how they share one slot
 
@@ -259,15 +279,21 @@ auto-open/restore behavior would need coordinating with these three.
 
 Toggle Slides' `#editor-button-bar` (its "+ Button" button, the analogue
 of v2's `#editor-slide-bar`/**+ Slide**) has **no elevated z-index or
-stacking context of its own** — meaning it's still exposed to the exact
-bug just fixed in v2's section above: any of the three fixed,
-viewport-height side panels will paint over the right end of that bar,
-including **+ Button**, whenever one is open. This was found while
-writing this document, not fixed — the request that prompted this
-document was scoped to v2. If/when Toggle Slides gets fixed, the change
-is the same one-liner v2 got: give `#editor-button-bar` its own
-`position: relative; z-index` higher than `90` (e.g. `95`, matching v2,
-for consistency if both tools ever get audited together).
+stacking context of its own, and none of its three side panels have a
+height-matched `bottom` offset either** — meaning it's exposed to
+BOTH bugs described in v2's "Positioning" section above: any of the
+three fixed, viewport-height side panels will paint over the right end
+of that bar (including **+ Button**) whenever one is open, AND (once a
+panel's own content is tall enough to scroll) part of that panel is a
+permanent dead zone behind the bar that no internal scrolling can
+reach. This was found while writing this document, not fixed — the
+request that prompted this document was scoped to v2. If/when Toggle
+Slides gets fixed, copy BOTH pieces from v2, not just the z-index
+one-liner: give `#editor-button-bar` `position: relative; z-index`
+higher than `90` (e.g. `95`, matching v2) AND give its three
+`.side-panel`s a `bottom: var(--button-bar-height, 0px)` synced from the
+bar's real rendered height the same way `syncSlideBarHeight()` does in
+v2's `index.html`.
 
 ### If/when Toggle Slides gets the same property-panel migration v2 got
 

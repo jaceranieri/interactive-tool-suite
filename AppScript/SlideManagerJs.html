@@ -18,18 +18,32 @@
    without needing to be reconstructed each time.
    ========================================================================== */
 
+/** Ruler guides — like snapToGrid/gridSize, an authoring-only aid (see
+ *  canvas-editor.js's guide rendering/snapping, and index.html's Settings
+ *  "Guides" section). `enabled` gates both visibility AND snapping as one
+ *  toggle (Settings switch or Shift+R) — a hidden guide that still
+ *  silently snapped things would be confusing. `horizontal`/`vertical`
+ *  are tracked by stable `id`, never index, same reasoning as everything
+ *  else in this file (elements, slides). */
+function defaultGuides() {
+  return { enabled: true, horizontal: [], vertical: [] };
+}
+
 /**
  * Project-wide canvas settings — artboard size, background, snap-to-grid,
- * and nav bar styling (nested under `nav`, using nav-bar.js's own
+ * guides, and nav bar styling (nested under `nav`, using nav-bar.js's own
  * defaults). One object for the whole project, not per-slide — the exact
  * mistake fixed in v1 was nav styling accidentally living on each slide
- * and drifting apart.
+ * and drifting apart. Guides are project-wide for the same reason: they're
+ * a layout aid meant to stay put as an author moves between slides, not
+ * something to redefine per slide.
  */
 function defaultCanvasSettings() {
   return {
     width: 1920, height: 1080,
     backgroundColor: '#ffffff',
     snapToGrid: false, gridSize: 20,
+    guides: defaultGuides(),
     nav: defaultNavStyle(),
   };
 }
@@ -310,7 +324,15 @@ class SlideManager {
     this._commitActiveSlideElements();
     return {
       activeIndex: this.activeIndex,
-      canvasSettings: { ...this.canvasSettings, nav: { ...this.canvasSettings.nav } },
+      canvasSettings: {
+        ...this.canvasSettings,
+        nav: { ...this.canvasSettings.nav },
+        guides: {
+          enabled: this.canvasSettings.guides.enabled,
+          horizontal: this.canvasSettings.guides.horizontal.map((g) => ({ ...g })),
+          vertical: this.canvasSettings.guides.vertical.map((g) => ({ ...g })),
+        },
+      },
       slides: this.slides.map((s) => ({ id: s.id, name: s.name, elements: s.elements.map((e) => ({ ...e })) })),
     };
   }
@@ -325,6 +347,7 @@ class SlideManager {
     // fixed earlier for elements/nodes in _rebuildActiveSlide.
     const incoming = snap.canvasSettings || defaultCanvasSettings();
     const incomingNav = incoming.nav || defaultNavStyle();
+    if (!incoming.guides) incoming.guides = defaultGuides(); // backfill for a project saved before guides existed
     Object.keys(this.canvasSettings).forEach((k) => { if (k !== 'nav') delete this.canvasSettings[k]; });
     Object.entries(incoming).forEach(([k, v]) => { if (k !== 'nav') this.canvasSettings[k] = v; });
     Object.keys(this.canvasSettings.nav).forEach((k) => delete this.canvasSettings.nav[k]);
@@ -338,5 +361,6 @@ class SlideManager {
     this.onSlideChange();
   }
 }
+
 
 </script>

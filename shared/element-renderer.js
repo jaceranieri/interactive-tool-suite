@@ -1,9 +1,12 @@
 /* ==========================================================================
-   Animated Slides v2 — Shared Element Renderer
+   Shared Canvas Engine — Element Renderer
    The single "recipe card" for drawing and updating each element type.
    Used identically by the authoring canvas AND the exported player — no
    second copy to drift out of sync. Requires GSAP and element-types.js to
    be loaded first.
+   Promoted from tools/animated-slides-v2/ to shared/ so future
+   canvas-based tools fork from here instead of copy-pasting v2's copy —
+   see CLAUDE.md's "Scaling decisions" #3.
 
    This engine is deliberately "dumb": given element data, it creates or
    updates the visual SVG node. It knows nothing about selection, drag

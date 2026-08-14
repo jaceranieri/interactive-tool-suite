@@ -84,6 +84,14 @@ database.
   they can't be styled and look broken next to the rest of the UI),
   `storage-connector.js`. Every tool includes all of these. Building a
   new tool should start here, not from scratch — see "Starting a new
+  tool" below. Also here, since a scaling-decisions review promoted them
+  out of `tools/animated-slides-v2/`: the shared canvas engine —
+  `canvas-editor.js`, `element-types.js`, `element-renderer.js` — used by
+  any canvas-based (SVG element) tool, and `history.js` (fully generic
+  undo/redo, used by both v2 and Tabbed Panels even though the latter
+  isn't canvas-based). See "Animated Slides v2's internal architecture"
+  below for what each does; see "Scaling decisions" #3 for why they
+  moved.
   tool" below.
 - **Tools** live in `tools/{tool-id}/`. Currently:
   - `animated-slides/` (v1) — stable, in production use, not under active
@@ -114,6 +122,14 @@ database.
     commented out, not deleted, in case this is picked back up.
 
 ## Animated Slides v2's internal architecture
+
+`element-types.js`, `element-renderer.js`, `canvas-editor.js`, and
+`history.js` live in `shared/`, not `tools/animated-slides-v2/` — see
+"Scaling decisions" #3. They're described here because this is still
+where their design rationale belongs (v2 is where they were built and
+is still their most complete consumer); `slide-manager.js`,
+`layer-panel.js`, `nav-bar.js`, and `svg-sanitizer.js` remain genuinely
+v2-specific and stay in `tools/animated-slides-v2/`.
 
 - `element-types.js` — the `ELEMENT_TYPES` schema (field definitions per
   element type: text/rect/arrow/icon/draw). Adding a field here
@@ -146,8 +162,9 @@ database.
   on different slides sharing the same `id` — nothing more than that.
   Layer stacking order is the `elements` array's order (index 0 =
   furthest back) — see the "Getting this wrong" bullet under Conventions.
-- `history.js`, `layer-panel.js`, `nav-bar.js` — undo/redo, the layer
-  list, and the learner-facing nav bar (also reused verbatim by export).
+- `history.js` (shared, see above), `layer-panel.js`, `nav-bar.js` —
+  undo/redo, the layer list, and the learner-facing nav bar (also reused
+  verbatim by export).
 
 ### Free draw (the `draw` element type)
 
@@ -572,11 +589,12 @@ renders its nav bar with `<div id="player-root">` deliberately deleted.
 ## Local preview (no Apps Script needed for most of it)
 
 `tools/animated-slides-v2/index.html` loads its own engine as plain
-`<script src>` files — `element-types.js`, `element-renderer.js`,
-`canvas-editor.js`, `history.js`, `slide-manager.js`, `layer-panel.js`,
-`nav-bar.js` — all of which now exist as real standalone files in that
-same folder (they didn't for a while; CLAUDE.md described them but they'd
-only ever been uploaded as `AppScript/*Js.html`, so the page 404'd on all
+`<script src>` files — four from `../../shared/` (`element-types.js`,
+`element-renderer.js`, `canvas-editor.js`, `history.js` — see "Scaling
+decisions" #3), and three from its own folder (`slide-manager.js`,
+`layer-panel.js`, `nav-bar.js`) — all of which exist as real standalone
+files (they didn't for a while; CLAUDE.md described them but they'd only
+ever been uploaded as `AppScript/*Js.html`, so the page 404'd on all
 seven outside Apps Script — fixed by extracting them verbatim from the
 AppScript wrapper files). This means:
 
@@ -797,12 +815,15 @@ tab's content is an ordered list of blocks — heading (with optional
 subtitle), paragraph, list, button (external hyperlink), badge, table,
 separator. Genuinely different content model from Animated Slides —
 that tool's SVG canvas + `x`/`y`/`width`/`height` element schema doesn't
-fit flowed content, so it does **not** reuse `element-types.js` /
-`element-renderer.js` / `canvas-editor.js`. What it does share:
-`shared/design-tokens.css`, `shared/app-shell.css` + `app-shell.js` (top
-bar, modals, toasts, `Shell.confirm`/`Shell.prompt`, project list
-rendering), `shared/storage-connector.js`, and the same `Code.gs`
-`PAGES` + `apiSaveProject`/`apiListProjects`/etc. pattern — same
+fit flowed content, so it does **not** reuse `shared/element-types.js` /
+`shared/element-renderer.js` / `shared/canvas-editor.js` — the canvas
+engine — even though those now live in `shared/` too (promoted there
+for future canvas-based tools, not because Tabbed Panels needed them).
+What it does share: `shared/design-tokens.css`, `shared/app-shell.css` +
+`app-shell.js` (top bar, modals, toasts, `Shell.confirm`/`Shell.prompt`,
+project list rendering), `shared/storage-connector.js`,
+`shared/history.js` (fully generic, no canvas dependency), and the same
+`Code.gs` `PAGES` + `apiSaveProject`/`apiListProjects`/etc. pattern — same
 persistence plumbing as Animated Slides, just a different `content`
 shape.
 
@@ -873,9 +894,12 @@ diffing, which is fine at this scale.
   shallow `{...block}` copy still shares nested-array references, so
   editing the live block was silently corrupting entries already pushed
   onto the undo stack.
-- `history.js` — copied verbatim from `animated-slides-v2/history.js`;
-  it's fully generic (works off any `getState`/`setState` pair), so
-  there was nothing tool-specific to change.
+- `history.js` — loaded from `shared/` (see "Scaling decisions" #3), not
+  a per-tool copy. Originally a verbatim copy of
+  `animated-slides-v2/history.js`; since it's fully generic (works off
+  any `getState`/`setState` pair, no tool-specific logic ever needed),
+  the duplicate copy was retired in favor of both tools loading the same
+  file once it was promoted to `shared/`.
 - `index.html` — page shell + all the UI glue: left rail of "add block"
   buttons plus a Styles drawer opener, the player-card canvas
   (`tab-nav.js` for the strip, `block-renderer.js` for content, both
@@ -1124,14 +1148,23 @@ item gets done.
    see two docs disagreeing about whether this is due now. There is
    nothing left to implement for this item until that trigger fires —
    it's a decision record, not a pending task.
-3. **Shared canvas engine**: promote `canvas-editor.js`,
-   `element-types.js`, `element-renderer.js`, and `history.js` out of
-   `tools/animated-slides-v2/` and into `shared/`, becoming the fork
-   point for every future canvas-based tool (Apps Script's flat file
-   namespace already supports one shared `include('ElementRendererJs')`
-   etc. across multiple `PAGES` entries — no plugin/import system
-   needed). Do this **before** the next canvas-based tool is started,
-   not retroactively-only. Not done yet.
+3. **Shared canvas engine**: done — `canvas-editor.js`, `element-types.js`,
+   `element-renderer.js`, and `history.js` moved from
+   `tools/animated-slides-v2/` into `shared/`. v2's `index.html` and
+   Export code (`fetchModuleSources()`) now load them from `../../shared/`;
+   Tabbed Panels' own duplicate `history.js` was retired and it now loads
+   the shared copy too (it was already byte-identical, just comment
+   headers differed). Verified: both tools load cleanly in a real browser
+   (Playwright, local preview) with no console/page errors and the
+   expected globals (`CanvasEditor`, `ELEMENT_TYPES`, `History`,
+   `TabManager`) present; `AppScript/{ElementTypesJs,ElementRendererJs,
+   CanvasEditorJs,HistoryJs}.html`'s header comments were updated to
+   match (comment-only, no functional change) and `AnimatedSlidesV2.html`'s
+   `MODULE_SOURCES.elementTypes`/`.elementRenderer` were regenerated and
+   confirmed byte-for-byte against the new `shared/` files. This becomes
+   the fork point for every future canvas-based tool (Apps Script's flat
+   file namespace already supports one shared `include('ElementRendererJs')`
+   etc. across multiple `PAGES` entries — no plugin/import system needed).
 4. **Reconcile existing forks**: moot for now — Toggle Slides, the only
    tool with a diverged fork of these four files, was removed entirely
    (see the "Toggle Slides" bullet under Architecture above; it didn't

@@ -406,11 +406,11 @@
 
 <script src="../../shared/app-shell.js"></script>
 <script src="../../shared/storage-connector.js"></script>
-<script src="element-types.js"></script>
-<script src="element-renderer.js"></script>
+<script src="../../shared/element-types.js"></script>
+<script src="../../shared/element-renderer.js"></script>
 <script src="svg-sanitizer.js"></script>
-<script src="canvas-editor.js"></script>
-<script src="history.js"></script>
+<script src="../../shared/canvas-editor.js"></script>
+<script src="../../shared/history.js"></script>
 <script src="slide-manager.js"></script>
 <script src="layer-panel.js"></script>
 <script src="nav-bar.js"></script>
@@ -1637,7 +1637,7 @@
      there's no second copy of any of this logic to drift out of sync. */
 
   async function fetchModuleSources() {
-    const files = ['element-types.js', 'element-renderer.js', 'slide-manager.js', 'nav-bar.js'];
+    const files = ['../../shared/element-types.js', '../../shared/element-renderer.js', 'slide-manager.js', 'nav-bar.js'];
     const texts = await Promise.all(files.map((f) => fetch(f).then((r) => r.text())));
     return texts.join('\n\n');
   }

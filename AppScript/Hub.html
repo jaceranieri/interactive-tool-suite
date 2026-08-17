@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <base target="_top">
-<title>Authoring Tools</title>
+<title>Interactive Tool Suite</title>
 <?!= include('DesignTokens'); ?>
 <?!= include('AppShellCss'); ?>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   html, body { height: 100%; }
@@ -33,6 +34,15 @@
   }
   .hub-list-item:hover { background: var(--surface-sunken); }
   .hub-list-item.active { background: var(--accent-soft); }
+  .hub-list-item-row { display: flex; align-items: flex-start; gap: var(--space-3); }
+  /* Every tool gets an icon badge — makes each row scannable/distinct at
+     a glance instead of relying on title text alone. */
+  .hub-tool-icon {
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: var(--radius-md);
+    background: var(--accent-soft); color: var(--accent-ink); font-size: 15px;
+  }
+  .hub-list-item-body { min-width: 0; flex: 1; }
   .hub-list-item-top { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
   .hub-list-item h3 { margin: 0; font-size: var(--text-base); font-weight: 600; }
   .hub-list-item p {
@@ -49,12 +59,39 @@
     gap: var(--space-4); min-height: 0; min-width: 0;
   }
   .hub-detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); }
-  .hub-detail-header h2 { margin: var(--space-1) 0 0; font-size: var(--text-xl); }
+  .hub-detail-heading-group { min-width: 0; flex: 1; }
+  .hub-detail-title-row { display: flex; align-items: center; gap: var(--space-3); }
+  .hub-detail-icon {
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    width: 48px; height: 48px; border-radius: var(--radius-md);
+    background: var(--accent-soft); color: var(--accent-ink); font-size: 22px;
+  }
+  .hub-detail-header h2 { margin: 0; font-size: var(--text-xl); }
   .hub-detail-header p { color: var(--ink-soft); margin: var(--space-2) 0 0; max-width: 60ch; }
   .hub-detail-actions { flex-shrink: 0; }
+  /* Open tool — the hub's one real call to action, sized and weighted to
+     read as the primary thing to do on this page, not just another
+     button. Reuses .btn/.btn-primary's base (padding, colors, the
+     existing press-scale micro-animation) and layers size/emphasis on
+     top rather than reinventing button styling from scratch. */
+  .hub-cta-btn {
+    padding: var(--space-3) var(--space-6); font-size: var(--text-base); font-weight: 700;
+    border-radius: var(--radius-md); box-shadow: var(--shadow-md);
+  }
+  .hub-cta-btn:hover { box-shadow: var(--shadow-lg); transform: translateY(-1px); }
 
+  /* .hub-preview-frame is the flexible area that has whatever space is
+     left; .hub-preview itself is the actual "viewport" — JS-sized (see
+     fitViewportFrame) to always be a strict 4:3 rectangle that fits
+     within the frame, letterboxed/centered rather than stretched to fill
+     it. flex: none so its JS-assigned pixel width/height aren't fought
+     by the frame's own flex layout. */
+  .hub-preview-frame {
+    flex: 1; min-height: 0; min-width: 0; display: flex;
+    align-items: center; justify-content: center;
+  }
   .hub-preview {
-    flex: 1; min-height: 0; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md);
+    flex: none; border: 1px solid var(--border); border-radius: var(--radius-md);
     background: var(--surface-sunken); overflow: hidden; display: flex;
     align-items: center; justify-content: center;
     padding: var(--space-5); box-sizing: border-box;
@@ -78,6 +115,22 @@
     color: var(--ink-soft); font-size: var(--text-sm); text-align: center; padding: var(--space-6);
   }
 
+  /* ---- Update notes — beneath the viewport, hand-maintained per tool
+     via PAGES's `updates` array (see Code.gs). Capped height + its own
+     scroll so a long changelog never pushes the preview viewport down
+     instead of just scrolling in place. */
+  .hub-updates {
+    flex-shrink: 0; border-top: 1px solid var(--border); padding-top: var(--space-4);
+    max-height: 150px; overflow-y: auto;
+  }
+  .hub-updates h3 {
+    margin: 0 0 var(--space-2); font-size: var(--text-xs); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft);
+  }
+  .hub-updates ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--space-2); }
+  .hub-updates li { font-size: var(--text-sm); color: var(--ink); }
+  .hub-updates-empty { font-size: var(--text-sm); color: var(--ink-soft); margin: 0; }
+
   @media (max-width: 760px) {
     .hub-layout { grid-template-columns: 1fr; }
     .hub-list { max-height: 260px; }
@@ -88,7 +141,7 @@
 
   <div class="hub-header">
     <div class="title-block">Authoring Tools</div>
-    <h1>Pick a tool</h1>
+    <h1>Interactive Tool Suite</h1>
     <p>Choose the right tool for the interactive you're building.</p>
   </div>
 
@@ -96,16 +149,24 @@
     <div class="hub-list" id="hub-list"></div>
     <div class="hub-detail">
       <div class="hub-detail-header">
-        <div>
-          <div class="title-block" id="hub-detail-status"></div>
-          <h2 id="hub-detail-title"></h2>
+        <div class="hub-detail-heading-group">
+          <div class="hub-detail-title-row">
+            <div class="hub-tool-icon hub-detail-icon" id="hub-detail-icon"></div>
+            <div>
+              <div class="title-block" id="hub-detail-status"></div>
+              <h2 id="hub-detail-title"></h2>
+            </div>
+          </div>
           <p id="hub-detail-description"></p>
         </div>
         <div class="hub-detail-actions">
-          <a class="btn btn-primary" id="hub-detail-open">Open tool</a>
+          <a class="btn btn-primary hub-cta-btn" id="hub-detail-open">Open tool</a>
         </div>
       </div>
-      <div class="hub-preview" id="hub-preview"></div>
+      <div class="hub-preview-frame" id="hub-preview-frame">
+        <div class="hub-preview" id="hub-preview"></div>
+      </div>
+      <div class="hub-updates" id="hub-updates"></div>
     </div>
   </div>
 
@@ -122,6 +183,14 @@
     // the export's own layout.
     const PREVIEW_DESIGN_WIDTH = 1000;
 
+    // The viewport "window" itself is always this shape (see
+    // fitViewportFrame) — independent of whatever aspect ratio a given
+    // tool's own export canvas happens to be.
+    const VIEWPORT_RATIO = 4 / 3;
+
+    // Fallback for a future tool added to PAGES without an `icon` yet.
+    const DEFAULT_ICON = 'fa-diagram-project';
+
     function statusBadge(tool) {
       return tool.status === 'beta'
         ? '<span class="status-pill beta"><span class="dot"></span>Beta</span>'
@@ -135,11 +204,16 @@
         const btn = document.createElement('button');
         btn.className = 'hub-list-item' + (tool.id === selectedId ? ' active' : '');
         btn.innerHTML = `
-          <div class="hub-list-item-top">
-            <h3></h3>
-            ${statusBadge(tool)}
+          <div class="hub-list-item-row">
+            <div class="hub-tool-icon"><i class="fa-solid ${tool.icon || DEFAULT_ICON}"></i></div>
+            <div class="hub-list-item-body">
+              <div class="hub-list-item-top">
+                <h3></h3>
+                ${statusBadge(tool)}
+              </div>
+              <p></p>
+            </div>
           </div>
-          <p></p>
         `;
         btn.querySelector('h3').textContent = tool.title;
         btn.querySelector('p').textContent = tool.description || '';
@@ -154,19 +228,37 @@
       preview.innerHTML = '';
 
       if (!tool) {
+        document.getElementById('hub-detail-icon').innerHTML = '';
         document.getElementById('hub-detail-status').innerHTML = '';
         document.getElementById('hub-detail-title').textContent = '';
         document.getElementById('hub-detail-description').textContent = '';
         document.getElementById('hub-detail-open').style.display = 'none';
+        document.getElementById('hub-updates').innerHTML = '';
         return;
       }
 
+      document.getElementById('hub-detail-icon').innerHTML = `<i class="fa-solid ${tool.icon || DEFAULT_ICON}"></i>`;
       document.getElementById('hub-detail-status').innerHTML = statusBadge(tool);
       document.getElementById('hub-detail-title').textContent = tool.title;
       document.getElementById('hub-detail-description').textContent = tool.description || '';
       const openLink = document.getElementById('hub-detail-open');
       openLink.style.display = '';
       openLink.href = baseUrl + '?page=' + tool.id;
+      openLink.innerHTML = 'Open tool <i class="fa-solid fa-arrow-right"></i>';
+
+      // Update notes first — it's a flex sibling of the preview frame, so
+      // its final height has to be in place BEFORE measuring the frame's
+      // available space below. Sizing the viewport first (against a
+      // still-empty, zero-height updates panel) would compute a box too
+      // large, only for updates content to then shrink the frame's real
+      // available space out from under an already-fixed-size viewport —
+      // exactly the overlap bug this order avoids.
+      renderUpdates(tool);
+
+      // Size the 4:3 viewport window to the available frame BEFORE
+      // mounting content into it, so the iframe fit logic below measures
+      // against the final box instead of a stale one.
+      fitViewportFrame();
 
       if (tool.previewHtml) {
         // A fresh iframe per tool switch — only the selected tool's
@@ -178,6 +270,54 @@
         empty.className = 'hub-preview-empty';
         empty.textContent = 'Preview not available yet.';
         preview.appendChild(empty);
+      }
+    }
+
+    /** Sizes #hub-preview to the largest 4:3 box that fits inside
+     *  #hub-preview-frame's current available space — a classic
+     *  letterbox fit, computed the same way regardless of which
+     *  dimension is the tighter constraint. Pure layout math, no
+     *  re-measurement of preview content, so a window resize can call
+     *  this directly. */
+    function fitViewportFrame() {
+      const frame = document.getElementById('hub-preview-frame');
+      const viewport = document.getElementById('hub-preview');
+      const availW = frame.clientWidth;
+      const availH = frame.clientHeight;
+      if (!availW || !availH) return;
+
+      let w, h;
+      if (availW / availH > VIEWPORT_RATIO) {
+        h = availH;
+        w = h * VIEWPORT_RATIO;
+      } else {
+        w = availW;
+        h = w / VIEWPORT_RATIO;
+      }
+      viewport.style.width = Math.round(w) + 'px';
+      viewport.style.height = Math.round(h) + 'px';
+    }
+
+    function renderUpdates(tool) {
+      const el = document.getElementById('hub-updates');
+      el.innerHTML = '';
+      const heading = document.createElement('h3');
+      heading.textContent = "What's new";
+      el.appendChild(heading);
+
+      if (tool.updates && tool.updates.length) {
+        const ul = document.createElement('ul');
+        tool.updates.forEach((note) => {
+          const li = document.createElement('li');
+          li.textContent = note;
+          ul.appendChild(li);
+        });
+        el.appendChild(ul);
+      } else {
+        const empty = document.createElement('p');
+        empty.className = 'hub-updates-empty';
+        empty.textContent = 'No update notes yet.';
+        el.appendChild(empty);
       }
     }
 
@@ -259,6 +399,11 @@
     }
 
     function rescaleActivePreview() {
+      // The 4:3 window's own size depends on the frame's available
+      // space, which a resize just changed — refit it first so the
+      // iframe-content scale (which reads the window's now-current size)
+      // isn't computed against a stale box.
+      fitViewportFrame();
       const sizer = document.querySelector('.hub-preview-sizer');
       const wrap = sizer && sizer.querySelector('.hub-preview-scale-wrap');
       if (sizer && wrap) applyPreviewScale(wrap, sizer);

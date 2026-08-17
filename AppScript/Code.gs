@@ -27,17 +27,36 @@ const PAGES = {
     file: 'AnimatedSlidesV2', title: 'Animated Slides',
     description: 'Rebuilt engine — undo/redo, layers, and a redesigned nav bar. In testing.',
     status: 'stable',
+    // Font Awesome 6 solid icon (class name only, e.g. 'fa-images') shown
+    // on the tool's list row and detail header. Optional — a tool with no
+    // icon falls back to a generic one, see Hub.html's DEFAULT_ICON.
+    icon: 'fa-images',
     // Optional: a tool with a `previewFile` gets its hub preview panel
     // populated with that file's raw contents (a genuine Export of a
     // small demo project, generated once and committed — not derived
     // live from a real saved project). See root CLAUDE.md's Hub bullet.
     previewFile: 'PreviewAnimatedSlidesV2',
+    // Optional short "what's new" bullets, newest first, shown beneath
+    // the hub preview. Hand-maintained like the rest of PAGES — update
+    // this alongside a real feature/fix landing in the tool, same as
+    // title/description/status already are.
+    updates: [
+      'Free draw tool for hand-sketched strokes, a second "Handwriting" text font, and custom SVG upload as a new element type.',
+      'Redesigned element property panel (a side drawer instead of a floating popup) and ruler guides with snap-to-guide dragging.',
+      'Ground-up rebuild of Animated Slides — schema-driven elements, full undo/redo, and cross-slide element linking.',
+    ],
   },
   'tabbed-panels': {
     file: 'TabbedPanels', title: 'Tabbed Panels',
     description: 'Build tabbed content with headings, text, lists, and linking buttons.',
     status: 'in development',
+    icon: 'fa-table-columns',
     previewFile: 'PreviewTabbedPanels',
+    updates: [
+      'Save, Open, and Export confirmed working end-to-end against the live deployment.',
+      'Folder support for organizing saved projects.',
+      'Flowed tab content — headings, paragraphs, lists, buttons, badges, and tables — with a WYSIWYG authoring canvas.',
+    ],
   },
   // 'toggle-slides': { file: 'ToggleSlides', title: 'Toggle Slides', description: 'A single canvas where nav buttons independently toggle groups of elements on and off.', status: 'in development' },  <- removed 2026-08-14, didn't meet requirements, see CLAUDE.md
   // 'tabbed-container': { file: 'TabbedContainer', title: 'Tabbed Container', description: '...', status: 'stable' },  <- add once migrated
@@ -61,6 +80,7 @@ function doGet(e) {
     template.toolsJson = JSON.stringify(
       Object.entries(PAGES).map(([id, meta]) => ({
         id, title: meta.title, description: meta.description, status: meta.status,
+        icon: meta.icon || null, updates: meta.updates || [],
         // Raw contents of the tool's demo-export file, if it has one —
         // a frozen snapshot read fresh on every hub render (same
         // "read a file's real content into a JS string" technique as
@@ -72,7 +92,7 @@ function doGet(e) {
       }))
     ).replace(/</g, '\\u003c');
     return template.evaluate()
-      .setTitle('Authoring Tools')
+      .setTitle('Interactive Tool Suite')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
 

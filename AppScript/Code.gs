@@ -39,6 +39,14 @@ const PAGES = {
     status: 'in development',
     previewFile: 'PreviewTabbedPanels',
   },
+  'tables': {
+    file: 'Tables', title: 'Tables',
+    description: 'Build one or more styled tables with merged cells, tooltips, and a side-by-side or carousel layout.',
+    status: 'in development',
+    // No previewFile yet — generated later from a real demo export once
+    // this tool is stable enough to deploy. Shows the hub's "Preview not
+    // available yet" placeholder until then.
+  },
   // 'toggle-slides': { file: 'ToggleSlides', title: 'Toggle Slides', description: 'A single canvas where nav buttons independently toggle groups of elements on and off.', status: 'in development' },  <- removed 2026-08-14, didn't meet requirements, see CLAUDE.md
   // 'tabbed-container': { file: 'TabbedContainer', title: 'Tabbed Container', description: '...', status: 'stable' },  <- add once migrated
   // 'worked-example': { file: 'WorkedExample', title: 'Worked Example', description: '...', status: 'stable' },        <- add once migrated

@@ -481,18 +481,34 @@ There's no automated test suite. What exists:
 - **Tabbed Panels**: in development, but Export and the real Apps Script
   Save/Load round-trip are now both confirmed working live. Full detail:
   `tools/tabbed-panels/CLAUDE.md`.
-- **Tables**: newly scaffolded, local-preview only — registered in
+- **Tables**: local-preview feature set is now well past the initial
+  scaffold — merged cells, tooltips (multi-line, focus-loss bug fixed),
+  per-table theme presets plus header/border/accent colour overrides,
+  per-cell background/bold overrides, inline rich text in cells
+  (bold/italic/link, via a Tables-specific `richtext-editor.js`
+  copy-adapted from Tabbed Panels'), independent table-wide vs. header
+  formatting (corner radius, padding, text size, alignment, bold),
+  a "row separators only" border style, a per-table "hide title in
+  export" toggle, frozen header/first column, and a side-by-side/
+  carousel layout with edge-peek + slide transition and auto-fallback
+  on narrow embeds. Undo/redo via `shared/history.js`. Registered in
   `Code.gs`'s `PAGES` map (`status: 'in development'`, no `previewFile`
-  yet), but **not yet deployed to Apps Script**: `AppScript/Tables*.html`
-  don't exist yet, and Export currently only embeds `MODULE_SOURCES` for
-  local/repo-source preview (`fetchModuleSources()`'s `fetch()` path),
-  not the Apps-Script-deployed form — that's a separate later pass per
-  the deployment pipeline. Verified via local preview + Playwright:
-  multi-table create/switch, add/remove row and column, merge/unmerge a
-  2x2 block, per-table accent colour, side-by-side/carousel toggle with
-  working prev/next, and undo/redo. Save/Load untested (needs a real
-  Apps Script deployment). See the Architecture section's Tools bullet
-  for the data model summary.
+  yet). Verified via local preview + Playwright across all of the above,
+  including the colour-picker and cell-selection jitter bugs (both the
+  same root cause class as the tooltip bug — a full re-render replacing
+  a DOM node mid-interaction).
+  **Apps Script deployment files now exist** (`AppScript/Tables.html` +
+  `TableTypesJs.html`/`TableManagerJs.html`/`TableRendererJs.html`/
+  `CarouselNavJs.html`/`TablesRichtextEditorJs.html` — the last one
+  deliberately NOT named `RichtextEditorJs.html`, since that name is
+  already taken by Tabbed Panels' own, differently-prefixed copy, and
+  Apps Script's file namespace is flat), generated via the standard
+  5-substitution pipeline and `MODULE_SOURCES` verified byte-for-byte
+  against source — but **not yet pasted into a live Apps Script
+  deployment**, so Save/Load and a real Export-in-Articulate round-trip
+  are still unverified per `DEPLOY_CHECKLIST.md` section 3; do that
+  before calling Tables' deployment confirmed. See the Architecture
+  section's Tools bullet for the data model summary.
 - **Hub preview panel**: new — list+detail layout with a live
   `<iframe>` preview per tool (see the Architecture section's Hub
   bullet). Verified in a stubbed local browser test (real

@@ -149,6 +149,19 @@ database.
     uncommented) with a working Export and a confirmed-live Save/Load
     round-trip — see `tools/tabbed-panels/CLAUDE.md` for its full
     architecture and current backlog.
+  - `tables/` — schema-driven multi-table authoring tool (flowed
+    content like Tabbed Panels, not the SVG canvas). A project holds
+    several named tables with plain-text cells, merged cells
+    (rowspan/colspan), optional per-cell hover/click tooltips, and
+    optional frozen header row / first column. Each table picks a
+    theme preset plus its own colour overrides (or a single accent
+    colour that derives the rest); tables lay out side-by-side (a fixed
+    per-row count) or as a carousel, with side-by-side auto-collapsing
+    to carousel-style single-table display below a width threshold.
+    Undo/redo via `shared/history.js`, same as the other two tools.
+    Newly scaffolded — no `tools/tables/CLAUDE.md` yet (not enough
+    tool-specific depth to warrant one per "Starting a new tool" below);
+    see "Current status" for what's verified so far.
   - **Toggle Slides — removed 2026-08-14.** Was a single-canvas tool
     where nav buttons independently toggled groups of elements on and
     off; didn't meet requirements and was deleted (repo source and
@@ -468,6 +481,34 @@ There's no automated test suite. What exists:
 - **Tabbed Panels**: in development, but Export and the real Apps Script
   Save/Load round-trip are now both confirmed working live. Full detail:
   `tools/tabbed-panels/CLAUDE.md`.
+- **Tables**: local-preview feature set is now well past the initial
+  scaffold — merged cells, tooltips (multi-line, focus-loss bug fixed),
+  per-table theme presets plus header/border/accent colour overrides,
+  per-cell background/bold overrides, inline rich text in cells
+  (bold/italic/link, via a Tables-specific `richtext-editor.js`
+  copy-adapted from Tabbed Panels'), independent table-wide vs. header
+  formatting (corner radius, padding, text size, alignment, bold),
+  a "row separators only" border style, a per-table "hide title in
+  export" toggle, frozen header/first column, and a side-by-side/
+  carousel layout with edge-peek + slide transition and auto-fallback
+  on narrow embeds. Undo/redo via `shared/history.js`. Registered in
+  `Code.gs`'s `PAGES` map (`status: 'in development'`, no `previewFile`
+  yet). Verified via local preview + Playwright across all of the above,
+  including the colour-picker and cell-selection jitter bugs (both the
+  same root cause class as the tooltip bug — a full re-render replacing
+  a DOM node mid-interaction).
+  **Apps Script deployment files now exist** (`AppScript/Tables.html` +
+  `TableTypesJs.html`/`TableManagerJs.html`/`TableRendererJs.html`/
+  `CarouselNavJs.html`/`TablesRichtextEditorJs.html` — the last one
+  deliberately NOT named `RichtextEditorJs.html`, since that name is
+  already taken by Tabbed Panels' own, differently-prefixed copy, and
+  Apps Script's file namespace is flat), generated via the standard
+  5-substitution pipeline and `MODULE_SOURCES` verified byte-for-byte
+  against source — but **not yet pasted into a live Apps Script
+  deployment**, so Save/Load and a real Export-in-Articulate round-trip
+  are still unverified per `DEPLOY_CHECKLIST.md` section 3; do that
+  before calling Tables' deployment confirmed. See the Architecture
+  section's Tools bullet for the data model summary.
 - **Hub preview panel**: new — list+detail layout with a live
   `<iframe>` preview per tool (see the Architecture section's Hub
   bullet). Verified in a stubbed local browser test (real

@@ -1,0 +1,136 @@
+/* ==========================================================================
+   Tables — Rich Text Editor (cell text)
+   Copy-adapted from tools/tabbed-panels/richtext-editor.js rather than a
+   shared/ promotion — see root CLAUDE.md's "Starting a new tool" section
+   on cross-tool pattern docs (a promotion is the cleaner long-term move,
+   but a straight copy-adapt was judged acceptable here given time
+   constraints; if a third tool ever needs the same hand-rolled richtext
+   field, that's the trigger to actually promote this to shared/ and
+   retire both per-tool copies, the same way shared/history.js happened).
+   Differs from the Tabbed Panels original only in its CSS class prefix
+   (`tbl-richtext-*` instead of `tp-richtext-*`, matching this tool's own
+   `tbl-` convention elsewhere) — the allowlist, sanitizer, and the
+   link-button focus-loss fix are identical on purpose, since it's the
+   exact same bug class root CLAUDE.md calls out for this pass.
+
+   Storage format: sanitized HTML, restricted to <b> <i> <u> <a href> (see
+   ALLOWED_TAGS below) — same allowlist as Tabbed Panels', per root
+   CLAUDE.md's instruction to keep parity rather than invent a new one.
+   Sanitizing on every input event (not just blur) means a value handed to
+   onChange is never anything execCommand could have snuck in (e.g. a
+   pasted <script> or a style attribute).
+
+   Old-shape data: a cell.text saved before this feature existed is a
+   plain string with no tags at all. sanitizeRichHtml() handles that
+   input fine — parsing plain text through innerHTML and walking it finds
+   no disallowed elements to strip, so it round-trips unchanged. See
+   table-renderer.js's renderTable() for where this is actually invoked
+   against stored cell text (both old- and new-shape) before display.
+   ========================================================================== */
+
+const RICHTEXT_ALLOWED_TAGS = { B: [], STRONG: [], I: [], EM: [], U: [], A: ['href', 'target', 'rel'], BR: [] };
+
+function sanitizeRichHtml(html) {
+  const scratch = document.createElement('div');
+  scratch.innerHTML = html || '';
+
+  (function walk(node) {
+    [...node.childNodes].forEach((child) => {
+      if (child.nodeType === Node.TEXT_NODE) return;
+      if (child.nodeType !== Node.ELEMENT_NODE || !(child.tagName in RICHTEXT_ALLOWED_TAGS)) {
+        // Unwrap disallowed elements (e.g. a pasted <div>/<span>) rather
+        // than dropping their text content.
+        while (child.firstChild) node.insertBefore(child.firstChild, child);
+        node.removeChild(child);
+        return;
+      }
+      const allowedAttrs = RICHTEXT_ALLOWED_TAGS[child.tagName];
+      [...child.attributes].forEach((attr) => {
+        if (!allowedAttrs.includes(attr.name)) child.removeAttribute(attr.name);
+      });
+      walk(child);
+    });
+  })(scratch);
+
+  return scratch.innerHTML;
+}
+
+/**
+ * Wires a toolbar + contenteditable pair for one richtext field.
+ * @param root      container element; gets `.tbl-richtext-toolbar` and
+ *                  `.tbl-richtext-editable` children appended to it.
+ * @param value     initial sanitized HTML string (or a plain old-shape
+ *                  string — see file header).
+ * @param inline    which marks to expose, e.g. ['bold','italic','link'].
+ * @param onChange  called with the new sanitized HTML on every edit.
+ */
+function attachRichTextField(root, { value = '', inline = [], onChange = () => {} }) {
+  root.innerHTML = '';
+  root.classList.add('tbl-richtext-field');
+
+  const MARK_BUTTONS = {
+    bold: { icon: 'fa-bold', command: 'bold' },
+    italic: { icon: 'fa-italic', command: 'italic' },
+    underline: { icon: 'fa-underline', command: 'underline' },
+    link: { icon: 'fa-link', command: 'link' }, // handled specially — see below
+  };
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'tbl-richtext-toolbar';
+  inline.forEach((mark) => {
+    const spec = MARK_BUTTONS[mark];
+    if (!spec) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tbl-richtext-btn';
+    btn.innerHTML = `<i class="fa-solid ${spec.icon}"></i>`;
+    btn.addEventListener('mousedown', (e) => e.preventDefault()); // keep selection alive
+    btn.addEventListener('click', async () => {
+      editable.focus();
+      if (mark === 'link') {
+        // Shell.prompt() opens a modal, which steals focus to its own input
+        // — the browser clears the contenteditable's selection the moment
+        // that happens, so by the time the awaited promise resolves,
+        // execCommand('createLink') would have nothing selected to act on
+        // and silently do nothing. Save the range before awaiting, then
+        // restore it before calling execCommand — same fix as Tabbed
+        // Panels' richtext-editor.js, same underlying bug class.
+        const selection = window.getSelection();
+        const savedRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+        const existing = document.queryCommandValue('createLink');
+        const url = await Shell.prompt('Enter a URL, or leave blank to remove the link.', existing || 'https://', { heading: 'Link' });
+        if (url === false) return;
+        editable.focus();
+        if (savedRange) {
+          selection.removeAllRanges();
+          selection.addRange(savedRange);
+        }
+        document.execCommand(url ? 'createLink' : 'unlink', false, url || undefined);
+      } else {
+        document.execCommand(spec.command, false, null);
+      }
+      commit();
+    });
+    toolbar.appendChild(btn);
+  });
+
+  const editable = document.createElement('div');
+  editable.className = 'tbl-richtext-editable';
+  editable.contentEditable = 'true';
+  editable.innerHTML = sanitizeRichHtml(value);
+
+  function commit() {
+    onChange(sanitizeRichHtml(editable.innerHTML));
+  }
+
+  editable.addEventListener('input', commit);
+  editable.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+
+  root.appendChild(toolbar);
+  root.appendChild(editable);
+  return editable;
+}

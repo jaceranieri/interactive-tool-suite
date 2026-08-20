@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tables</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/design-tokens.css">
+<link rel="stylesheet" href="../../shared/app-shell.css">
+<style>
+  #shell-main { min-height: 0; }
+
+  /* Left rail: row/column editing (the "content CRUD" for a table, the
+     way Tabbed Panels' left rail is "add block" — a table's rows/columns
+     are its content units, tables themselves are the top-level unit
+     managed from the bottom bar instead, same split as tabs/blocks). */
+  #left-rail {
+    width: 64px; background: var(--surface); border-right: 1px solid var(--border);
+    padding: var(--space-4) var(--space-2); overflow-y: auto; flex-shrink: 0;
+    display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+  }
+  .rail-divider { width: 28px; height: 1px; background: var(--border); margin: var(--space-1) 0; flex-shrink: 0; }
+  .rail-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex-shrink: 0;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+  }
+  .rail-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+  .rail-btn.btn-active { border-color: var(--accent); background: var(--accent-soft); }
+  .rail-btn:disabled { opacity: 0.35; cursor: default; }
+  .rail-btn i { font-size: 16px; color: var(--accent); }
+
+  #content-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  /* Stage: gray well the tables layout sits in — same convention as
+     Tabbed Panels' #stage/#player-card. */
+  #stage { flex: 1; overflow-y: auto; padding: var(--space-6); background: var(--surface-sunken); }
+  #tables-layout-host { max-width: 1100px; margin: 0 auto; }
+
+  /* ---- carousel-nav.js's learner-facing layout — this exact markup/CSS
+     is what the exported player renders too. ---- */
+  .cn-layout { display: flex; flex-direction: column; gap: var(--space-4); }
+  .cn-viewport { overflow: hidden; }
+  .cn-grid { display: grid; gap: var(--space-5); align-items: start; }
+  .cn-item { min-width: 0; }
+  /* Collapsed (carousel, or side-by-side auto-collapsed below the
+     narrow-viewport threshold): the grid becomes a flex strip that
+     carousel-nav.js slides via transform, with neighbouring tables'
+     item widths deliberately overflowing the viewport by CAROUSEL_PEEK
+     px on each side so they peek in — see carousel-nav.js's header
+     comment for the exact math. */
+  .cn-collapsed .cn-grid { display: flex; gap: 12px; flex-wrap: nowrap; transition: transform var(--duration-base) var(--ease-standard); }
+  .cn-collapsed .cn-item { flex-shrink: 0; transition: opacity var(--duration-base) var(--ease-standard); }
+  .cn-collapsed .cn-item-peek { opacity: 0.55; }
+  .cn-nav { display: none; align-items: center; justify-content: center; gap: var(--space-4); }
+  .cn-nav-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
+  .cn-nav-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+  .cn-nav-btn:disabled { opacity: 0.3; cursor: default; }
+  .cn-nav-counter { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-soft); min-width: 40px; text-align: center; }
+
+  /* ---- table-renderer.js's learner-facing table — WYSIWYG, same markup
+     Export ships. ---- */
+  .tbl-wrapper { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); padding: var(--space-5); }
+  .tbl-name { font-weight: 600; font-size: var(--text-base); margin-bottom: var(--space-3); color: var(--ink); }
+  .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, var(--border-strong)); /* border-radius set inline per-table, see table-renderer.js */ }
+  .tbl-scroller.tbl-row-sep-only { border: none; }
+  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, var(--ink)); }
+  .tbl-cell { border: 1px solid var(--tbl-border, var(--border-strong)); padding: var(--tbl-body-padding, 9px); text-align: var(--tbl-body-align, left); font-size: var(--tbl-body-size, var(--text-sm)); font-weight: var(--tbl-body-weight, 400); position: relative; cursor: pointer; transition: box-shadow var(--duration-fast) var(--ease-standard); }
+  /* Authoring-only hover affordance (item 6) — an inset box-shadow tint
+     rather than `background`, so it stays visible over a cell's own
+     background (theme colour, or a per-cell `cellBg` override, both set
+     via inline style/CSS var — see table-renderer.js) without fighting
+     CSS specificity. Never emitted into Export's own <style> string
+     (that's a separate, hand-copied stylesheet in index.html's
+     openExportModal()) — this rule only lives in the authoring page's
+     own stylesheet, so learners never see it. */
+  .tbl-cell:hover { box-shadow: inset 0 0 0 999px rgba(12, 94, 130, 0.07); }
+  th.tbl-cell { background: var(--tbl-header-bg, var(--paper)); color: var(--tbl-header-text, var(--ink)); padding: var(--tbl-header-padding, 9px); text-align: var(--tbl-header-align, left); font-size: var(--tbl-header-size, var(--text-sm)); font-weight: var(--tbl-header-weight, 600); }
+  .tbl-cell-text:empty::before { content: '\00a0'; }
+  .tbl-cell.tbl-cell-selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* Row separators only: no vertical/outer borders, just a line under
+     every row (header included) — see table-types.js's rowSeparatorsOnly
+     field and table-renderer.js's renderTable() for the class toggle. */
+  .tbl-table.tbl-row-sep-only { border: none; }
+  .tbl-table.tbl-row-sep-only .tbl-cell { border: none; border-bottom: 1px solid var(--tbl-border, var(--border-strong)); }
+  .tbl-sticky-row { position: sticky; top: 0; z-index: 2; }
+  .tbl-sticky-col { position: sticky; left: 0; z-index: 1; }
+  .tbl-sticky-row.tbl-sticky-col { z-index: 3; }
+  .tbl-tooltip-icon { margin-left: 6px; color: inherit; opacity: 0.6; font-size: 11px; cursor: pointer; }
+  .tbl-tooltip-icon:hover { opacity: 1; }
+  .tbl-tooltip-popover { position: fixed; max-width: 240px; background: var(--ink); color: #fff; padding: 7px 10px; border-radius: var(--radius-sm); font-size: var(--text-xs); line-height: 1.4; z-index: 9999; box-shadow: var(--shadow-lg); }
+
+  /* Property / Styles / Layout drawers — same .side-panel pattern as
+     Tabbed Panels' drawers. Only one open at a time (openPanel()). */
+  .side-panel {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 340px; background: var(--surface);
+    border-left: 1px solid var(--border); box-shadow: var(--shadow-lg); transform: translateX(100%);
+    transition: transform var(--duration-base) var(--ease-standard); display: flex; flex-direction: column; z-index: 5; pointer-events: none;
+  }
+  .side-panel.active { transform: translateX(0); pointer-events: auto; }
+  .side-panel-header { display: flex; align-items: flex-start; justify-content: space-between; padding: var(--space-5); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .side-panel-header h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
+  .side-panel-body { flex: 1; overflow-y: auto; padding: var(--space-5); }
+  #canvas-wrapper { position: relative; flex: 1; min-height: 0; display: flex; }
+
+  .popup-field { margin-bottom: var(--space-4); }
+  .popup-field:last-child { margin-bottom: 0; }
+  .popup-field label { display: block; font-size: 10px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
+  .popup-field input, .popup-field select, .popup-field textarea { width: 100%; font-family: var(--font-ui); font-size: var(--text-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 7px; box-sizing: border-box; }
+  .popup-field textarea { resize: vertical; min-height: 44px; }
+  .popup-field.toggle-field { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .popup-field.toggle-field label { margin-bottom: 0; }
+  .popup-field input[type=color] { width: 40px; height: 40px; padding: 0; border-radius: var(--radius-sm); cursor: pointer; overflow: hidden; }
+  .popup-field input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  .popup-field input[type=color]::-webkit-color-swatch { border: none; border-radius: calc(var(--radius-sm) - 1px); }
+  .popup-field input:disabled { opacity: 0.4; cursor: not-allowed; }
+  .colour-field-row { display: flex; align-items: center; gap: var(--space-2); }
+  .colour-field-row input[type=color] { flex-shrink: 0; }
+  .colour-clear-btn { border: none; background: none; color: var(--ink-faint); cursor: pointer; font-size: var(--text-xs); text-decoration: underline; padding: 0; }
+  .colour-clear-btn:hover { color: var(--danger); }
+  .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch-slider { position: absolute; inset: 0; background: var(--border-strong); border-radius: 999px; cursor: pointer; transition: background var(--duration-fast) var(--ease-standard); }
+  .switch-slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; box-shadow: var(--shadow-sm); transition: transform var(--duration-fast) var(--ease-standard); }
+  .switch input:checked + .switch-slider { background: var(--accent); }
+  .switch input:checked + .switch-slider::before { transform: translateX(16px); }
+
+  .settings-section { margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--border); }
+  .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .settings-section h3 { margin: 0 0 var(--space-3); font-size: var(--text-sm); font-weight: 600; }
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .btn-row { display: flex; gap: var(--space-2); }
+  .btn-row .btn { flex: 1; }
+  .cell-selection-note { font-size: var(--text-xs); color: var(--ink-soft); margin-bottom: var(--space-4); }
+  .panel-empty { font-size: var(--text-sm); color: var(--ink-faint); font-style: italic; padding: var(--space-4) 0; }
+
+  /* Bottom bar — table CRUD (add/duplicate/rename/delete/reorder), same
+     role and layout as Tabbed Panels' #editor-tab-bar. */
+  #editor-table-bar { flex-shrink: 0; padding: var(--space-3) var(--space-5); background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; gap: var(--space-3); }
+  #editor-table-bar .title-block { margin-right: var(--space-2); }
+  #table-thumbs { display: flex; gap: var(--space-2); flex: 1; overflow-x: auto; padding: 8px 10px 6px 10px; margin: -8px -10px -6px -10px; }
+  .table-thumb-wrap { position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .table-thumb-container { position: relative; }
+  .table-thumb {
+    width: 108px; height: 68px; border-radius: 4px; border: 2px solid var(--border);
+    overflow: hidden; background: white; cursor: pointer;
+  }
+  .table-thumb.active { border-color: var(--ink); }
+  .table-thumb-container.dragging { opacity: 0.4; }
+  .table-thumb-container.drag-over .table-thumb { border-color: var(--accent); }
+  .table-thumb-name {
+    font-family: var(--font-mono); font-size: 10px; color: var(--ink-soft); max-width: 108px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-align: center;
+  }
+  .table-thumb-name.active { color: var(--ink); font-weight: 600; }
+  .table-thumb-rename-input {
+    font-family: var(--font-mono); font-size: var(--text-xs); padding: 2px 6px;
+    border-radius: var(--radius-sm); border: 1px solid var(--accent); outline: none; width: 100px; text-align: center;
+  }
+  .table-thumb-delete {
+    display: none; position: absolute; top: -6px; right: -6px; width: 16px; height: 16px;
+    border-radius: 50%; border: 1px solid var(--border); background: white; color: var(--ink-soft);
+    font-size: 10px; line-height: 1; cursor: pointer; align-items: center; justify-content: center;
+  }
+  .table-thumb-container:hover .table-thumb-delete { display: flex; }
+  .table-thumb-delete:hover { background: var(--danger); color: white; border-color: var(--danger); }
+  .table-thumb-duplicate {
+    display: none; position: absolute; top: -6px; left: -6px; width: 16px; height: 16px;
+    border-radius: 50%; border: 1px solid var(--border); background: white; color: var(--ink-soft);
+    font-size: 9px; line-height: 1; cursor: pointer; align-items: center; justify-content: center;
+  }
+  .table-thumb-container:hover .table-thumb-duplicate { display: flex; }
+  .table-thumb-duplicate:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cn-collapsed .cn-grid, .cn-collapsed .cn-item { transition: none; }
+    .tbl-cell { transition: none; }
+  }
+
+  /* ---- richtext-editor.js's cell text field — same structure as Tabbed
+     Panels' .tp-richtext-* rules, just this tool's own `tbl-` prefix
+     (see richtext-editor.js's header comment on why it's a separate
+     copy rather than a shared/ include). ---- */
+  .tbl-richtext-field { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .tbl-richtext-toolbar { display: flex; gap: 2px; padding: 4px; background: var(--paper); border-bottom: 1px solid var(--border); }
+  .tbl-richtext-btn { width: 26px; height: 26px; border: none; background: transparent; border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
+  .tbl-richtext-btn:hover { background: var(--accent-soft); color: var(--accent); }
+  .tbl-richtext-editable { min-height: 48px; padding: 8px; font-size: var(--text-sm); outline: none; }
+</style>
+</head>
+<body>
+
+<div id="shell">
+  <div id="top-bar">
+    <div class="top-bar-left">
+      <a href="#" class="hub-link" title="Back to hub">&larr;</a>
+      <div class="tool-identity">
+        <div class="title-block">Tool &middot; Tables</div>
+        <h1 id="display-project-name">Untitled project</h1>
+        <span id="unsaved-dot" title="Unsaved changes" style="display:none; width:8px; height:8px; border-radius:50%; background:var(--warn); margin-left:8px; vertical-align:middle;"></span>
+      </div>
+    </div>
+    <div class="top-bar-right">
+      <span id="shell-status" class="status-pill"><span class="dot"></span>Not connected</span>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" onclick="newProject()">New</button>
+      <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); browseFolder=''; refreshProjectList();">Open</button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-secondary" id="undo-btn" onclick="history.undo()">Undo</button>
+      <button class="btn btn-secondary" id="redo-btn" onclick="history.redo()">Redo</button>
+      <div class="top-bar-divider"></div>
+      <button class="btn btn-primary" onclick="saveProject()"><i class="fa-solid fa-cloud-arrow-up"></i> Save</button>
+    </div>
+  </div>
+
+  <div id="shell-main" style="display:flex;">
+    <div id="left-rail"></div>
+
+    <div id="content-col">
+      <div id="canvas-wrapper">
+        <div id="stage">
+          <div id="tables-layout-host"></div>
+        </div>
+
+        <div class="side-panel" id="cell-panel">
+          <div class="side-panel-header">
+            <h2>Cell settings</h2>
+            <button class="modal-close" onclick="closePanel()">&times;</button>
+          </div>
+          <div class="side-panel-body" id="cell-panel-body"></div>
+        </div>
+
+        <div class="side-panel" id="table-styles-panel">
+          <div class="side-panel-header">
+            <h2>Table styles</h2>
+            <button class="modal-close" onclick="closePanel()">&times;</button>
+          </div>
+          <div class="side-panel-body" id="table-styles-panel-body"></div>
+        </div>
+
+        <div class="side-panel" id="layout-panel">
+          <div class="side-panel-header">
+            <h2>Layout</h2>
+            <button class="modal-close" onclick="closePanel()">&times;</button>
+          </div>
+          <div class="side-panel-body" id="layout-panel-body"></div>
+        </div>
+      </div>
+
+      <div id="editor-table-bar">
+        <div class="title-block">Tables (editor)</div>
+        <div id="table-thumbs"></div>
+        <button class="btn btn-secondary" onclick="addTableWithHistory()">+ Table</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Open project modal -->
+<div class="modal-overlay" id="open-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div><div class="title-block">Open</div><h2>Your projects</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('open-modal')">&times;</button>
+    </div>
+    <div class="modal-body"><div id="project-list"></div></div>
+  </div>
+</div>
+
+<!-- Save project modal (first save only — pick a name and destination folder) -->
+<div class="modal-overlay" id="save-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div><div class="title-block">Save</div><h2>Save project</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('save-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="popup-field">
+        <label>Project name</label>
+        <input type="text" id="save-name-input" onkeydown="if (event.key === 'Enter') confirmSaveAs();">
+      </div>
+      <div id="save-folder-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Shell.closeModal('save-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmSaveAs()">Save here</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Export</div><h2>Self-contained HTML</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('export-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--ink-soft); margin-top:0;">Paste this into an Articulate 360 web object (or any HTML embed).</p>
+      <textarea id="export-textarea" readonly style="width:100%; height:320px; font-family:var(--font-mono); font-size:11px; box-sizing:border-box; border:1px solid var(--border); border-radius:var(--radius-sm); padding:var(--space-3);"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="copyExportCode()">Copy code</button>
+    </div>
+  </div>
+</div>
+
+<script src="../../shared/app-shell.js"></script>
+<script src="../../shared/storage-connector.js"></script>
+<script src="table-types.js"></script>
+<script src="richtext-editor.js"></script>
+<script src="table-renderer.js"></script>
+<script src="carousel-nav.js"></script>
+<script src="table-manager.js"></script>
+<script src="../../shared/history.js"></script>
+<script>
+  const TOOL_ID = 'tables';
+  // Same placeholder convention as the other tools — real values only
+  // get substituted in the Apps Script deployed copy, never here. See
+  // root CLAUDE.md's deployment pipeline section.
+  Storage.configure('STORAGE_ENDPOINT_PLACEHOLDER', 'STORAGE_API_KEY_PLACEHOLDER');
+
+  let currentProjectName = null;
+  let currentProjectFolder = ''; // '/'-separated folder the current project lives in ('' = root)
+  let browseFolder = ''; // folder currently being browsed in the Open modal
+  let saveFolder = ''; // folder currently being browsed in the Save-as modal (first save only)
+  let hasUnsavedChanges = false;
+  let activePanel = null; // 'cell' | 'tableStyles' | 'layout' | null
+
+  // Cell selection: selAnchor is where a click (or the start of a
+  // shift+click range) landed; selEnd is the far corner of the range
+  // (equal to selAnchor for a plain single-cell click). Both null when
+  // nothing is selected. Selection always targets real, rendered cells —
+  // a `null` grid position never gets a click handler (see
+  // table-renderer.js), so these always resolve to an actual cell.
+  let selAnchor = null; // { tableId, r, c }
+  let selEnd = null;    // { tableId, r, c }
+
+  const tableManager = new TableManager({ tables: null, layout: null });
+  const history = new History({
+    getState: () => tableManager.getState(),
+    setState: (s) => tableManager.setState(s),
+    onChange: () => {
+      document.getElementById('undo-btn').disabled = !history.canUndo();
+      document.getElementById('redo-btn').disabled = !history.canRedo();
+    },
+  });
+
+  tableManager.onChange = () => { markUnsaved(); renderAll(); };
+
+  function markUnsaved() {
+    hasUnsavedChanges = true;
+    document.getElementById('unsaved-dot').style.display = 'inline-block';
+  }
+  function markSaved() {
+    hasUnsavedChanges = false;
+    document.getElementById('unsaved-dot').style.display = 'none';
+  }
+
+  /* ---- Panel management: cell / table-styles / layout drawers, one at a time ---- */
+
+  function hidePanels() {
+    ['cell-panel', 'table-styles-panel', 'layout-panel'].forEach((id) => document.getElementById(id).classList.remove('active'));
+    document.getElementById('table-styles-toggle-btn')?.classList.remove('btn-active');
+    document.getElementById('layout-toggle-btn')?.classList.remove('btn-active');
+  }
+
+  function closePanel() {
+    hidePanels();
+    selAnchor = null;
+    selEnd = null;
+    activePanel = null;
+    renderStage();
+  }
+
+  function openPanel(name) {
+    hidePanels();
+    activePanel = name;
+    if (name === 'cell') {
+      document.getElementById('cell-panel').classList.add('active');
+      renderCellPanel();
+    } else if (name === 'tableStyles') {
+      document.getElementById('table-styles-panel').classList.add('active');
+      document.getElementById('table-styles-toggle-btn').classList.add('btn-active');
+      renderTableStylesPanel();
+    } else if (name === 'layout') {
+      document.getElementById('layout-panel').classList.add('active');
+      document.getElementById('layout-toggle-btn').classList.add('btn-active');
+      renderLayoutPanel();
+    }
+  }
+
+  /* ---- Left rail: row/column editing for the active table, plus the
+     Table Styles / Layout drawer openers. ---- */
+
+  function renderLeftRail() {
+    const rail = document.getElementById('left-rail');
+    rail.innerHTML = '';
+
+    const addRowBtn = document.createElement('button');
+    addRowBtn.className = 'rail-btn';
+    addRowBtn.title = 'Add row';
+    addRowBtn.setAttribute('aria-label', 'Add row');
+    addRowBtn.innerHTML = '<i class="fa-solid fa-table-cells-row-lock"></i>';
+    addRowBtn.addEventListener('click', () => {
+      const table = tableManager.getActiveTable();
+      const after = selAnchor && selAnchor.tableId === table.id ? selAnchor.r : table.rows.length - 1;
+      history.beginAction();
+      tableManager.addRow(table.id, after);
+      history.commitAction();
+      if (activePanel === 'cell') renderCellPanel();
+    });
+    rail.appendChild(addRowBtn);
+
+    const addColBtn = document.createElement('button');
+    addColBtn.className = 'rail-btn';
+    addColBtn.title = 'Add column';
+    addColBtn.setAttribute('aria-label', 'Add column');
+    addColBtn.innerHTML = '<i class="fa-solid fa-table-columns"></i>';
+    addColBtn.addEventListener('click', () => {
+      const table = tableManager.getActiveTable();
+      const after = selAnchor && selAnchor.tableId === table.id ? selAnchor.c : table.rows[0].length - 1;
+      history.beginAction();
+      tableManager.addColumn(table.id, after);
+      history.commitAction();
+      if (activePanel === 'cell') renderCellPanel();
+    });
+    rail.appendChild(addColBtn);
+
+    const mergeBtn = document.createElement('button');
+    mergeBtn.className = 'rail-btn';
+    mergeBtn.id = 'merge-rail-btn';
+    mergeBtn.title = 'Merge selected cells';
+    mergeBtn.setAttribute('aria-label', 'Merge selected cells');
+    mergeBtn.innerHTML = '<i class="fa-solid fa-table-cells-large"></i>';
+    mergeBtn.addEventListener('click', () => mergeSelection());
+    rail.appendChild(mergeBtn);
+
+    const unmergeBtn = document.createElement('button');
+    unmergeBtn.className = 'rail-btn';
+    unmergeBtn.id = 'unmerge-rail-btn';
+    unmergeBtn.title = 'Unmerge selected cell';
+    unmergeBtn.setAttribute('aria-label', 'Unmerge selected cell');
+    unmergeBtn.innerHTML = '<i class="fa-solid fa-table-cells"></i>';
+    unmergeBtn.addEventListener('click', () => unmergeSelection());
+    rail.appendChild(unmergeBtn);
+
+    const divider = document.createElement('div');
+    divider.className = 'rail-divider';
+    rail.appendChild(divider);
+
+    const stylesBtn = document.createElement('button');
+    stylesBtn.className = 'rail-btn';
+    stylesBtn.id = 'table-styles-toggle-btn';
+    stylesBtn.title = 'Table styles';
+    stylesBtn.setAttribute('aria-label', 'Table styles');
+    stylesBtn.innerHTML = '<i class="fa-solid fa-palette"></i>';
+    stylesBtn.addEventListener('click', () => activePanel === 'tableStyles' ? closePanel() : openPanel('tableStyles'));
+    rail.appendChild(stylesBtn);
+
+    const layoutBtn = document.createElement('button');
+    layoutBtn.className = 'rail-btn';
+    layoutBtn.id = 'layout-toggle-btn';
+    layoutBtn.title = 'Layout';
+    layoutBtn.setAttribute('aria-label', 'Layout');
+    layoutBtn.innerHTML = '<i class="fa-solid fa-grip"></i>';
+    layoutBtn.addEventListener('click', () => activePanel === 'layout' ? closePanel() : openPanel('layout'));
+    rail.appendChild(layoutBtn);
+
+    updateRailButtonState();
+  }
+
+  function updateRailButtonState() {
+    const range = currentSelectionRange();
+    const mergeBtn = document.getElementById('merge-rail-btn');
+    const unmergeBtn = document.getElementById('unmerge-rail-btn');
+    if (!mergeBtn || !unmergeBtn) return;
+    mergeBtn.disabled = !range || (range.rTop === range.rBot && range.cLeft === range.cRight);
+    unmergeBtn.disabled = !(range && range.rTop === range.rBot && range.cLeft === range.cRight && isMergedCell(range));
+  }
+
+  /* ---- Selection helpers ---- */
+
+  function currentSelectionRange() {
+    if (!selAnchor || !selEnd || selAnchor.tableId !== selEnd.tableId) return null;
+    return {
+      tableId: selAnchor.tableId,
+      rTop: Math.min(selAnchor.r, selEnd.r), rBot: Math.max(selAnchor.r, selEnd.r),
+      cLeft: Math.min(selAnchor.c, selEnd.c), cRight: Math.max(selAnchor.c, selEnd.c),
+    };
+  }
+
+  function isMergedCell(range) {
+    const table = tableManager.tables.find((t) => t.id === range.tableId);
+    const cell = table && table.rows[range.rTop] && table.rows[range.rTop][range.cLeft];
+    return !!cell && ((cell.rowSpan || 1) > 1 || (cell.colSpan || 1) > 1);
+  }
+
+  function selectCell(tableId, r, c, event) {
+    const switchingTable = tableManager.activeTableId !== tableId;
+    if (switchingTable) tableManager.setActiveTable(tableId);
+    if (event && event.shiftKey && selAnchor && selAnchor.tableId === tableId) {
+      selEnd = { tableId, r, c };
+    } else {
+      selAnchor = { tableId, r, c };
+      selEnd = { tableId, r, c };
+    }
+    openPanel('cell');
+    // Real bug fix: selecting a cell within the table that's ALREADY
+    // active only changes which cell shows the .tbl-cell-selected
+    // outline — nothing about grid content/structure changed. The old
+    // code called the heavy renderStage() unconditionally here, which
+    // tears down and rebuilds EVERY cell's real DOM node across every
+    // table on every single click (renderTable() builds fresh elements,
+    // it doesn't diff/reuse). That's not an actual CSS animation firing,
+    // but it reads as one: a freshly-inserted cell node drops its hover
+    // state, its tooltip icon detaches/reattaches, and the whole table
+    // repaints in one frame — a jitter/flash that looks like an
+    // accidental entrance effect even though no @keyframes or transition
+    // is actually involved. Root cause is "DOM node fully recreated
+    // instead of a class toggled" (see this pass's notes) — fixed by
+    // toggling .tbl-cell-selected directly on the existing nodes via
+    // updateCellSelectionHighlight() instead, for the common case.
+    // Switching the ACTIVE table is the one case that still needs the
+    // full rebuild: it changes what the carousel/side-by-side layout
+    // shows, AND the onChange that setActiveTable() already fired above
+    // ran with the stale pre-click selAnchor/selEnd (this function
+    // hadn't updated them yet) — so this renderStage() call is a real,
+    // necessary second render with the corrected selection, not the same
+    // waste as the no-switch case.
+    if (switchingTable) {
+      renderStage();
+    } else {
+      updateCellSelectionHighlight();
+    }
+  }
+
+  /** Toggles `.tbl-cell-selected` directly on the currently-rendered
+   *  cell DOM nodes to reflect the current selection range — no
+   *  teardown/rebuild, see selectCell()'s comment for why this matters. */
+  function updateCellSelectionHighlight() {
+    const range = currentSelectionRange();
+    document.querySelectorAll('#tables-layout-host .tbl-cell').forEach((cellEl) => {
+      const wrapper = cellEl.closest('[data-table-id]');
+      if (!wrapper) return;
+      const r = Number(cellEl.dataset.row);
+      const c = Number(cellEl.dataset.col);
+      const selected = !!range && range.tableId === wrapper.dataset.tableId &&
+        r >= range.rTop && r <= range.rBot && c >= range.cLeft && c <= range.cRight;
+      cellEl.classList.toggle('tbl-cell-selected', selected);
+    });
+    updateRailButtonState();
+  }
+
+  function mergeSelection() {
+    const range = currentSelectionRange();
+    if (!range || (range.rTop === range.rBot && range.cLeft === range.cRight)) return;
+    history.beginAction();
+    tableManager.mergeCells(range.tableId, range.rTop, range.cLeft, range.rBot, range.cRight);
+    history.commitAction();
+    selAnchor = { tableId: range.tableId, r: range.rTop, c: range.cLeft };
+    selEnd = { ...selAnchor };
+    if (activePanel === 'cell') renderCellPanel();
+  }
+
+  function unmergeSelection() {
+    const range = currentSelectionRange();
+    if (!range) return;
+    history.beginAction();
+    tableManager.unmergeCells(range.tableId, range.rTop, range.cLeft);
+    history.commitAction();
+    if (activePanel === 'cell') renderCellPanel();
+  }
+
+  /* ---- Main stage: side-by-side / carousel layout of every table ---- */
+
+  function buildTableAuthoringEl(table) {
+    return renderTable(table, {
+      onCellClick: (r, c, event) => selectCell(table.id, r, c, event),
+      isSelected: (r, c) => {
+        const range = currentSelectionRange();
+        return !!range && range.tableId === table.id && r >= range.rTop && r <= range.rBot && c >= range.cLeft && c <= range.cRight;
+      },
+    });
+  }
+
+  function renderStage() {
+    const activeIndex = Math.max(0, tableManager.tables.findIndex((t) => t.id === tableManager.activeTableId));
+    renderTablesLayout(document.getElementById('tables-layout-host'), {
+      tables: tableManager.tables,
+      layout: tableManager.layout,
+      renderItem: (table) => buildTableAuthoringEl(table),
+      activeIndex,
+      onNavigate: (i) => { tableManager.setActiveTable(tableManager.tables[i].id); },
+    });
+    updateRailButtonState();
+  }
+
+  /* ---- Bottom bar: table thumbnails + add/duplicate/rename/delete/reorder ---- */
+
+  function renderTableThumbnail(table) {
+    // Renders the SAME renderTable() the real stage uses, at a fixed
+    // content width, then scales the whole thing down via CSS transform —
+    // same trick Tabbed Panels' renderTabThumbnail() uses, so there's no
+    // separate "how do I draw a thumbnail" logic to keep in sync.
+    const THUMB_W = 108, THUMB_H = 68, CONTENT_W = 420;
+    const scale = THUMB_W / CONTENT_W;
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `width:${THUMB_W}px; height:${THUMB_H}px; overflow:hidden; position:relative; background:#fff;`;
+
+    const inner = document.createElement('div');
+    inner.style.cssText = `width:${CONTENT_W}px; transform:scale(${scale}); transform-origin:top left; pointer-events:none;`;
+    try { inner.appendChild(renderTable(table, { showName: false })); } catch (err) { /* a malformed table shouldn't break the whole thumbnail row */ }
+    wrapper.appendChild(inner);
+    return wrapper;
+  }
+
+  function renderTableBar() {
+    const container = document.getElementById('table-thumbs');
+    container.innerHTML = '';
+    let draggedId = null;
+
+    tableManager.tables.forEach((table) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'table-thumb-wrap';
+
+      const thumbContainer = document.createElement('div');
+      thumbContainer.className = 'table-thumb-container' + (table.id === tableManager.lastAddedTableId ? ' thumb-enter' : '');
+      thumbContainer.draggable = true;
+      thumbContainer.dataset.tableId = table.id;
+
+      const thumb = document.createElement('div');
+      thumb.className = 'table-thumb' + (table.id === tableManager.activeTableId ? ' active' : '');
+      thumb.appendChild(renderTableThumbnail(table));
+      thumb.addEventListener('click', () => { closePanel(); tableManager.setActiveTable(table.id); });
+
+      const dup = document.createElement('button');
+      dup.className = 'table-thumb-duplicate';
+      dup.innerHTML = '<i class="fa-regular fa-copy"></i>';
+      dup.title = 'Duplicate table';
+      dup.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history.beginAction();
+        tableManager.duplicateTable(table.id);
+        history.commitAction();
+      });
+      thumbContainer.appendChild(thumb);
+      thumbContainer.appendChild(dup);
+
+      if (tableManager.tables.length > 1) {
+        const del = document.createElement('button');
+        del.className = 'table-thumb-delete';
+        del.innerHTML = '&times;';
+        del.title = 'Delete table';
+        del.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const ok = await Shell.confirm(`Delete "${table.name}"?`, { heading: 'Delete table', okLabel: 'Delete', danger: true });
+          if (!ok) return;
+          history.beginAction();
+          tableManager.deleteTable(table.id);
+          history.commitAction();
+        });
+        thumbContainer.appendChild(del);
+      }
+
+      thumbContainer.addEventListener('dragstart', () => { draggedId = table.id; thumbContainer.classList.add('dragging'); });
+      thumbContainer.addEventListener('dragend', () => {
+        thumbContainer.classList.remove('dragging');
+        container.querySelectorAll('.table-thumb-container').forEach((c) => c.classList.remove('drag-over'));
+      });
+      thumbContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (draggedId !== null && draggedId !== table.id) thumbContainer.classList.add('drag-over');
+      });
+      thumbContainer.addEventListener('dragleave', () => thumbContainer.classList.remove('drag-over'));
+      thumbContainer.addEventListener('drop', (e) => {
+        e.preventDefault();
+        thumbContainer.classList.remove('drag-over');
+        if (draggedId === null || draggedId === table.id) return;
+        history.beginAction();
+        tableManager.moveTableAfter(draggedId, table.id);
+        history.commitAction();
+      });
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'table-thumb-name' + (table.id === tableManager.activeTableId ? ' active' : '');
+      nameEl.textContent = table.name;
+      nameEl.addEventListener('click', () => { closePanel(); tableManager.setActiveTable(table.id); });
+      nameEl.addEventListener('dblclick', () => startRenameTable(wrap, nameEl, table.id));
+
+      wrap.appendChild(thumbContainer);
+      wrap.appendChild(nameEl);
+      container.appendChild(wrap);
+    });
+
+    // One-shot entrance flag — deferred to the next animation frame, same
+    // "two renders can happen back-to-back" defensive pattern Tabbed
+    // Panels documents on its own equivalent (see its CLAUDE.md).
+    if (tableManager.lastAddedTableId) {
+      const consumedId = tableManager.lastAddedTableId;
+      requestAnimationFrame(() => { if (tableManager.lastAddedTableId === consumedId) tableManager.lastAddedTableId = null; });
+    }
+  }
+
+  function startRenameTable(wrap, nameEl, tableId) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'table-thumb-rename-input';
+    input.value = tableManager.tables.find((t) => t.id === tableId).name;
+    wrap.replaceChild(input, nameEl);
+    input.focus();
+    input.select();
+
+    let committed = false;
+    function commit() {
+      if (committed) return;
+      committed = true;
+      const newName = input.value.trim();
+      history.beginAction();
+      tableManager.renameTable(tableId, newName || tableManager.tables.find((t) => t.id === tableId).name);
+      history.commitAction();
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+      if (e.key === 'Escape') { committed = true; renderTableBar(); }
+    });
+  }
+
+  function addTableWithHistory() {
+    history.beginAction();
+    tableManager.addTable();
+    history.commitAction();
+  }
+
+  /* ---- Cell property panel ---- */
+
+  function renderCellPanel() {
+    const body = document.getElementById('cell-panel-body');
+    body.innerHTML = '';
+    const range = currentSelectionRange();
+    if (!range) { body.innerHTML = '<div class="panel-empty">Click a cell to edit it.</div>'; return; }
+
+    const table = tableManager.tables.find((t) => t.id === range.tableId);
+    if (!table) { closePanel(); return; }
+    const isRange = range.rTop !== range.rBot || range.cLeft !== range.cRight;
+
+    if (isRange) {
+      const note = document.createElement('div');
+      note.className = 'cell-selection-note';
+      note.textContent = `${(range.rBot - range.rTop + 1) * (range.cRight - range.cLeft + 1)} cells selected. Merging keeps the top-left cell's text and discards the rest.`;
+      body.appendChild(note);
+      const mergeBtn = document.createElement('button');
+      mergeBtn.className = 'btn btn-primary';
+      mergeBtn.style.width = '100%';
+      mergeBtn.textContent = 'Merge cells';
+      mergeBtn.addEventListener('click', () => mergeSelection());
+      body.appendChild(mergeBtn);
+      return;
+    }
+
+    const cell = table.rows[range.rTop] && table.rows[range.rTop][range.cLeft];
+    if (!cell) { body.innerHTML = '<div class="panel-empty">Click a cell to edit it.</div>'; return; }
+
+    // Richtext's onChange fires per keystroke (see richtext-editor.js),
+    // so — same as Tabbed Panels' property panel — each keystroke is its
+    // own begin/commit pair rather than one action spanning the whole
+    // typing session. Fine at this scale; matches existing convention
+    // rather than introducing a new one.
+    const textWrap = document.createElement('div');
+    textWrap.className = 'popup-field';
+    textWrap.innerHTML = '<label>Text</label>';
+    const textHolder = document.createElement('div');
+    attachRichTextField(textHolder, {
+      value: cell.text || '',
+      inline: ['bold', 'italic', 'link'],
+      onChange: (html) => {
+        history.beginAction();
+        tableManager.setCellText(table.id, range.rTop, range.cLeft, html);
+        history.commitAction();
+      },
+    });
+    textWrap.appendChild(textHolder);
+    body.appendChild(textWrap);
+
+    // Plain textarea, not richtext — a tooltip is a dense hover/click
+    // aside, not prose worth formatting. Upgraded from a single-line
+    // input to a multi-line textarea this pass (settled scope). Real bug
+    // fix: this field used to lose focus after every keystroke because
+    // its own 'input' handler triggered a full cell-panel re-render
+    // (see renderAll()'s comment above) — a live-typing field's value
+    // must never itself be the thing that tears out its own DOM node.
+    let pendingAction = false;
+    function begin() { if (!pendingAction) { history.beginAction(); pendingAction = true; } }
+    function commitEnd() { history.commitAction(); pendingAction = false; }
+    const tooltipWrap = document.createElement('div');
+    tooltipWrap.className = 'popup-field';
+    tooltipWrap.innerHTML = '<label>Tooltip (optional)</label>';
+    const tooltipInput = document.createElement('textarea');
+    tooltipInput.value = cell.tooltip || '';
+    tooltipInput.placeholder = 'Extra text shown on hover / click';
+    tooltipInput.addEventListener('focus', begin);
+    tooltipInput.addEventListener('input', () => tableManager.setCellTooltip(table.id, range.rTop, range.cLeft, tooltipInput.value));
+    tooltipInput.addEventListener('blur', commitEnd);
+    tooltipWrap.appendChild(tooltipInput);
+    body.appendChild(tooltipWrap);
+
+    // Per-cell style overrides — background colour + a whole-cell-default
+    // bold toggle, IN ADDITION TO the inline rich-text bold mark above
+    // (which still wins at the word level over this cell-level default,
+    // same "instance default vs. inline mark override" split the
+    // table-wide bodyBold setting already uses — see table-types.js).
+    const cellStyleSection = document.createElement('div');
+    cellStyleSection.className = 'settings-section';
+    cellStyleSection.innerHTML = '<h3>Cell style</h3>';
+
+    const isHeaderCell = table.hasHeaderRow !== false && range.rTop === 0;
+    const resolvedCell = resolveTableStyle(table);
+    const cellBgFallback = isHeaderCell ? resolvedCell.headerBg : resolvedCell.cellBg;
+
+    const cellBgWrap = document.createElement('div');
+    cellBgWrap.className = 'popup-field';
+    cellBgWrap.innerHTML = '<label>Background colour</label>';
+    const cellBgRow = document.createElement('div');
+    cellBgRow.className = 'colour-field-row';
+    const cellBgInput = document.createElement('input');
+    cellBgInput.type = 'color';
+    cellBgInput.value = cell.cellBg || cellBgFallback;
+    // 'change', not 'input' — same click-and-hold-drag fix as the Table
+    // Styles panel's colour pickers (see there for the full explanation).
+    cellBgInput.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setCellBg(table.id, range.rTop, range.cLeft, cellBgInput.value);
+      history.commitAction();
+      renderCellPanel();
+    });
+    cellBgRow.appendChild(cellBgInput);
+    if (cell.cellBg) {
+      const clearBgBtn = document.createElement('button');
+      clearBgBtn.className = 'colour-clear-btn';
+      clearBgBtn.textContent = 'Clear';
+      clearBgBtn.addEventListener('click', () => {
+        history.beginAction();
+        tableManager.setCellBg(table.id, range.rTop, range.cLeft, null);
+        history.commitAction();
+        renderCellPanel();
+      });
+      cellBgRow.appendChild(clearBgBtn);
+    }
+    cellBgWrap.appendChild(cellBgRow);
+    cellStyleSection.appendChild(cellBgWrap);
+
+    const cellBoldWrap = document.createElement('div');
+    cellBoldWrap.className = 'popup-field toggle-field';
+    cellBoldWrap.innerHTML = '<label>Bold</label>';
+    const cellBoldSwitchLabel = document.createElement('label');
+    cellBoldSwitchLabel.className = 'switch';
+    const cellBoldInput = document.createElement('input');
+    cellBoldInput.type = 'checkbox';
+    // Tri-state field (see table-types.js), rendered on a plain two-state
+    // switch: when the cell has no explicit override yet, the switch
+    // reflects the table-wide bodyBold default; the FIRST toggle click
+    // writes an explicit true/false onto this one cell from then on.
+    cellBoldInput.checked = cell.cellBold != null ? !!cell.cellBold : !!table.bodyBold;
+    cellBoldInput.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setCellBold(table.id, range.rTop, range.cLeft, cellBoldInput.checked);
+      history.commitAction();
+    });
+    const cellBoldSlider = document.createElement('span');
+    cellBoldSlider.className = 'switch-slider';
+    cellBoldSwitchLabel.appendChild(cellBoldInput);
+    cellBoldSwitchLabel.appendChild(cellBoldSlider);
+    cellBoldWrap.appendChild(cellBoldSwitchLabel);
+    cellStyleSection.appendChild(cellBoldWrap);
+
+    body.appendChild(cellStyleSection);
+
+    if ((cell.rowSpan || 1) > 1 || (cell.colSpan || 1) > 1) {
+      const unmergeBtn = document.createElement('button');
+      unmergeBtn.className = 'btn btn-secondary';
+      unmergeBtn.style.width = '100%';
+      unmergeBtn.style.marginBottom = 'var(--space-4)';
+      unmergeBtn.textContent = 'Unmerge cell';
+      unmergeBtn.addEventListener('click', () => unmergeSelection());
+      body.appendChild(unmergeBtn);
+    }
+
+    const rowSection = document.createElement('div');
+    rowSection.className = 'settings-section';
+    rowSection.innerHTML = '<h3>Row</h3>';
+    const rowBtns = document.createElement('div');
+    rowBtns.className = 'btn-row';
+    const addRowBtn = document.createElement('button');
+    addRowBtn.className = 'btn btn-secondary';
+    addRowBtn.textContent = '+ Row below';
+    addRowBtn.addEventListener('click', () => { history.beginAction(); tableManager.addRow(table.id, range.rTop); history.commitAction(); renderCellPanel(); });
+    const delRowBtn = document.createElement('button');
+    delRowBtn.className = 'btn btn-secondary';
+    delRowBtn.textContent = 'Delete row';
+    delRowBtn.disabled = table.rows.length <= 1;
+    delRowBtn.addEventListener('click', () => { history.beginAction(); tableManager.removeRow(table.id, range.rTop); history.commitAction(); closePanel(); });
+    rowBtns.appendChild(addRowBtn);
+    rowBtns.appendChild(delRowBtn);
+    rowSection.appendChild(rowBtns);
+    body.appendChild(rowSection);
+
+    const colSection = document.createElement('div');
+    colSection.className = 'settings-section';
+    colSection.innerHTML = '<h3>Column</h3>';
+    const colBtns = document.createElement('div');
+    colBtns.className = 'btn-row';
+    const addColBtn = document.createElement('button');
+    addColBtn.className = 'btn btn-secondary';
+    addColBtn.textContent = '+ Column right';
+    addColBtn.addEventListener('click', () => { history.beginAction(); tableManager.addColumn(table.id, range.cLeft); history.commitAction(); renderCellPanel(); });
+    const delColBtn = document.createElement('button');
+    delColBtn.className = 'btn btn-secondary';
+    delColBtn.textContent = 'Delete column';
+    delColBtn.disabled = table.rows[0].length <= 1;
+    delColBtn.addEventListener('click', () => { history.beginAction(); tableManager.removeColumn(table.id, range.cLeft); history.commitAction(); closePanel(); });
+    colBtns.appendChild(addColBtn);
+    colBtns.appendChild(delColBtn);
+    colSection.appendChild(colBtns);
+    body.appendChild(colSection);
+  }
+
+  /* ---- Table Styles panel (per-table theme/colours/freeze) ---- */
+
+  function renderTableStylesPanel() {
+    const body = document.getElementById('table-styles-panel-body');
+    body.innerHTML = '';
+    const table = tableManager.getActiveTable();
+    if (!table) return;
+
+    function patch(p) { history.beginAction(); tableManager.updateTable(table.id, p); history.commitAction(); }
+
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'popup-field';
+    nameWrap.innerHTML = '<label>Name</label>';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = table.name;
+    nameInput.addEventListener('focus', () => history.beginAction());
+    nameInput.addEventListener('input', () => tableManager.updateTable(table.id, { name: nameInput.value }));
+    nameInput.addEventListener('blur', () => history.commitAction());
+    nameWrap.appendChild(nameInput);
+    body.appendChild(nameWrap);
+
+    const themeWrap = document.createElement('div');
+    themeWrap.className = 'popup-field';
+    themeWrap.innerHTML = '<label>Theme</label>';
+    const themeSelect = document.createElement('select');
+    TABLE_FIELDS.themePreset.options.forEach(([val, text]) => {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = text;
+      if (val === table.themePreset) opt.selected = true;
+      themeSelect.appendChild(opt);
+    });
+    themeSelect.addEventListener('change', () => patch({ themePreset: themeSelect.value }));
+    themeWrap.appendChild(themeSelect);
+    body.appendChild(themeWrap);
+
+    const colourSection = document.createElement('div');
+    colourSection.className = 'settings-section';
+    colourSection.innerHTML = '<h3>Colours</h3>';
+
+    const accentWrap = document.createElement('div');
+    accentWrap.className = 'popup-field';
+    accentWrap.innerHTML = '<label>Accent colour (derives header + border)</label>';
+    const accentRow = document.createElement('div');
+    accentRow.className = 'colour-field-row';
+    const accentInput = document.createElement('input');
+    accentInput.type = 'color';
+    accentInput.value = table.accentColor || resolveTableStyle(table).headerBg;
+    // 'change' (fires once, on release/confirm), not 'input' (fires
+    // continuously while dragging inside the native swatch) — see root
+    // CLAUDE.md-style bug notes for this pass: patch() mutates state AND
+    // triggers a full panel re-render, which replaces this very <input
+    // type=color> node. On 'input' that happens mid-drag, tearing the
+    // live element out from under the OS-level colour-picker interaction
+    // and killing it. Same root cause class as the tooltip-field focus
+    // bug fixed in an earlier pass — a live-editing field's own event
+    // must never be the thing that destroys the DOM node it's firing on.
+    accentInput.addEventListener('change', () => patch({ accentColor: accentInput.value }));
+    accentRow.appendChild(accentInput);
+    if (table.accentColor) {
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'colour-clear-btn';
+      clearBtn.textContent = 'Clear';
+      clearBtn.addEventListener('click', () => patch({ accentColor: null }));
+      accentRow.appendChild(clearBtn);
+    }
+    accentWrap.appendChild(accentRow);
+    colourSection.appendChild(accentWrap);
+
+    const overridesGrid = document.createElement('div');
+    overridesGrid.className = 'field-grid';
+    const resolved = resolveTableStyle(table);
+    [
+      ['headerBg', 'Header background', resolved.headerBg],
+      ['headerText', 'Header text', resolved.headerText],
+      ['borderColor', 'Border colour', resolved.borderColor],
+    ].forEach(([key, label, resolvedValue]) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'popup-field';
+      wrap.innerHTML = `<label>${label}</label>`;
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = table[key] || resolvedValue;
+      input.disabled = !!table.accentColor;
+      input.title = table.accentColor ? 'Derived from accent colour — clear it above to set this directly' : label;
+      // 'change', not 'input' — same click-and-hold-drag fix as
+      // accentInput above.
+      input.addEventListener('change', () => patch({ [key]: input.value }));
+      wrap.appendChild(input);
+      overridesGrid.appendChild(wrap);
+    });
+    colourSection.appendChild(overridesGrid);
+    body.appendChild(colourSection);
+
+    // Small local helpers so the Body/Header sections below (which are
+    // near-identical field sets over different TABLE_FIELDS keys) don't
+    // need two copies of the same input-building code.
+    function numberField(container, key, field) {
+      const wrap = document.createElement('div');
+      wrap.className = 'popup-field';
+      wrap.innerHTML = `<label>${field.label}</label>`;
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = field.min; input.max = field.max;
+      input.value = table[key] != null ? table[key] : field.default;
+      input.addEventListener('focus', () => history.beginAction());
+      input.addEventListener('input', () => tableManager.updateTable(table.id, { [key]: Math.max(field.min, Math.min(field.max, Number(input.value) || field.default)) }));
+      input.addEventListener('blur', () => history.commitAction());
+      wrap.appendChild(input);
+      container.appendChild(wrap);
+    }
+    function selectField(container, key, field) {
+      const wrap = document.createElement('div');
+      wrap.className = 'popup-field';
+      wrap.innerHTML = `<label>${field.label}</label>`;
+      const select = document.createElement('select');
+      field.options.forEach(([val, text]) => {
+        const opt = document.createElement('option');
+        opt.value = val; opt.textContent = text;
+        if (val === (table[key] || field.default)) opt.selected = true;
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', () => patch({ [key]: select.value }));
+      wrap.appendChild(select);
+      container.appendChild(wrap);
+    }
+    function toggleField(container, key, field) {
+      const wrap = document.createElement('div');
+      wrap.className = 'popup-field toggle-field';
+      wrap.innerHTML = `<label>${field.label}</label>`;
+      const switchLabel = document.createElement('label');
+      switchLabel.className = 'switch';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = table[key] != null ? !!table[key] : !!field.default;
+      input.addEventListener('change', () => patch({ [key]: input.checked }));
+      const slider = document.createElement('span');
+      slider.className = 'switch-slider';
+      switchLabel.appendChild(input);
+      switchLabel.appendChild(slider);
+      wrap.appendChild(switchLabel);
+      container.appendChild(wrap);
+    }
+
+    // Body formatting — table-wide, NOT per-column/row/cell (settled
+    // scope). A cell's own inline bold/italic mark from its rich-text
+    // toolbar overrides bodyBold at the word level for free (see
+    // table-types.js's comment on this field).
+    const bodySection = document.createElement('div');
+    bodySection.className = 'settings-section';
+    bodySection.innerHTML = '<h3>Body</h3>';
+    const bodyGrid = document.createElement('div');
+    bodyGrid.className = 'field-grid';
+    numberField(bodyGrid, 'cornerRadius', TABLE_FIELDS.cornerRadius);
+    numberField(bodyGrid, 'cellPadding', TABLE_FIELDS.cellPadding);
+    numberField(bodyGrid, 'bodyTextSize', TABLE_FIELDS.bodyTextSize);
+    selectField(bodyGrid, 'bodyAlign', TABLE_FIELDS.bodyAlign);
+    bodySection.appendChild(bodyGrid);
+    toggleField(bodySection, 'bodyBold', TABLE_FIELDS.bodyBold);
+    body.appendChild(bodySection);
+
+    // Header formatting — a fully separate group from Body above
+    // (settled: NOT inherit-with-override), so a header can look
+    // nothing like the body without a "reset to default" step.
+    const headerSection = document.createElement('div');
+    headerSection.className = 'settings-section';
+    headerSection.innerHTML = '<h3>Header</h3>';
+    const headerGrid = document.createElement('div');
+    headerGrid.className = 'field-grid';
+    numberField(headerGrid, 'headerPadding', TABLE_FIELDS.headerPadding);
+    numberField(headerGrid, 'headerTextSize', TABLE_FIELDS.headerTextSize);
+    selectField(headerGrid, 'headerAlign', TABLE_FIELDS.headerAlign);
+    headerSection.appendChild(headerGrid);
+    toggleField(headerSection, 'headerBold', TABLE_FIELDS.headerBold);
+    body.appendChild(headerSection);
+
+    const optionsSection = document.createElement('div');
+    optionsSection.className = 'settings-section';
+    optionsSection.innerHTML = '<h3>Options</h3>';
+    [
+      ['hasHeaderRow', 'First row is a header'],
+      ['freezeHeader', 'Freeze header row'],
+      ['freezeFirstCol', 'Freeze first column'],
+      ['rowSeparatorsOnly', 'Row separators only'],
+      ['showTitleInExport', 'Show title in export'],
+    ].forEach(([key, label]) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'popup-field toggle-field';
+      wrap.innerHTML = `<label>${label}</label>`;
+      const switchLabel = document.createElement('label');
+      switchLabel.className = 'switch';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = !!table[key];
+      input.addEventListener('change', () => patch({ [key]: input.checked }));
+      const slider = document.createElement('span');
+      slider.className = 'switch-slider';
+      switchLabel.appendChild(input);
+      switchLabel.appendChild(slider);
+      wrap.appendChild(switchLabel);
+      optionsSection.appendChild(wrap);
+    });
+    body.appendChild(optionsSection);
+  }
+
+  /* ---- Layout panel (project-wide: side-by-side vs. carousel, perRow) ---- */
+
+  function renderLayoutPanel() {
+    const body = document.getElementById('layout-panel-body');
+    body.innerHTML = '';
+
+    const modeWrap = document.createElement('div');
+    modeWrap.className = 'popup-field';
+    modeWrap.innerHTML = '<label>Mode</label>';
+    const modeSelect = document.createElement('select');
+    [['side-by-side', 'Side by side'], ['carousel', 'Carousel']].forEach(([val, text]) => {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = text;
+      if (val === tableManager.layout.mode) opt.selected = true;
+      modeSelect.appendChild(opt);
+    });
+    modeSelect.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setLayout({ mode: modeSelect.value });
+      history.commitAction();
+      renderLayoutPanel();
+    });
+    modeWrap.appendChild(modeSelect);
+    body.appendChild(modeWrap);
+
+    const perRowWrap = document.createElement('div');
+    perRowWrap.className = 'popup-field';
+    perRowWrap.innerHTML = '<label>Tables per row (side by side)</label>';
+    const perRowInput = document.createElement('input');
+    perRowInput.type = 'number';
+    perRowInput.min = 1; perRowInput.max = 4;
+    perRowInput.value = tableManager.layout.perRow;
+    perRowInput.disabled = tableManager.layout.mode !== 'side-by-side';
+    perRowInput.addEventListener('focus', () => history.beginAction());
+    perRowInput.addEventListener('input', () => tableManager.setLayout({ perRow: Math.max(1, Math.min(4, Number(perRowInput.value) || tableManager.layout.perRow)) }));
+    perRowInput.addEventListener('blur', () => history.commitAction());
+    perRowWrap.appendChild(perRowInput);
+    body.appendChild(perRowWrap);
+
+    const note = document.createElement('p');
+    note.className = 'cell-selection-note';
+    note.textContent = 'Below a width threshold, side-by-side automatically falls back to single-table carousel display — this happens on the exported page too, so a narrow Articulate embed still reads cleanly.';
+    body.appendChild(note);
+  }
+
+  function renderAll() {
+    renderStage();
+    renderTableBar();
+    // Deliberately NOT `if (activePanel === 'cell') renderCellPanel();`
+    // here — this used to full-rebuild the cell panel's DOM (including
+    // whatever text/tooltip field the author was mid-keystroke in) on
+    // every single onChange, which is exactly the focus/selection-loss
+    // bug class root CLAUDE.md documents for richtext-editor.js's link
+    // button (Shell.prompt() stealing focus mid-await) — same root cause
+    // here, just triggered by a full re-render instead of an awaited
+    // modal. Same fix shape Tabbed Panels already uses for its property
+    // panel: renderCellPanel() is now called only from the specific
+    // actions that actually need to change what the panel shows
+    // (selecting a cell, merging/unmerging, adding/removing a row or
+    // column from inside the panel) — never as a blanket side effect of
+    // "some state changed," so a live-typing field's own onChange never
+    // tears out the DOM node it's typing into.
+    if (activePanel === 'tableStyles') renderTableStylesPanel();
+    if (activePanel === 'layout') renderLayoutPanel();
+    if (selAnchor && !tableManager.tables.some((t) => t.id === selAnchor.tableId)) closePanel();
+  }
+
+  /* ---- Project lifecycle (New / Save / Open) — same pattern as the other tools ---- */
+
+  async function newProject() {
+    if (hasUnsavedChanges) {
+      const proceed = await Shell.confirm('Starting a new project will discard them.', { heading: 'Unsaved changes', okLabel: 'Discard and continue', danger: true });
+      if (!proceed) return;
+    }
+    tableManager.setState({ activeTableId: null, tables: [makeDefaultTable('table-' + Date.now(), 'Table 1')], layout: defaultLayout() });
+    currentProjectName = null;
+    currentProjectFolder = '';
+    document.getElementById('display-project-name').textContent = 'Untitled project';
+    closePanel();
+    markSaved();
+  }
+
+  async function saveProject() {
+    if (!currentProjectName) {
+      openSaveModal();
+      return;
+    }
+    await doSave(currentProjectName, currentProjectFolder);
+  }
+
+  async function doSave(name, folder) {
+    const pending = Shell.toast('Saving to GitHub…', 'pending');
+    try {
+      await Storage.saveProject(TOOL_ID, name, tableManager.getState(), folder);
+      currentProjectName = name;
+      currentProjectFolder = folder;
+      document.getElementById('display-project-name').textContent = name;
+      pending.remove();
+      Shell.toast(`Project "${name}" saved!`, 'success');
+      Shell.setStatus('Connected', '');
+      markSaved();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Save failed: ${error.message}`, 'danger');
+      Shell.setStatus('Error', 'error');
+    }
+  }
+
+  /* ---- Save-as modal: first save only — name + destination folder,
+     verbatim-adapted from Tabbed Panels' equivalent (same
+     Storage/Shell calls, just TOOL_ID differs). ---- */
+
+  function openSaveModal() {
+    saveFolder = browseFolder;
+    document.getElementById('save-name-input').value = '';
+    Shell.openModal('save-modal');
+    refreshSaveFolderList();
+  }
+
+  async function refreshSaveFolderList() {
+    const pending = Shell.toast('Fetching folders…', 'pending');
+    try {
+      const result = await Storage.listProjects(TOOL_ID, saveFolder);
+      pending.remove();
+      Shell.renderProjectList(
+        document.getElementById('save-folder-list'),
+        [],
+        () => {},
+        {
+          folders: result.folders,
+          currentFolder: saveFolder,
+          onOpenFolder: (folder) => { saveFolder = folder; refreshSaveFolderList(); },
+          onNewFolder: (parentFolder) => newFolderInSaveModal(parentFolder),
+        }
+      );
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Fetch failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function newFolderInSaveModal(parentFolder) {
+    const name = await Shell.prompt('', '', { heading: 'New folder name', okLabel: 'Create' });
+    if (!name) return;
+    const target = parentFolder ? `${parentFolder}/${name}` : name;
+    const pending = Shell.toast('Creating folder…', 'pending');
+    try {
+      await Storage.createFolder(TOOL_ID, target);
+      pending.remove();
+      saveFolder = target;
+      refreshSaveFolderList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Create folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function confirmSaveAs() {
+    const name = document.getElementById('save-name-input').value.trim();
+    if (!name) { Shell.toast('Enter a project name', 'danger'); return; }
+    Shell.closeModal('save-modal');
+    await doSave(name, saveFolder);
+  }
+
+  async function refreshProjectList() {
+    const pending = Shell.toast('Fetching projects…', 'pending');
+    try {
+      const result = await Storage.listProjects(TOOL_ID, browseFolder);
+      pending.remove();
+      Shell.renderProjectList(
+        document.getElementById('project-list'), result.projects,
+        (name) => loadProject(name, browseFolder),
+        {
+          onRename: (oldName, newName) => renameProjectFlow(oldName, newName),
+          onDelete: (name) => deleteProjectFlow(name),
+          folders: result.folders,
+          currentFolder: browseFolder,
+          onOpenFolder: (folder) => { browseFolder = folder; refreshProjectList(); },
+          onNewFolder: (parentFolder) => newFolderInOpenModal(parentFolder),
+          onDeleteFolder: (folder) => deleteFolderInOpenModal(folder),
+        },
+      );
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Fetch failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function newFolderInOpenModal(parentFolder) {
+    const name = await Shell.prompt('', '', { heading: 'New folder name', okLabel: 'Create' });
+    if (!name) return;
+    const target = parentFolder ? `${parentFolder}/${name}` : name;
+    const pending = Shell.toast('Creating folder…', 'pending');
+    try {
+      await Storage.createFolder(TOOL_ID, target);
+      pending.remove();
+      Shell.toast(`Folder "${name}" created`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Create folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function deleteFolderInOpenModal(folder) {
+    const pending = Shell.toast('Deleting folder…', 'pending');
+    try {
+      await Storage.deleteFolder(TOOL_ID, folder);
+      pending.remove();
+      Shell.toast('Folder deleted', 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Delete folder failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function loadProject(name, folder = '') {
+    Shell.closeModal('open-modal');
+    const pending = Shell.toast(`Loading "${name}"...`, 'pending');
+    try {
+      const { content } = await Storage.loadProject(TOOL_ID, name, folder);
+      tableManager.setState(content);
+      currentProjectName = name;
+      currentProjectFolder = folder;
+      document.getElementById('display-project-name').textContent = name;
+      closePanel();
+      markSaved();
+      pending.remove();
+      Shell.toast(`Project "${name}" loaded!`, 'success');
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Load failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function renameProjectFlow(oldName, newName) {
+    const pending = Shell.toast(`Renaming "${oldName}"…`, 'pending');
+    try {
+      await Storage.renameProject(TOOL_ID, oldName, newName, browseFolder);
+      if (currentProjectName === oldName && currentProjectFolder === browseFolder) {
+        currentProjectName = newName;
+        document.getElementById('display-project-name').textContent = newName;
+      }
+      pending.remove();
+      Shell.toast(`Renamed to "${newName}"`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Rename failed: ${error.message}`, 'danger');
+    }
+  }
+
+  async function deleteProjectFlow(name) {
+    const ok = await Shell.confirm(`Delete "${name}"? This can't be undone.`, { heading: 'Delete project', okLabel: 'Delete', danger: true });
+    if (!ok) return;
+    const pending = Shell.toast(`Deleting "${name}"…`, 'pending');
+    try {
+      await Storage.deleteProject(TOOL_ID, name, browseFolder);
+      pending.remove();
+      Shell.toast(`Deleted "${name}"`, 'success');
+      refreshProjectList();
+    } catch (error) {
+      pending.remove();
+      Shell.toast(`Delete failed: ${error.message}`, 'danger');
+    }
+  }
+
+  /* ---- Export ----
+     Reuses table-types.js / richtext-editor.js / table-renderer.js /
+     carousel-nav.js VERBATIM inside the exported file — same engine
+     that just rendered the authoring preview renders the exported
+     player. richtext-editor.js is included even though Export never
+     calls attachRichTextField() (there's no editing UI on the learner
+     side) — table-renderer.js's renderTable() calls sanitizeRichHtml()
+     on every cell's stored text, and that function lives in this file.
+     Local/repo-source preview fetches the sibling files directly; the
+     Apps-Script-deployed copy embeds them as MODULE_SOURCES string
+     constants instead — see root CLAUDE.md's deployment pipeline
+     section, substitution 2. Not attempted this pass (see this tool's
+     scope notes). */
+
+  async function fetchModuleSources() {
+    const files = ['table-types.js', 'richtext-editor.js', 'table-renderer.js', 'carousel-nav.js'];
+    const texts = await Promise.all(files.map((f) => fetch(f).then((r) => r.text())));
+    return texts.join('\n\n');
+  }
+
+  async function openExportModal() {
+    const modules = await fetchModuleSources();
+    const state = tableManager.getState();
+    const tablesJSON = JSON.stringify(state.tables);
+    const layoutJSON = JSON.stringify(state.layout);
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${currentProjectName || 'Tables'}</title>
+</head>
+<body>
+<div id="tables-layout-host"></div>
+<script>
+// Fonts and CSS are injected via script rather than static <link>/<style>
+// tags in <head> — some course/LMS "embed HTML" blocks strip <head>
+// children like <style> and <link rel="stylesheet"> from pasted code
+// while still executing <script> content, so anything that needs to
+// survive that has to be created by script instead of sitting in the
+// static markup. Same fix, same reasoning, as Tabbed Panels' Export
+// (see its CLAUDE.md's "Export's <head>" note).
+[
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+  'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap',
+].forEach((href) => {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  document.head.appendChild(link);
+});
+
+const playerStyle = document.createElement('style');
+playerStyle.textContent = \`
+  * { box-sizing: border-box; }
+  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: transparent; }
+  #tables-layout-host { max-width: 1100px; margin: 0 auto; }
+  .cn-layout { display: flex; flex-direction: column; gap: 16px; }
+  .cn-viewport { overflow: hidden; }
+  .cn-grid { display: grid; gap: 24px; align-items: start; }
+  .cn-item { min-width: 0; }
+  .cn-collapsed .cn-grid { display: flex; gap: 12px; flex-wrap: nowrap; transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1); }
+  .cn-collapsed .cn-item { flex-shrink: 0; transition: opacity 250ms cubic-bezier(0.4, 0, 0.2, 1); }
+  .cn-collapsed .cn-item-peek { opacity: 0.55; }
+  .cn-nav { display: none; align-items: center; justify-content: center; gap: 16px; }
+  .cn-nav-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid #E3E1DA; background: #fff; color: #4A5453; cursor: pointer; }
+  .cn-nav-btn:hover:not(:disabled) { color: #0C5E82; border-color: #0C5E82; }
+  .cn-nav-btn:disabled { opacity: 0.3; cursor: default; }
+  .cn-nav-counter { font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: #4A5453; min-width: 40px; text-align: center; }
+  .tbl-wrapper { background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(28,35,33,0.08); padding: 24px; }
+  .tbl-name { font-weight: 600; font-size: 0.9375rem; margin-bottom: 12px; color: #1C2321; }
+  .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, #CBC8BE); }
+  .tbl-scroller.tbl-row-sep-only { border: none; }
+  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, #1C2321); }
+  .tbl-cell { border: 1px solid var(--tbl-border, #CBC8BE); padding: var(--tbl-body-padding, 9px); text-align: var(--tbl-body-align, left); font-size: var(--tbl-body-size, 0.8125rem); font-weight: var(--tbl-body-weight, 400); position: relative; }
+  th.tbl-cell { background: var(--tbl-header-bg, #FAFAF8); color: var(--tbl-header-text, #1C2321); padding: var(--tbl-header-padding, 9px); text-align: var(--tbl-header-align, left); font-size: var(--tbl-header-size, 0.8125rem); font-weight: var(--tbl-header-weight, 600); }
+  .tbl-table.tbl-row-sep-only { border: none; }
+  .tbl-table.tbl-row-sep-only .tbl-cell { border: none; border-bottom: 1px solid var(--tbl-border, #CBC8BE); }
+  .tbl-sticky-row { position: sticky; top: 0; z-index: 2; }
+  .tbl-sticky-col { position: sticky; left: 0; z-index: 1; }
+  .tbl-sticky-row.tbl-sticky-col { z-index: 3; }
+  .tbl-tooltip-icon { margin-left: 6px; color: inherit; opacity: 0.6; font-size: 11px; cursor: pointer; }
+  .tbl-tooltip-icon:hover { opacity: 1; }
+  .tbl-tooltip-popover { position: fixed; max-width: 240px; background: #1C2321; color: #fff; padding: 7px 10px; border-radius: 6px; font-size: 0.75rem; line-height: 1.4; z-index: 9999; box-shadow: 0 12px 32px rgba(28,35,33,0.12); }
+  @media (prefers-reduced-motion: reduce) {
+    .cn-collapsed .cn-grid, .cn-collapsed .cn-item { transition: none; }
+  }
+\`;
+document.head.appendChild(playerStyle);
+
+${modules}
+
+const tables = ${tablesJSON};
+const layout = ${layoutJSON};
+let activeIndex = 0;
+
+function render() {
+  renderTablesLayout(document.getElementById('tables-layout-host'), {
+    tables, layout,
+    renderItem: (table) => renderTable(table, { forExport: true }),
+    activeIndex,
+    onNavigate: (i) => { activeIndex = i; render(); },
+  });
+}
+render();
+<\/script>
+</body>
+</html>`;
+
+    document.getElementById('export-textarea').value = html;
+    Shell.openModal('export-modal');
+  }
+
+  function copyExportCode() {
+    const textarea = document.getElementById('export-textarea');
+    textarea.select();
+    navigator.clipboard.writeText(textarea.value).then(() => {
+      Shell.toast('Code copied to clipboard', 'success');
+    }).catch(() => {
+      document.execCommand('copy');
+      Shell.toast('Code copied to clipboard', 'success');
+    });
+  }
+
+  /* ---- Boot ---- */
+  Shell.init({ toolName: 'Tables' });
+  Shell.bindOverlayDismiss();
+  renderLeftRail();
+  renderAll();
+  history.onChange();
+</script>
+</body>
+</html>

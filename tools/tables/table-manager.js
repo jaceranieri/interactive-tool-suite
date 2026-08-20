@@ -81,7 +81,7 @@ function unmergeCellAt(rows, ownerMap, r, c) {
   for (let dr = 0; dr < rs; dr++) {
     for (let dc = 0; dc < cs; dc++) {
       if (dr === 0 && dc === 0) continue;
-      rows[r0 + dr][c0 + dc] = { text: '', tooltip: '', colSpan: 1, rowSpan: 1 };
+      rows[r0 + dr][c0 + dc] = { text: '', tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null };
     }
   }
   origin.rowSpan = 1;
@@ -138,7 +138,7 @@ function clearCol(rows, index) {
   }
 }
 
-function freshCell(text) { return { text: text || '', tooltip: '', colSpan: 1, rowSpan: 1 }; }
+function freshCell(text) { return { text: text || '', tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null }; }
 
 class TableManager {
   /**
@@ -288,6 +288,27 @@ class TableManager {
     const table = this.tables.find((t) => t.id === tableId);
     if (!table || !table.rows[r] || !table.rows[r][c]) return;
     table.rows[r][c].tooltip = tooltip;
+    this.onChange();
+  }
+
+  /** Per-cell background colour override — null clears back to the
+   *  table's theme/accent colour for that one cell. See table-types.js's
+   *  header comment for the full priority story. */
+  setCellBg(tableId, r, c, cellBg) {
+    const table = this.tables.find((t) => t.id === tableId);
+    if (!table || !table.rows[r] || !table.rows[r][c]) return;
+    table.rows[r][c].cellBg = cellBg || null;
+    this.onChange();
+  }
+
+  /** Per-cell default-bold override — true/false explicitly sets that
+   *  cell's font-weight; null falls back to the table-wide `bodyBold`.
+   *  A cell's own inline rich-text bold mark still wins at the word
+   *  level over either of these (see table-types.js). */
+  setCellBold(tableId, r, c, cellBold) {
+    const table = this.tables.find((t) => t.id === tableId);
+    if (!table || !table.rows[r] || !table.rows[r][c]) return;
+    table.rows[r][c].cellBold = cellBold;
     this.onChange();
   }
 

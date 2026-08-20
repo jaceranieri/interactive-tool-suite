@@ -12,8 +12,38 @@
    only code that touches it:
 
      table.rows is a 2D array — rows[r][c] is either:
-       - a real cell object: { text, tooltip, colSpan, rowSpan }
-         (colSpan/rowSpan default to 1; tooltip is '' when unset)
+       - a real cell object: { text, tooltip, colSpan, rowSpan, cellBg,
+         cellBold } (colSpan/rowSpan default to 1; tooltip is '' when
+         unset). `text` is now a SANITIZED RICH HTML STRING (bold/italic/
+         link — see richtext-editor.js's ALLOWED_TAGS), not the plain
+         string this field originally shipped as — the plain-text-only
+         scope this file used to document here was reopened in a later
+         interview once an author asked for inline bold/italic/hyperlinks
+         inside cells. table-renderer.js sanitizes `text` again at render
+         time regardless of source, so an old-shape saved project (`text`
+         as a bare plain string, from before this change) still renders
+         correctly with no separate migration step: a plain string with
+         no tags round-trips through sanitizeRichHtml() unchanged.
+         `tooltip` stays plain text (rendered via textContent, not
+         innerHTML) — it's a dense hover/click aside, not prose worth
+         formatting. `cellBg`/`cellBold` are per-cell overrides added
+         this pass, same "null = not set, fall back to something else"
+         convention TABLE_FIELDS already uses for headerBg/borderColor/
+         accentColor: `cellBg` (hex string or null) wins over the table's
+         theme/accent colour for that one cell when set; `cellBold`
+         (true/false/null) sets that one cell's default font-weight,
+         falling back to the table-wide `bodyBold` when null — a cell's
+         OWN inline rich-text bold mark (from its richtext toolbar) still
+         overrides either of these at the word level, same "variant sets
+         default, inline mark overrides" split `bodyBold` already
+         documents below. Both are undefined (not present as a key) on
+         any cell object created before this pass — table-renderer.js and
+         index.html's cell panel treat a missing key exactly like an
+         explicit null, so no migration step is needed for older saved
+         projects either. Unlike the colour overrides, there's currently
+         no dedicated "reset to inherit" control for `cellBold` in the
+         panel (only a plain on/off switch, see index.html) — a known,
+         minor scope gap, see this pass's notes.
        - null, meaning this grid position is covered by an earlier cell's
          colSpan/rowSpan and renders no <td>/<th> at all — the covering
          cell's own colspan/rowspan attribute already accounts for the
@@ -87,6 +117,44 @@ const TABLE_FIELDS = {
   // table-renderer.js's header comment for the specific limitation.
   freezeHeader:    { type: 'boolean', label: 'Freeze header row',    default: false },
   freezeFirstCol:  { type: 'boolean', label: 'Freeze first column',  default: false },
+
+  // Table-wide (NOT per-column/row/cell — a settled scope decision, see
+  // root CLAUDE.md's interview notes) body formatting. A cell's own
+  // inline rich-text marks (bold/italic from its toolbar) override these
+  // at the word level, the same "variant sets default, instance-level
+  // mark overrides" split Tabbed Panels uses for its heading styles —
+  // an inline <b>/<strong> keeps its own bold weight regardless of what
+  // bodyBold is set to, since the tag's own font-weight beats the
+  // ancestor table's inherited one in the cascade with no extra CSS
+  // needed to make that true.
+  cornerRadius:  { type: 'number',  label: 'Corner radius',    default: 8,  min: 0, max: 40 },
+  cellPadding:   { type: 'number',  label: 'Cell padding',     default: 9,  min: 0, max: 32 },
+  bodyTextSize:  { type: 'number',  label: 'Body text size',   default: 13, min: 8, max: 32 },
+  bodyAlign:     { type: 'select',  label: 'Body text align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']] },
+  bodyBold:      { type: 'boolean', label: 'Body bold',        default: false },
+
+  // Header gets its OWN independent full set of the same controls —
+  // settled as a fully separate group, NOT inherit-with-override, so a
+  // header can look nothing like its body (or vice versa) without any
+  // "reset to default" step.
+  headerTextSize: { type: 'number',  label: 'Header text size',  default: 13, min: 8, max: 32 },
+  headerAlign:    { type: 'select',  label: 'Header text align', default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']] },
+  headerBold:     { type: 'boolean', label: 'Header bold',       default: true },
+  headerPadding:  { type: 'number',  label: 'Header padding',    default: 9,  min: 0, max: 32 },
+
+  // When on: vertical/outer borders disappear, only horizontal lines
+  // between rows remain — including the line under the header row (the
+  // header keeps its separator too, settled as not a fuller box).
+  rowSeparatorsOnly: { type: 'boolean', label: 'Row separators only', default: false },
+
+  // Authoring-only visibility toggle: the table's name/heading always
+  // shows on the authoring canvas and bottom-bar thumbnails regardless
+  // of this flag (the author needs it to tell tables apart while
+  // editing) — it only controls whether Export's rendering omits it.
+  // See table-renderer.js's renderTable() `forExport` opt for how the
+  // two call sites (authoring vs. Export) stay on the exact same render
+  // function without either one hard-coding the decision.
+  showTitleInExport: { type: 'boolean', label: 'Show title in export', default: true },
 };
 
 /** Simple relative-luminance check so an accent colour's derived header
@@ -125,7 +193,7 @@ function resolveTableStyle(table) {
  *  brand-new table, same "Header 1/Header 2/Cell 1/Cell 2" shape
  *  Tabbed Panels' table block defaults to. */
 function makeDefaultRows() {
-  const cell = (text) => ({ text, tooltip: '', colSpan: 1, rowSpan: 1 });
+  const cell = (text) => ({ text, tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null });
   return [
     [cell('Header 1'), cell('Header 2')],
     [cell('Cell 1'), cell('Cell 2')],

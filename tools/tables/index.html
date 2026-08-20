@@ -42,8 +42,18 @@
   /* ---- carousel-nav.js's learner-facing layout — this exact markup/CSS
      is what the exported player renders too. ---- */
   .cn-layout { display: flex; flex-direction: column; gap: var(--space-4); }
+  .cn-viewport { overflow: hidden; }
   .cn-grid { display: grid; gap: var(--space-5); align-items: start; }
   .cn-item { min-width: 0; }
+  /* Collapsed (carousel, or side-by-side auto-collapsed below the
+     narrow-viewport threshold): the grid becomes a flex strip that
+     carousel-nav.js slides via transform, with neighbouring tables'
+     item widths deliberately overflowing the viewport by CAROUSEL_PEEK
+     px on each side so they peek in — see carousel-nav.js's header
+     comment for the exact math. */
+  .cn-collapsed .cn-grid { display: flex; gap: 12px; flex-wrap: nowrap; transition: transform var(--duration-base) var(--ease-standard); }
+  .cn-collapsed .cn-item { flex-shrink: 0; transition: opacity var(--duration-base) var(--ease-standard); }
+  .cn-collapsed .cn-item-peek { opacity: 0.55; }
   .cn-nav { display: none; align-items: center; justify-content: center; gap: var(--space-4); }
   .cn-nav-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
   .cn-nav-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
@@ -54,12 +64,27 @@
      Export ships. ---- */
   .tbl-wrapper { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); padding: var(--space-5); }
   .tbl-name { font-weight: 600; font-size: var(--text-base); margin-bottom: var(--space-3); color: var(--ink); }
-  .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, var(--border-strong)); border-radius: var(--radius-sm); }
+  .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, var(--border-strong)); /* border-radius set inline per-table, see table-renderer.js */ }
+  .tbl-scroller.tbl-row-sep-only { border: none; }
   .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, var(--ink)); }
-  .tbl-cell { border: 1px solid var(--tbl-border, var(--border-strong)); padding: 9px 12px; text-align: left; font-size: var(--text-sm); position: relative; cursor: pointer; }
-  th.tbl-cell { background: var(--tbl-header-bg, var(--paper)); color: var(--tbl-header-text, var(--ink)); font-weight: 600; }
+  .tbl-cell { border: 1px solid var(--tbl-border, var(--border-strong)); padding: var(--tbl-body-padding, 9px); text-align: var(--tbl-body-align, left); font-size: var(--tbl-body-size, var(--text-sm)); font-weight: var(--tbl-body-weight, 400); position: relative; cursor: pointer; transition: box-shadow var(--duration-fast) var(--ease-standard); }
+  /* Authoring-only hover affordance (item 6) — an inset box-shadow tint
+     rather than `background`, so it stays visible over a cell's own
+     background (theme colour, or a per-cell `cellBg` override, both set
+     via inline style/CSS var — see table-renderer.js) without fighting
+     CSS specificity. Never emitted into Export's own <style> string
+     (that's a separate, hand-copied stylesheet in index.html's
+     openExportModal()) — this rule only lives in the authoring page's
+     own stylesheet, so learners never see it. */
+  .tbl-cell:hover { box-shadow: inset 0 0 0 999px rgba(12, 94, 130, 0.07); }
+  th.tbl-cell { background: var(--tbl-header-bg, var(--paper)); color: var(--tbl-header-text, var(--ink)); padding: var(--tbl-header-padding, 9px); text-align: var(--tbl-header-align, left); font-size: var(--tbl-header-size, var(--text-sm)); font-weight: var(--tbl-header-weight, 600); }
   .tbl-cell-text:empty::before { content: '\00a0'; }
   .tbl-cell.tbl-cell-selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* Row separators only: no vertical/outer borders, just a line under
+     every row (header included) — see table-types.js's rowSeparatorsOnly
+     field and table-renderer.js's renderTable() for the class toggle. */
+  .tbl-table.tbl-row-sep-only { border: none; }
+  .tbl-table.tbl-row-sep-only .tbl-cell { border: none; border-bottom: 1px solid var(--tbl-border, var(--border-strong)); }
   .tbl-sticky-row { position: sticky; top: 0; z-index: 2; }
   .tbl-sticky-col { position: sticky; left: 0; z-index: 1; }
   .tbl-sticky-row.tbl-sticky-col { z-index: 3; }
@@ -148,6 +173,21 @@
   }
   .table-thumb-container:hover .table-thumb-duplicate { display: flex; }
   .table-thumb-duplicate:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cn-collapsed .cn-grid, .cn-collapsed .cn-item { transition: none; }
+    .tbl-cell { transition: none; }
+  }
+
+  /* ---- richtext-editor.js's cell text field — same structure as Tabbed
+     Panels' .tp-richtext-* rules, just this tool's own `tbl-` prefix
+     (see richtext-editor.js's header comment on why it's a separate
+     copy rather than a shared/ include). ---- */
+  .tbl-richtext-field { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .tbl-richtext-toolbar { display: flex; gap: 2px; padding: 4px; background: var(--paper); border-bottom: 1px solid var(--border); }
+  .tbl-richtext-btn { width: 26px; height: 26px; border: none; background: transparent; border-radius: var(--radius-sm); cursor: pointer; color: var(--ink-soft); }
+  .tbl-richtext-btn:hover { background: var(--accent-soft); color: var(--accent); }
+  .tbl-richtext-editable { min-height: 48px; padding: 8px; font-size: var(--text-sm); outline: none; }
 </style>
 </head>
 <body>
@@ -272,6 +312,7 @@
 <script src="../../shared/app-shell.js"></script>
 <script src="../../shared/storage-connector.js"></script>
 <script src="table-types.js"></script>
+<script src="richtext-editor.js"></script>
 <script src="table-renderer.js"></script>
 <script src="carousel-nav.js"></script>
 <script src="table-manager.js"></script>
@@ -371,6 +412,7 @@
       history.beginAction();
       tableManager.addRow(table.id, after);
       history.commitAction();
+      if (activePanel === 'cell') renderCellPanel();
     });
     rail.appendChild(addRowBtn);
 
@@ -385,6 +427,7 @@
       history.beginAction();
       tableManager.addColumn(table.id, after);
       history.commitAction();
+      if (activePanel === 'cell') renderCellPanel();
     });
     rail.appendChild(addColBtn);
 
@@ -458,7 +501,8 @@
   }
 
   function selectCell(tableId, r, c, event) {
-    if (tableManager.activeTableId !== tableId) tableManager.setActiveTable(tableId);
+    const switchingTable = tableManager.activeTableId !== tableId;
+    if (switchingTable) tableManager.setActiveTable(tableId);
     if (event && event.shiftKey && selAnchor && selAnchor.tableId === tableId) {
       selEnd = { tableId, r, c };
     } else {
@@ -466,7 +510,50 @@
       selEnd = { tableId, r, c };
     }
     openPanel('cell');
-    renderStage();
+    // Real bug fix: selecting a cell within the table that's ALREADY
+    // active only changes which cell shows the .tbl-cell-selected
+    // outline — nothing about grid content/structure changed. The old
+    // code called the heavy renderStage() unconditionally here, which
+    // tears down and rebuilds EVERY cell's real DOM node across every
+    // table on every single click (renderTable() builds fresh elements,
+    // it doesn't diff/reuse). That's not an actual CSS animation firing,
+    // but it reads as one: a freshly-inserted cell node drops its hover
+    // state, its tooltip icon detaches/reattaches, and the whole table
+    // repaints in one frame — a jitter/flash that looks like an
+    // accidental entrance effect even though no @keyframes or transition
+    // is actually involved. Root cause is "DOM node fully recreated
+    // instead of a class toggled" (see this pass's notes) — fixed by
+    // toggling .tbl-cell-selected directly on the existing nodes via
+    // updateCellSelectionHighlight() instead, for the common case.
+    // Switching the ACTIVE table is the one case that still needs the
+    // full rebuild: it changes what the carousel/side-by-side layout
+    // shows, AND the onChange that setActiveTable() already fired above
+    // ran with the stale pre-click selAnchor/selEnd (this function
+    // hadn't updated them yet) — so this renderStage() call is a real,
+    // necessary second render with the corrected selection, not the same
+    // waste as the no-switch case.
+    if (switchingTable) {
+      renderStage();
+    } else {
+      updateCellSelectionHighlight();
+    }
+  }
+
+  /** Toggles `.tbl-cell-selected` directly on the currently-rendered
+   *  cell DOM nodes to reflect the current selection range — no
+   *  teardown/rebuild, see selectCell()'s comment for why this matters. */
+  function updateCellSelectionHighlight() {
+    const range = currentSelectionRange();
+    document.querySelectorAll('#tables-layout-host .tbl-cell').forEach((cellEl) => {
+      const wrapper = cellEl.closest('[data-table-id]');
+      if (!wrapper) return;
+      const r = Number(cellEl.dataset.row);
+      const c = Number(cellEl.dataset.col);
+      const selected = !!range && range.tableId === wrapper.dataset.tableId &&
+        r >= range.rTop && r <= range.rBot && c >= range.cLeft && c <= range.cRight;
+      cellEl.classList.toggle('tbl-cell-selected', selected);
+    });
+    updateRailButtonState();
   }
 
   function mergeSelection() {
@@ -680,26 +767,41 @@
     const cell = table.rows[range.rTop] && table.rows[range.rTop][range.cLeft];
     if (!cell) { body.innerHTML = '<div class="panel-empty">Click a cell to edit it.</div>'; return; }
 
-    let pendingAction = false;
-    function begin() { if (!pendingAction) { history.beginAction(); pendingAction = true; } }
-    function commitEnd() { history.commitAction(); pendingAction = false; }
-
+    // Richtext's onChange fires per keystroke (see richtext-editor.js),
+    // so — same as Tabbed Panels' property panel — each keystroke is its
+    // own begin/commit pair rather than one action spanning the whole
+    // typing session. Fine at this scale; matches existing convention
+    // rather than introducing a new one.
     const textWrap = document.createElement('div');
     textWrap.className = 'popup-field';
     textWrap.innerHTML = '<label>Text</label>';
-    const textArea = document.createElement('textarea');
-    textArea.value = cell.text || '';
-    textArea.addEventListener('focus', begin);
-    textArea.addEventListener('input', () => tableManager.setCellText(table.id, range.rTop, range.cLeft, textArea.value));
-    textArea.addEventListener('blur', commitEnd);
-    textWrap.appendChild(textArea);
+    const textHolder = document.createElement('div');
+    attachRichTextField(textHolder, {
+      value: cell.text || '',
+      inline: ['bold', 'italic', 'link'],
+      onChange: (html) => {
+        history.beginAction();
+        tableManager.setCellText(table.id, range.rTop, range.cLeft, html);
+        history.commitAction();
+      },
+    });
+    textWrap.appendChild(textHolder);
     body.appendChild(textWrap);
 
+    // Plain textarea, not richtext — a tooltip is a dense hover/click
+    // aside, not prose worth formatting. Upgraded from a single-line
+    // input to a multi-line textarea this pass (settled scope). Real bug
+    // fix: this field used to lose focus after every keystroke because
+    // its own 'input' handler triggered a full cell-panel re-render
+    // (see renderAll()'s comment above) — a live-typing field's value
+    // must never itself be the thing that tears out its own DOM node.
+    let pendingAction = false;
+    function begin() { if (!pendingAction) { history.beginAction(); pendingAction = true; } }
+    function commitEnd() { history.commitAction(); pendingAction = false; }
     const tooltipWrap = document.createElement('div');
     tooltipWrap.className = 'popup-field';
     tooltipWrap.innerHTML = '<label>Tooltip (optional)</label>';
-    const tooltipInput = document.createElement('input');
-    tooltipInput.type = 'text';
+    const tooltipInput = document.createElement('textarea');
     tooltipInput.value = cell.tooltip || '';
     tooltipInput.placeholder = 'Extra text shown on hover / click';
     tooltipInput.addEventListener('focus', begin);
@@ -707,6 +809,77 @@
     tooltipInput.addEventListener('blur', commitEnd);
     tooltipWrap.appendChild(tooltipInput);
     body.appendChild(tooltipWrap);
+
+    // Per-cell style overrides — background colour + a whole-cell-default
+    // bold toggle, IN ADDITION TO the inline rich-text bold mark above
+    // (which still wins at the word level over this cell-level default,
+    // same "instance default vs. inline mark override" split the
+    // table-wide bodyBold setting already uses — see table-types.js).
+    const cellStyleSection = document.createElement('div');
+    cellStyleSection.className = 'settings-section';
+    cellStyleSection.innerHTML = '<h3>Cell style</h3>';
+
+    const isHeaderCell = table.hasHeaderRow !== false && range.rTop === 0;
+    const resolvedCell = resolveTableStyle(table);
+    const cellBgFallback = isHeaderCell ? resolvedCell.headerBg : resolvedCell.cellBg;
+
+    const cellBgWrap = document.createElement('div');
+    cellBgWrap.className = 'popup-field';
+    cellBgWrap.innerHTML = '<label>Background colour</label>';
+    const cellBgRow = document.createElement('div');
+    cellBgRow.className = 'colour-field-row';
+    const cellBgInput = document.createElement('input');
+    cellBgInput.type = 'color';
+    cellBgInput.value = cell.cellBg || cellBgFallback;
+    // 'change', not 'input' — same click-and-hold-drag fix as the Table
+    // Styles panel's colour pickers (see there for the full explanation).
+    cellBgInput.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setCellBg(table.id, range.rTop, range.cLeft, cellBgInput.value);
+      history.commitAction();
+      renderCellPanel();
+    });
+    cellBgRow.appendChild(cellBgInput);
+    if (cell.cellBg) {
+      const clearBgBtn = document.createElement('button');
+      clearBgBtn.className = 'colour-clear-btn';
+      clearBgBtn.textContent = 'Clear';
+      clearBgBtn.addEventListener('click', () => {
+        history.beginAction();
+        tableManager.setCellBg(table.id, range.rTop, range.cLeft, null);
+        history.commitAction();
+        renderCellPanel();
+      });
+      cellBgRow.appendChild(clearBgBtn);
+    }
+    cellBgWrap.appendChild(cellBgRow);
+    cellStyleSection.appendChild(cellBgWrap);
+
+    const cellBoldWrap = document.createElement('div');
+    cellBoldWrap.className = 'popup-field toggle-field';
+    cellBoldWrap.innerHTML = '<label>Bold</label>';
+    const cellBoldSwitchLabel = document.createElement('label');
+    cellBoldSwitchLabel.className = 'switch';
+    const cellBoldInput = document.createElement('input');
+    cellBoldInput.type = 'checkbox';
+    // Tri-state field (see table-types.js), rendered on a plain two-state
+    // switch: when the cell has no explicit override yet, the switch
+    // reflects the table-wide bodyBold default; the FIRST toggle click
+    // writes an explicit true/false onto this one cell from then on.
+    cellBoldInput.checked = cell.cellBold != null ? !!cell.cellBold : !!table.bodyBold;
+    cellBoldInput.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setCellBold(table.id, range.rTop, range.cLeft, cellBoldInput.checked);
+      history.commitAction();
+    });
+    const cellBoldSlider = document.createElement('span');
+    cellBoldSlider.className = 'switch-slider';
+    cellBoldSwitchLabel.appendChild(cellBoldInput);
+    cellBoldSwitchLabel.appendChild(cellBoldSlider);
+    cellBoldWrap.appendChild(cellBoldSwitchLabel);
+    cellStyleSection.appendChild(cellBoldWrap);
+
+    body.appendChild(cellStyleSection);
 
     if ((cell.rowSpan || 1) > 1 || (cell.colSpan || 1) > 1) {
       const unmergeBtn = document.createElement('button');
@@ -726,7 +899,7 @@
     const addRowBtn = document.createElement('button');
     addRowBtn.className = 'btn btn-secondary';
     addRowBtn.textContent = '+ Row below';
-    addRowBtn.addEventListener('click', () => { history.beginAction(); tableManager.addRow(table.id, range.rTop); history.commitAction(); });
+    addRowBtn.addEventListener('click', () => { history.beginAction(); tableManager.addRow(table.id, range.rTop); history.commitAction(); renderCellPanel(); });
     const delRowBtn = document.createElement('button');
     delRowBtn.className = 'btn btn-secondary';
     delRowBtn.textContent = 'Delete row';
@@ -745,7 +918,7 @@
     const addColBtn = document.createElement('button');
     addColBtn.className = 'btn btn-secondary';
     addColBtn.textContent = '+ Column right';
-    addColBtn.addEventListener('click', () => { history.beginAction(); tableManager.addColumn(table.id, range.cLeft); history.commitAction(); });
+    addColBtn.addEventListener('click', () => { history.beginAction(); tableManager.addColumn(table.id, range.cLeft); history.commitAction(); renderCellPanel(); });
     const delColBtn = document.createElement('button');
     delColBtn.className = 'btn btn-secondary';
     delColBtn.textContent = 'Delete column';
@@ -805,7 +978,16 @@
     const accentInput = document.createElement('input');
     accentInput.type = 'color';
     accentInput.value = table.accentColor || resolveTableStyle(table).headerBg;
-    accentInput.addEventListener('input', () => patch({ accentColor: accentInput.value }));
+    // 'change' (fires once, on release/confirm), not 'input' (fires
+    // continuously while dragging inside the native swatch) — see root
+    // CLAUDE.md-style bug notes for this pass: patch() mutates state AND
+    // triggers a full panel re-render, which replaces this very <input
+    // type=color> node. On 'input' that happens mid-drag, tearing the
+    // live element out from under the OS-level colour-picker interaction
+    // and killing it. Same root cause class as the tooltip-field focus
+    // bug fixed in an earlier pass — a live-editing field's own event
+    // must never be the thing that destroys the DOM node it's firing on.
+    accentInput.addEventListener('change', () => patch({ accentColor: accentInput.value }));
     accentRow.appendChild(accentInput);
     if (table.accentColor) {
       const clearBtn = document.createElement('button');
@@ -833,12 +1015,96 @@
       input.value = table[key] || resolvedValue;
       input.disabled = !!table.accentColor;
       input.title = table.accentColor ? 'Derived from accent colour — clear it above to set this directly' : label;
-      input.addEventListener('input', () => patch({ [key]: input.value }));
+      // 'change', not 'input' — same click-and-hold-drag fix as
+      // accentInput above.
+      input.addEventListener('change', () => patch({ [key]: input.value }));
       wrap.appendChild(input);
       overridesGrid.appendChild(wrap);
     });
     colourSection.appendChild(overridesGrid);
     body.appendChild(colourSection);
+
+    // Small local helpers so the Body/Header sections below (which are
+    // near-identical field sets over different TABLE_FIELDS keys) don't
+    // need two copies of the same input-building code.
+    function numberField(container, key, field) {
+      const wrap = document.createElement('div');
+      wrap.className = 'popup-field';
+      wrap.innerHTML = `<label>${field.label}</label>`;
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = field.min; input.max = field.max;
+      input.value = table[key] != null ? table[key] : field.default;
+      input.addEventListener('focus', () => history.beginAction());
+      input.addEventListener('input', () => tableManager.updateTable(table.id, { [key]: Math.max(field.min, Math.min(field.max, Number(input.value) || field.default)) }));
+      input.addEventListener('blur', () => history.commitAction());
+      wrap.appendChild(input);
+      container.appendChild(wrap);
+    }
+    function selectField(container, key, field) {
+      const wrap = document.createElement('div');
+      wrap.className = 'popup-field';
+      wrap.innerHTML = `<label>${field.label}</label>`;
+      const select = document.createElement('select');
+      field.options.forEach(([val, text]) => {
+        const opt = document.createElement('option');
+        opt.value = val; opt.textContent = text;
+        if (val === (table[key] || field.default)) opt.selected = true;
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', () => patch({ [key]: select.value }));
+      wrap.appendChild(select);
+      container.appendChild(wrap);
+    }
+    function toggleField(container, key, field) {
+      const wrap = document.createElement('div');
+      wrap.className = 'popup-field toggle-field';
+      wrap.innerHTML = `<label>${field.label}</label>`;
+      const switchLabel = document.createElement('label');
+      switchLabel.className = 'switch';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = table[key] != null ? !!table[key] : !!field.default;
+      input.addEventListener('change', () => patch({ [key]: input.checked }));
+      const slider = document.createElement('span');
+      slider.className = 'switch-slider';
+      switchLabel.appendChild(input);
+      switchLabel.appendChild(slider);
+      wrap.appendChild(switchLabel);
+      container.appendChild(wrap);
+    }
+
+    // Body formatting — table-wide, NOT per-column/row/cell (settled
+    // scope). A cell's own inline bold/italic mark from its rich-text
+    // toolbar overrides bodyBold at the word level for free (see
+    // table-types.js's comment on this field).
+    const bodySection = document.createElement('div');
+    bodySection.className = 'settings-section';
+    bodySection.innerHTML = '<h3>Body</h3>';
+    const bodyGrid = document.createElement('div');
+    bodyGrid.className = 'field-grid';
+    numberField(bodyGrid, 'cornerRadius', TABLE_FIELDS.cornerRadius);
+    numberField(bodyGrid, 'cellPadding', TABLE_FIELDS.cellPadding);
+    numberField(bodyGrid, 'bodyTextSize', TABLE_FIELDS.bodyTextSize);
+    selectField(bodyGrid, 'bodyAlign', TABLE_FIELDS.bodyAlign);
+    bodySection.appendChild(bodyGrid);
+    toggleField(bodySection, 'bodyBold', TABLE_FIELDS.bodyBold);
+    body.appendChild(bodySection);
+
+    // Header formatting — a fully separate group from Body above
+    // (settled: NOT inherit-with-override), so a header can look
+    // nothing like the body without a "reset to default" step.
+    const headerSection = document.createElement('div');
+    headerSection.className = 'settings-section';
+    headerSection.innerHTML = '<h3>Header</h3>';
+    const headerGrid = document.createElement('div');
+    headerGrid.className = 'field-grid';
+    numberField(headerGrid, 'headerPadding', TABLE_FIELDS.headerPadding);
+    numberField(headerGrid, 'headerTextSize', TABLE_FIELDS.headerTextSize);
+    selectField(headerGrid, 'headerAlign', TABLE_FIELDS.headerAlign);
+    headerSection.appendChild(headerGrid);
+    toggleField(headerSection, 'headerBold', TABLE_FIELDS.headerBold);
+    body.appendChild(headerSection);
 
     const optionsSection = document.createElement('div');
     optionsSection.className = 'settings-section';
@@ -847,6 +1113,8 @@
       ['hasHeaderRow', 'First row is a header'],
       ['freezeHeader', 'Freeze header row'],
       ['freezeFirstCol', 'Freeze first column'],
+      ['rowSeparatorsOnly', 'Row separators only'],
+      ['showTitleInExport', 'Show title in export'],
     ].forEach(([key, label]) => {
       const wrap = document.createElement('div');
       wrap.className = 'popup-field toggle-field';
@@ -915,7 +1183,20 @@
   function renderAll() {
     renderStage();
     renderTableBar();
-    if (activePanel === 'cell') renderCellPanel();
+    // Deliberately NOT `if (activePanel === 'cell') renderCellPanel();`
+    // here — this used to full-rebuild the cell panel's DOM (including
+    // whatever text/tooltip field the author was mid-keystroke in) on
+    // every single onChange, which is exactly the focus/selection-loss
+    // bug class root CLAUDE.md documents for richtext-editor.js's link
+    // button (Shell.prompt() stealing focus mid-await) — same root cause
+    // here, just triggered by a full re-render instead of an awaited
+    // modal. Same fix shape Tabbed Panels already uses for its property
+    // panel: renderCellPanel() is now called only from the specific
+    // actions that actually need to change what the panel shows
+    // (selecting a cell, merging/unmerging, adding/removing a row or
+    // column from inside the panel) — never as a blanket side effect of
+    // "some state changed," so a live-typing field's own onChange never
+    // tears out the DOM node it's typing into.
     if (activePanel === 'tableStyles') renderTableStylesPanel();
     if (activePanel === 'layout') renderLayoutPanel();
     if (selAnchor && !tableManager.tables.some((t) => t.id === selAnchor.tableId)) closePanel();
@@ -1123,16 +1404,21 @@
   }
 
   /* ---- Export ----
-     Reuses table-types.js / table-renderer.js / carousel-nav.js VERBATIM
-     inside the exported file — same engine that just rendered the
-     authoring preview renders the exported player. Local/repo-source
-     preview fetches the sibling files directly; the Apps-Script-deployed
-     copy embeds them as MODULE_SOURCES string constants instead — see
-     root CLAUDE.md's deployment pipeline section, substitution 2. Not
-     attempted this pass (see this tool's scope notes). */
+     Reuses table-types.js / richtext-editor.js / table-renderer.js /
+     carousel-nav.js VERBATIM inside the exported file — same engine
+     that just rendered the authoring preview renders the exported
+     player. richtext-editor.js is included even though Export never
+     calls attachRichTextField() (there's no editing UI on the learner
+     side) — table-renderer.js's renderTable() calls sanitizeRichHtml()
+     on every cell's stored text, and that function lives in this file.
+     Local/repo-source preview fetches the sibling files directly; the
+     Apps-Script-deployed copy embeds them as MODULE_SOURCES string
+     constants instead — see root CLAUDE.md's deployment pipeline
+     section, substitution 2. Not attempted this pass (see this tool's
+     scope notes). */
 
   async function fetchModuleSources() {
-    const files = ['table-types.js', 'table-renderer.js', 'carousel-nav.js'];
+    const files = ['table-types.js', 'richtext-editor.js', 'table-renderer.js', 'carousel-nav.js'];
     const texts = await Promise.all(files.map((f) => fetch(f).then((r) => r.text())));
     return texts.join('\n\n');
   }
@@ -1175,8 +1461,12 @@ playerStyle.textContent = \`
   html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: transparent; }
   #tables-layout-host { max-width: 1100px; margin: 0 auto; }
   .cn-layout { display: flex; flex-direction: column; gap: 16px; }
+  .cn-viewport { overflow: hidden; }
   .cn-grid { display: grid; gap: 24px; align-items: start; }
   .cn-item { min-width: 0; }
+  .cn-collapsed .cn-grid { display: flex; gap: 12px; flex-wrap: nowrap; transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1); }
+  .cn-collapsed .cn-item { flex-shrink: 0; transition: opacity 250ms cubic-bezier(0.4, 0, 0.2, 1); }
+  .cn-collapsed .cn-item-peek { opacity: 0.55; }
   .cn-nav { display: none; align-items: center; justify-content: center; gap: 16px; }
   .cn-nav-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid #E3E1DA; background: #fff; color: #4A5453; cursor: pointer; }
   .cn-nav-btn:hover:not(:disabled) { color: #0C5E82; border-color: #0C5E82; }
@@ -1184,16 +1474,22 @@ playerStyle.textContent = \`
   .cn-nav-counter { font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: #4A5453; min-width: 40px; text-align: center; }
   .tbl-wrapper { background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(28,35,33,0.08); padding: 24px; }
   .tbl-name { font-weight: 600; font-size: 0.9375rem; margin-bottom: 12px; color: #1C2321; }
-  .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, #CBC8BE); border-radius: 6px; }
+  .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, #CBC8BE); }
+  .tbl-scroller.tbl-row-sep-only { border: none; }
   .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, #1C2321); }
-  .tbl-cell { border: 1px solid var(--tbl-border, #CBC8BE); padding: 9px 12px; text-align: left; font-size: 0.8125rem; position: relative; }
-  th.tbl-cell { background: var(--tbl-header-bg, #FAFAF8); color: var(--tbl-header-text, #1C2321); font-weight: 600; }
+  .tbl-cell { border: 1px solid var(--tbl-border, #CBC8BE); padding: var(--tbl-body-padding, 9px); text-align: var(--tbl-body-align, left); font-size: var(--tbl-body-size, 0.8125rem); font-weight: var(--tbl-body-weight, 400); position: relative; }
+  th.tbl-cell { background: var(--tbl-header-bg, #FAFAF8); color: var(--tbl-header-text, #1C2321); padding: var(--tbl-header-padding, 9px); text-align: var(--tbl-header-align, left); font-size: var(--tbl-header-size, 0.8125rem); font-weight: var(--tbl-header-weight, 600); }
+  .tbl-table.tbl-row-sep-only { border: none; }
+  .tbl-table.tbl-row-sep-only .tbl-cell { border: none; border-bottom: 1px solid var(--tbl-border, #CBC8BE); }
   .tbl-sticky-row { position: sticky; top: 0; z-index: 2; }
   .tbl-sticky-col { position: sticky; left: 0; z-index: 1; }
   .tbl-sticky-row.tbl-sticky-col { z-index: 3; }
   .tbl-tooltip-icon { margin-left: 6px; color: inherit; opacity: 0.6; font-size: 11px; cursor: pointer; }
   .tbl-tooltip-icon:hover { opacity: 1; }
   .tbl-tooltip-popover { position: fixed; max-width: 240px; background: #1C2321; color: #fff; padding: 7px 10px; border-radius: 6px; font-size: 0.75rem; line-height: 1.4; z-index: 9999; box-shadow: 0 12px 32px rgba(28,35,33,0.12); }
+  @media (prefers-reduced-motion: reduce) {
+    .cn-collapsed .cn-grid, .cn-collapsed .cn-item { transition: none; }
+  }
 \`;
 document.head.appendChild(playerStyle);
 
@@ -1206,7 +1502,7 @@ let activeIndex = 0;
 function render() {
   renderTablesLayout(document.getElementById('tables-layout-host'), {
     tables, layout,
-    renderItem: (table) => renderTable(table, {}),
+    renderItem: (table) => renderTable(table, { forExport: true }),
     activeIndex,
     onNavigate: (i) => { activeIndex = i; render(); },
   });

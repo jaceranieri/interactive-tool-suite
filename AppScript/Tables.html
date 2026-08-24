@@ -27,6 +27,7 @@
   }
   .rail-divider { width: 28px; height: 1px; background: var(--border); margin: var(--space-1) 0; flex-shrink: 0; }
   .rail-btn {
+    position: relative;
     display: flex; align-items: center; justify-content: center;
     width: 40px; height: 40px; flex-shrink: 0;
     border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -37,6 +38,10 @@
   .rail-btn.btn-active { border-color: var(--accent); background: var(--accent-soft); }
   .rail-btn:disabled { opacity: 0.35; cursor: default; }
   .rail-btn i { font-size: 16px; color: var(--accent); }
+  /* The "+" badge overlay a previous pass added here was reverted this
+     pass (item 2) — the row/column semantics now rely solely on the
+     buttons' existing title/aria-label ("Add row"/"Add column")
+     tooltips, same as every other icon-only button in this left rail. */
 
   #content-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
@@ -72,8 +77,28 @@
   .tbl-name { font-weight: 600; font-size: var(--text-base); margin-bottom: var(--space-3); color: var(--ink); }
   .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, var(--border-strong)); /* border-radius set inline per-table, see table-renderer.js */ }
   .tbl-scroller.tbl-row-sep-only { border: none; }
-  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, var(--ink)); }
+  /* Table CONTENT font (item 8) — Poppins, project-wide, scoped to just
+     these table selectors so the authoring tool's own UI chrome
+     (buttons/panels/rail/top bar, all still var(--font-ui)) never
+     changes font. Weight is set per-render via the --tbl-body-weight/
+     --tbl-header-weight custom properties (table-renderer.js), not
+     here — this rule only owns the family. */
+  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, var(--ink)); font-family: 'Poppins', var(--font-ui); }
   .tbl-cell { border: 1px solid var(--tbl-border, var(--border-strong)); padding: var(--tbl-body-padding, 9px); text-align: var(--tbl-body-align, left); font-size: var(--tbl-body-size, var(--text-sm)); font-weight: var(--tbl-body-weight, 400); position: relative; cursor: pointer; transition: box-shadow var(--duration-fast) var(--ease-standard); }
+  /* Outer boundary owned SOLELY by .tbl-scroller's own border (item 3 /
+     item 7 root-cause fix — see table-renderer.js's header comment for
+     the full story). Only the OUTWARD-facing side of the outermost ring
+     of cells is suppressed; every internal grid line is untouched. Safe
+     to key off :first-child/:last-child because a covered/merged-away
+     grid position never renders a <td>/<th> at all (see table-types.js),
+     so the first/last REAL cell in a row is always the visual edge.
+     Excluded under .tbl-row-sep-only, which never had a scroller border
+     to be redundant with and whose own last-row bottom border is the
+     intended separator line, not a stray outer edge. */
+  .tbl-table:not(.tbl-row-sep-only) tr:first-child .tbl-cell { border-top: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr:last-child .tbl-cell { border-bottom: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr .tbl-cell:first-child { border-left: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr .tbl-cell:last-child { border-right: none; }
   /* Authoring-only hover affordance (item 6) — an inset box-shadow tint
      rather than `background`, so it stays visible over a cell's own
      background (theme colour, or a per-cell `cellBg` override, both set
@@ -97,6 +122,43 @@
   .tbl-tooltip-icon { margin-left: 6px; color: inherit; opacity: 0.6; font-size: 11px; cursor: pointer; }
   .tbl-tooltip-icon:hover { opacity: 1; }
   .tbl-tooltip-popover { position: fixed; max-width: 240px; background: var(--ink); color: #fff; padding: 7px 10px; border-radius: var(--radius-sm); font-size: var(--text-xs); line-height: 1.4; z-index: 9999; box-shadow: var(--shadow-lg); }
+
+  /* Column-width drag handle (item 4) — authoring-only, see
+     table-renderer.js's onColResizeStart. Sits just inside the header
+     cell's right edge so it doesn't visually widen the cell. */
+  .tbl-col-resize-handle {
+    position: absolute; top: 0; right: -4px; width: 8px; height: 100%;
+    cursor: col-resize; z-index: 4; touch-action: none;
+  }
+  .tbl-col-resize-handle:hover { background: var(--accent-soft); opacity: 0.6; }
+  /* Item 7's actual root-cause fix — see table-renderer.js's comment at
+     this class's creation site. The default straddle (-4px/+4px) is
+     needed so a handle's grab zone sits ON the boundary shared with the
+     NEXT column; the very last column has no next column, so that same
+     straddle overshot the table's own right edge and caused
+     .tbl-scroller's overflow:auto to report a permanent few-px
+     scrollbar even with nothing ever explicitly resized. */
+  .tbl-col-resize-handle-last { right: 0; }
+  /* Live drag-line ghost, appended to <body> (not the cell) so it isn't
+     clipped by .tbl-scroller's overflow:auto — same reasoning as the
+     tooltip popover above. */
+  .tbl-col-resize-ghost { position: fixed; width: 2px; background: var(--accent); z-index: 9999; pointer-events: none; }
+
+  /* Theme swatch grid (item 3) — replaces the old plain <select>. */
+  .theme-swatch-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-2); }
+  .theme-swatch-card {
+    display: flex; flex-direction: column; gap: 5px;
+    padding: var(--space-2); border: 2px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); cursor: pointer; font-family: var(--font-ui);
+    transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+  }
+  .theme-swatch-card:hover { border-color: var(--accent); }
+  .theme-swatch-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .theme-swatch-mock { border: 1px solid; border-radius: 4px; overflow: hidden; }
+  .theme-swatch-mock-header { height: 14px; }
+  .theme-swatch-mock-body { height: 20px; }
+  .theme-swatch-label { font-size: var(--text-xs); color: var(--ink-soft); text-align: center; }
+  .theme-swatch-card.selected .theme-swatch-label { color: var(--ink); font-weight: 600; }
 
   /* Property / Styles / Layout drawers — same .side-panel pattern as
      Tabbed Panels' drawers. Only one open at a time (openPanel()). */
@@ -215,6 +277,7 @@
       <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); browseFolder=''; refreshProjectList();">Open</button>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
+      <button class="btn btn-secondary" onclick="openImportModal()">Import from code</button>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" id="undo-btn" onclick="history.undo()">Undo</button>
       <button class="btn btn-secondary" id="redo-btn" onclick="history.redo()">Redo</button>
@@ -315,6 +378,24 @@
   </div>
 </div>
 
+<!-- Import from code modal -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Import</div><h2>Import from code</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('import-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--ink-soft); margin-top:0;">Paste a previously exported self-contained HTML export below to load its tables back into the editor.</p>
+      <textarea id="import-textarea" style="width:100%; height:320px; font-family:var(--font-mono); font-size:11px; box-sizing:border-box; border:1px solid var(--border); border-radius:var(--radius-sm); padding:var(--space-3);" placeholder="Paste exported code here…"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Shell.closeModal('import-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmImportFromCode()">Import</button>
+    </div>
+  </div>
+</div>
+
 <?!= include('AppShellJs'); ?>
 <?!= include('StorageConnectorJs'); ?>
 <?!= include('TableTypesJs'); ?>
@@ -325,15 +406,27 @@
 <?!= include('HistoryJs'); ?>
 <script>
   const TOOL_ID = 'tables';
-  // Same shared backend as every other tool, distinguished by TOOL_ID —
-  // see animated-slides-v2's STORAGE_ENDPOINT for why this is a fixed
-  // literal rather than templated: it's the same Apps-Script-hosted
-  // storage-backend.gs deployment across the whole suite. The API key
-  // still comes from Script Properties at render time (never hand-pasted)
-  // — see CLAUDE.md's deployment pipeline section.
+  // Same placeholder convention as the other tools — real values only
+  // get substituted in the Apps Script deployed copy, never here. See
+  // root CLAUDE.md's deployment pipeline section.
   const STORAGE_ENDPOINT = "https://script.google.com/a/macros/syd.catholic.edu.au/s/AKfycbwj2Yk2R8o0ffnPBCO6gi-rRxfB1ETeZ6Rm61IeWXjQumpE0PUCfiPQrxDyXpe_HHK5Xw/exec";
   const STORAGE_API_KEY = <?!= JSON.stringify(storageApiKey); ?>;
   Storage.configure(STORAGE_ENDPOINT, STORAGE_API_KEY);
+
+  // Table CONTENT font (item 8) — Poppins, loaded via a script-created
+  // <link> rather than a static tag in <head>, same safe pattern root
+  // CLAUDE.md documents for the truncated-<link> incident: build it from
+  // short pieces at runtime so there's never one long static line that
+  // could get silently truncated by a host/paste step. Scoped to just
+  // `.tbl-table`/`.tbl-cell` via the stylesheet above — this never
+  // touches the authoring tool's own UI chrome font. Export loads the
+  // exact same URL the exact same way — see openExportModal() below.
+  (function loadContentFont() {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap';
+    document.head.appendChild(link);
+  })();
 
   let currentProjectName = null;
   let currentProjectFolder = ''; // '/'-separated folder the current project lives in ('' = root)
@@ -416,7 +509,14 @@
     addRowBtn.className = 'rail-btn';
     addRowBtn.title = 'Add row';
     addRowBtn.setAttribute('aria-label', 'Add row');
-    addRowBtn.innerHTML = '<i class="fa-solid fa-table-cells-row-lock"></i>';
+    // fa-table-cells-row-lock (used here previously) doesn't exist at
+    // all in Font Awesome 6.4.0's free set — verified this pass against
+    // the actual @fortawesome/fontawesome-free@6.4.0 package (not in its
+    // icons.yml metadata OR its shipped all.css at all, free or Pro), so
+    // it was always rendering as a blank/fallback glyph. fa-grip-lines
+    // (a horizontal stack of lines) reads clearly as "row" and is
+    // confirmed present in that same package's free all.css.
+    addRowBtn.innerHTML = '<i class="fa-solid fa-grip-lines"></i>';
     addRowBtn.addEventListener('click', () => {
       const table = tableManager.getActiveTable();
       const after = selAnchor && selAnchor.tableId === table.id ? selAnchor.r : table.rows.length - 1;
@@ -431,6 +531,9 @@
     addColBtn.className = 'rail-btn';
     addColBtn.title = 'Add column';
     addColBtn.setAttribute('aria-label', 'Add column');
+    // fa-table-columns is confirmed present in Font Awesome 6.4.0's free
+    // all.css (verified alongside fa-grip-lines above) and already reads
+    // clearly as "column" — kept as-is.
     addColBtn.innerHTML = '<i class="fa-solid fa-table-columns"></i>';
     addColBtn.addEventListener('click', () => {
       const table = tableManager.getActiveTable();
@@ -442,23 +545,11 @@
     });
     rail.appendChild(addColBtn);
 
-    const mergeBtn = document.createElement('button');
-    mergeBtn.className = 'rail-btn';
-    mergeBtn.id = 'merge-rail-btn';
-    mergeBtn.title = 'Merge selected cells';
-    mergeBtn.setAttribute('aria-label', 'Merge selected cells');
-    mergeBtn.innerHTML = '<i class="fa-solid fa-table-cells-large"></i>';
-    mergeBtn.addEventListener('click', () => mergeSelection());
-    rail.appendChild(mergeBtn);
-
-    const unmergeBtn = document.createElement('button');
-    unmergeBtn.className = 'rail-btn';
-    unmergeBtn.id = 'unmerge-rail-btn';
-    unmergeBtn.title = 'Unmerge selected cell';
-    unmergeBtn.setAttribute('aria-label', 'Unmerge selected cell');
-    unmergeBtn.innerHTML = '<i class="fa-solid fa-table-cells"></i>';
-    unmergeBtn.addEventListener('click', () => unmergeSelection());
-    rail.appendChild(unmergeBtn);
+    // Merge/Unmerge deliberately live ONLY in the cell property panel
+    // now (renderCellPanel()'s "Merge cells"/"Unmerge cell" buttons) —
+    // the left rail used to duplicate them, with no functional
+    // difference, just an extra place an author had to look. Removed
+    // this pass (item 1); see renderCellPanel() for the real controls.
 
     const divider = document.createElement('div');
     divider.className = 'rail-divider';
@@ -482,16 +573,6 @@
     layoutBtn.addEventListener('click', () => activePanel === 'layout' ? closePanel() : openPanel('layout'));
     rail.appendChild(layoutBtn);
 
-    updateRailButtonState();
-  }
-
-  function updateRailButtonState() {
-    const range = currentSelectionRange();
-    const mergeBtn = document.getElementById('merge-rail-btn');
-    const unmergeBtn = document.getElementById('unmerge-rail-btn');
-    if (!mergeBtn || !unmergeBtn) return;
-    mergeBtn.disabled = !range || (range.rTop === range.rBot && range.cLeft === range.cRight);
-    unmergeBtn.disabled = !(range && range.rTop === range.rBot && range.cLeft === range.cRight && isMergedCell(range));
   }
 
   /* ---- Selection helpers ---- */
@@ -503,12 +584,6 @@
       rTop: Math.min(selAnchor.r, selEnd.r), rBot: Math.max(selAnchor.r, selEnd.r),
       cLeft: Math.min(selAnchor.c, selEnd.c), cRight: Math.max(selAnchor.c, selEnd.c),
     };
-  }
-
-  function isMergedCell(range) {
-    const table = tableManager.tables.find((t) => t.id === range.tableId);
-    const cell = table && table.rows[range.rTop] && table.rows[range.rTop][range.cLeft];
-    return !!cell && ((cell.rowSpan || 1) > 1 || (cell.colSpan || 1) > 1);
   }
 
   function selectCell(tableId, r, c, event) {
@@ -564,7 +639,6 @@
         r >= range.rTop && r <= range.rBot && c >= range.cLeft && c <= range.cRight;
       cellEl.classList.toggle('tbl-cell-selected', selected);
     });
-    updateRailButtonState();
   }
 
   function mergeSelection() {
@@ -596,7 +670,61 @@
         const range = currentSelectionRange();
         return !!range && range.tableId === table.id && r >= range.rTop && r <= range.rBot && c >= range.cLeft && c <= range.cRight;
       },
+      onColResizeStart: (event, c, colSpan, cellEl) => startColResize(event, table, c, colSpan, cellEl),
+      contentFontWeight: tableManager.layout.contentFontWeight,
     });
+  }
+
+  /* ---- Column-width drag resize (item 4) — pointer events, live ghost
+     line, Math.round()'d committed width, history begin/commit
+     bracketing the whole drag (not per-pixel). A merged header cell's
+     handle resizes the WHOLE block by writing the new width onto the
+     LAST column its span covers — see table-types.js's header comment. */
+
+  let colResizeState = null;
+
+  function startColResize(event, table, colIndex, colSpan, cellEl) {
+    event.preventDefault();
+    const targetColIndex = colIndex + colSpan - 1;
+    const cellRect = cellEl.getBoundingClientRect();
+    const scroller = cellEl.closest('.tbl-scroller');
+    const scrollerRect = (scroller || cellEl).getBoundingClientRect();
+
+    history.beginAction();
+    colResizeState = {
+      tableId: table.id,
+      targetColIndex,
+      startX: event.clientX,
+      startWidth: cellRect.width,
+    };
+
+    const ghost = document.createElement('div');
+    ghost.className = 'tbl-col-resize-ghost';
+    ghost.style.left = Math.round(event.clientX) + 'px';
+    ghost.style.top = scrollerRect.top + 'px';
+    ghost.style.height = scrollerRect.height + 'px';
+    document.body.appendChild(ghost);
+    colResizeState.ghostEl = ghost;
+
+    document.addEventListener('pointermove', onColResizeMove);
+    document.addEventListener('pointerup', onColResizeEnd, { once: true });
+  }
+
+  function onColResizeMove(event) {
+    if (!colResizeState) return;
+    colResizeState.ghostEl.style.left = Math.round(event.clientX) + 'px';
+  }
+
+  function onColResizeEnd(event) {
+    if (!colResizeState) return;
+    document.removeEventListener('pointermove', onColResizeMove);
+    const state = colResizeState;
+    colResizeState = null;
+    state.ghostEl.remove();
+    const delta = event.clientX - state.startX;
+    const newWidth = Math.max(30, Math.round(state.startWidth + delta));
+    tableManager.setColWidth(state.tableId, state.targetColIndex, newWidth);
+    history.commitAction();
   }
 
   function renderStage() {
@@ -608,7 +736,6 @@
       activeIndex,
       onNavigate: (i) => { tableManager.setActiveTable(tableManager.tables[i].id); },
     });
-    updateRailButtonState();
   }
 
   /* ---- Bottom bar: table thumbnails + add/duplicate/rename/delete/reorder ---- */
@@ -626,7 +753,7 @@
 
     const inner = document.createElement('div');
     inner.style.cssText = `width:${CONTENT_W}px; transform:scale(${scale}); transform-origin:top left; pointer-events:none;`;
-    try { inner.appendChild(renderTable(table, { showName: false })); } catch (err) { /* a malformed table shouldn't break the whole thumbnail row */ }
+    try { inner.appendChild(renderTable(table, { showName: false, contentFontWeight: tableManager.layout.contentFontWeight })); } catch (err) { /* a malformed table shouldn't break the whole thumbnail row */ }
     wrapper.appendChild(inner);
     return wrapper;
   }
@@ -890,6 +1017,34 @@
     cellBoldWrap.appendChild(cellBoldSwitchLabel);
     cellStyleSection.appendChild(cellBoldWrap);
 
+    // Per-cell text-align override (item 6b) — same "null = not set,
+    // fall back to the table-wide value" convention as cellBg/cellBold
+    // above (see table-types.js), but rendered as a <select> with an
+    // explicit "Inherit" option rather than a two-state switch, since
+    // there are 4 real values plus the inherit state, not 2.
+    const cellAlignWrap = document.createElement('div');
+    cellAlignWrap.className = 'popup-field';
+    cellAlignWrap.innerHTML = '<label>Text align</label>';
+    const cellAlignSelect = document.createElement('select');
+    const tableWideAlign = (isHeaderCell ? table.headerAlign : table.bodyAlign) || 'left';
+    const inheritOpt = document.createElement('option');
+    inheritOpt.value = '';
+    inheritOpt.textContent = `Inherit (${tableWideAlign})`;
+    cellAlignSelect.appendChild(inheritOpt);
+    [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']].forEach(([val, text]) => {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = text;
+      cellAlignSelect.appendChild(opt);
+    });
+    cellAlignSelect.value = cell.cellAlign || '';
+    cellAlignSelect.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setCellAlign(table.id, range.rTop, range.cLeft, cellAlignSelect.value || null);
+      history.commitAction();
+    });
+    cellAlignWrap.appendChild(cellAlignSelect);
+    cellStyleSection.appendChild(cellAlignWrap);
+
     body.appendChild(cellStyleSection);
 
     if ((cell.rowSpan || 1) > 1 || (cell.colSpan || 1) > 1) {
@@ -941,6 +1096,48 @@
     body.appendChild(colSection);
   }
 
+  /** Small static swatch grid for THEME_PRESETS (item 3) — replaces the
+   *  old plain <select>. Only needs to handle the fixed, non-extensible
+   *  preset list (4 presets), so a dedicated generator function is
+   *  enough; not built as a reusable field-type renderer. Each card
+   *  paints a tiny 2-bar mock (header bar + body bar) from the preset's
+   *  real headerBg/headerText/borderColor/cellBg so the author sees the
+   *  actual look before picking, instead of just a name in a dropdown. */
+  function renderThemeSwatchGrid(container, selectedKey, onSelect) {
+    container.className = 'theme-swatch-grid';
+    container.innerHTML = '';
+    Object.entries(THEME_PRESETS).forEach(([key, preset]) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'theme-swatch-card' + (key === selectedKey ? ' selected' : '');
+      card.title = preset.label;
+      card.setAttribute('aria-label', preset.label);
+      card.setAttribute('aria-pressed', key === selectedKey ? 'true' : 'false');
+
+      const mock = document.createElement('div');
+      mock.className = 'theme-swatch-mock';
+      mock.style.borderColor = preset.borderColor;
+      const header = document.createElement('div');
+      header.className = 'theme-swatch-mock-header';
+      header.style.background = preset.headerBg;
+      header.style.color = preset.headerText;
+      const bodyBar = document.createElement('div');
+      bodyBar.className = 'theme-swatch-mock-body';
+      bodyBar.style.background = preset.cellBg;
+      mock.appendChild(header);
+      mock.appendChild(bodyBar);
+
+      const label = document.createElement('div');
+      label.className = 'theme-swatch-label';
+      label.textContent = preset.label;
+
+      card.appendChild(mock);
+      card.appendChild(label);
+      card.addEventListener('click', () => onSelect(key));
+      container.appendChild(card);
+    });
+  }
+
   /* ---- Table Styles panel (per-table theme/colours/freeze) ---- */
 
   function renderTableStylesPanel() {
@@ -966,15 +1163,9 @@
     const themeWrap = document.createElement('div');
     themeWrap.className = 'popup-field';
     themeWrap.innerHTML = '<label>Theme</label>';
-    const themeSelect = document.createElement('select');
-    TABLE_FIELDS.themePreset.options.forEach(([val, text]) => {
-      const opt = document.createElement('option');
-      opt.value = val; opt.textContent = text;
-      if (val === table.themePreset) opt.selected = true;
-      themeSelect.appendChild(opt);
-    });
-    themeSelect.addEventListener('change', () => patch({ themePreset: themeSelect.value }));
-    themeWrap.appendChild(themeSelect);
+    const themeGrid = document.createElement('div');
+    renderThemeSwatchGrid(themeGrid, table.themePreset, (key) => patch({ themePreset: key }));
+    themeWrap.appendChild(themeGrid);
     body.appendChild(themeWrap);
 
     const colourSection = document.createElement('div');
@@ -1034,6 +1225,51 @@
     });
     colourSection.appendChild(overridesGrid);
     body.appendChild(colourSection);
+
+    // Explicit fixed pixel width for THIS table (item 1) — same
+    // "number input + Auto/Clear button" pattern the colour overrides
+    // above use for their own null-means-unset convention, rather than
+    // the plain always-clamped numberField() helper below (that helper
+    // assumes a real numeric default to fall back to, not "auto"). See
+    // table-types.js's header comment for how this interacts with
+    // colWidths/the outer stage.
+    const sizingSection = document.createElement('div');
+    sizingSection.className = 'settings-section';
+    sizingSection.innerHTML = '<h3>Sizing</h3>';
+    const widthWrap = document.createElement('div');
+    widthWrap.className = 'popup-field';
+    widthWrap.innerHTML = '<label>Table width (px)</label>';
+    const widthRow = document.createElement('div');
+    widthRow.className = 'colour-field-row';
+    const widthInput = document.createElement('input');
+    widthInput.type = 'number';
+    widthInput.min = TABLE_FIELDS.tableWidth.min;
+    widthInput.max = TABLE_FIELDS.tableWidth.max;
+    widthInput.placeholder = 'Auto';
+    widthInput.value = table.tableWidth != null ? table.tableWidth : '';
+    widthInput.addEventListener('focus', () => history.beginAction());
+    widthInput.addEventListener('input', () => {
+      const raw = widthInput.value.trim();
+      const clamped = raw === '' ? null : Math.max(TABLE_FIELDS.tableWidth.min, Math.min(TABLE_FIELDS.tableWidth.max, Number(raw) || TABLE_FIELDS.tableWidth.min));
+      tableManager.updateTable(table.id, { tableWidth: clamped });
+    });
+    widthInput.addEventListener('blur', () => { history.commitAction(); renderTableStylesPanel(); });
+    widthRow.appendChild(widthInput);
+    if (table.tableWidth != null) {
+      const clearWidthBtn = document.createElement('button');
+      clearWidthBtn.className = 'colour-clear-btn';
+      clearWidthBtn.textContent = 'Auto';
+      clearWidthBtn.addEventListener('click', () => {
+        history.beginAction();
+        tableManager.updateTable(table.id, { tableWidth: null });
+        history.commitAction();
+        renderTableStylesPanel();
+      });
+      widthRow.appendChild(clearWidthBtn);
+    }
+    widthWrap.appendChild(widthRow);
+    sizingSection.appendChild(widthWrap);
+    body.appendChild(sizingSection);
 
     // Small local helpers so the Body/Header sections below (which are
     // near-identical field sets over different TABLE_FIELDS keys) don't
@@ -1125,7 +1361,10 @@
       ['freezeHeader', 'Freeze header row'],
       ['freezeFirstCol', 'Freeze first column'],
       ['rowSeparatorsOnly', 'Row separators only'],
-      ['showTitleInExport', 'Show title in export'],
+      // Renamed from showTitleInExport (item 5) — now hides the title
+      // in BOTH authoring and Export, not Export only. See
+      // table-types.js's header comment.
+      ['showTitle', 'Show title'],
     ].forEach(([key, label]) => {
       const wrap = document.createElement('div');
       wrap.className = 'popup-field toggle-field';
@@ -1189,6 +1428,112 @@
     note.className = 'cell-selection-note';
     note.textContent = 'Below a width threshold, side-by-side automatically falls back to single-table carousel display — this happens on the exported page too, so a narrow Articulate embed still reads cleanly.';
     body.appendChild(note);
+
+    body.appendChild(renderContainerBackgroundSection());
+    body.appendChild(renderContentFontSection());
+  }
+
+  /** Project-wide stage background (item 4) — the exact { color,
+   *  transparent } pattern Tabbed Panels' styles.pageBackground uses
+   *  (see its CLAUDE.md for the reference this mirrors), applied here to
+   *  the STAGE that holds every table (the side-by-side grid/carousel
+   *  strip), not any individual table's own colours. #stage keeps
+   *  showing the chosen colour while authoring even when Transparent is
+   *  on — true transparency has nothing meaningful to preview inside the
+   *  app's own chrome — and only Export's actual output emits real
+   *  `background: transparent` (see openExportModal()/applyContainerBackground()). */
+  function renderContainerBackgroundSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    section.innerHTML = '<h3>Container background</h3>';
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
+
+    const colorWrap = document.createElement('div');
+    colorWrap.className = 'popup-field';
+    colorWrap.innerHTML = '<label>Colour</label>';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.title = 'Container background colour';
+    colorInput.value = tableManager.layout.containerBackground.color;
+    colorInput.disabled = tableManager.layout.containerBackground.transparent;
+    colorInput.addEventListener('input', () => {
+      history.beginAction();
+      tableManager.layout.containerBackground.color = colorInput.value;
+      history.commitAction();
+      markUnsaved(); applyContainerBackground();
+    });
+    colorWrap.appendChild(colorInput);
+    grid.appendChild(colorWrap);
+
+    const toggleWrap = document.createElement('div');
+    toggleWrap.className = 'popup-field toggle-field';
+    toggleWrap.innerHTML = '<label>Transparent</label>';
+    const switchLabel = document.createElement('label');
+    switchLabel.className = 'switch';
+    const toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.checked = tableManager.layout.containerBackground.transparent;
+    toggleInput.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.layout.containerBackground.transparent = toggleInput.checked;
+      history.commitAction();
+      colorInput.disabled = toggleInput.checked;
+      markUnsaved(); applyContainerBackground();
+    });
+    const slider = document.createElement('span');
+    slider.className = 'switch-slider';
+    switchLabel.appendChild(toggleInput);
+    switchLabel.appendChild(slider);
+    toggleWrap.appendChild(switchLabel);
+    grid.appendChild(toggleWrap);
+
+    section.appendChild(grid);
+    return section;
+  }
+
+  /** Mirrors layout.containerBackground onto the authoring #stage for
+   *  live preview. Never emits `background: transparent` here — see
+   *  renderContainerBackgroundSection()'s comment; Export's own template
+   *  string is the only place that does. */
+  function applyContainerBackground() {
+    const bg = tableManager.layout.containerBackground;
+    document.getElementById('stage').style.background = bg.transparent ? '' : bg.color;
+  }
+
+  /** Project-wide table content font WEIGHT (item 8) — the font FAMILY
+   *  itself (Poppins) is fixed, not a choice, so this is the only control
+   *  needed. See table-types.js's header comment for how this interacts
+   *  with the existing bodyBold/headerBold/cellBold toggles. */
+  function renderContentFontSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    section.innerHTML = '<h3>Table content font</h3>';
+
+    const weightWrap = document.createElement('div');
+    weightWrap.className = 'popup-field';
+    weightWrap.innerHTML = '<label>Weight (Poppins)</label>';
+    const weightSelect = document.createElement('select');
+    [[400, 'Regular'], [500, 'Medium'], [600, 'Semibold'], [700, 'Bold']].forEach(([val, text]) => {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = text;
+      if (val === tableManager.layout.contentFontWeight) opt.selected = true;
+      weightSelect.appendChild(opt);
+    });
+    weightSelect.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setLayout({ contentFontWeight: Number(weightSelect.value) });
+      history.commitAction();
+    });
+    weightWrap.appendChild(weightSelect);
+    section.appendChild(weightWrap);
+
+    const note = document.createElement('p');
+    note.className = 'cell-selection-note';
+    note.textContent = 'This sets the base weight for non-bold table text. A table\'s own Body/Header "Bold" toggles (and a cell\'s Bold override) still always render at full bold regardless of this setting.';
+    section.appendChild(note);
+
+    return section;
   }
 
   function renderAll() {
@@ -1211,6 +1556,7 @@
     if (activePanel === 'tableStyles') renderTableStylesPanel();
     if (activePanel === 'layout') renderLayoutPanel();
     if (selAnchor && !tableManager.tables.some((t) => t.id === selAnchor.tableId)) closePanel();
+    applyContainerBackground();
   }
 
   /* ---- Project lifecycle (New / Save / Open) — same pattern as the other tools ---- */
@@ -1423,6 +1769,20 @@
      side) — table-renderer.js's renderTable() calls sanitizeRichHtml()
      on every cell's stored text, and that function lives in this file.
      Local/repo-source preview fetches the sibling files directly; the
+     Apps-Script-deployed copy embeds them as MODULE_SOURCES string
+     constants instead — see root CLAUDE.md's deployment pipeline
+     section, substitution 2. Not attempted this pass (see this tool's
+     scope notes). */
+
+  /* ---- Export ----
+     Reuses table-types.js / richtext-editor.js / table-renderer.js /
+     carousel-nav.js VERBATIM inside the exported file — same engine
+     that just rendered the authoring preview renders the exported
+     player. richtext-editor.js is included even though Export never
+     calls attachRichTextField() (there's no editing UI on the learner
+     side) — table-renderer.js's renderTable() calls sanitizeRichHtml()
+     on every cell's stored text, and that function lives in this file.
+     Local/repo-source preview fetches the sibling files directly; the
      Apps-Script-deployed copy (this file) embeds them as MODULE_SOURCES
      string constants instead — see root CLAUDE.md's deployment pipeline
      section, substitution 2. Generated programmatically (a small Node
@@ -1435,10 +1795,10 @@
      Tabbed Panels' MODULE_SOURCES omits tab-manager.js. */
 
   const MODULE_SOURCES = {
-    tableTypes: "/* ==========================================================================\n   Tables — Table-level Schema\n   Same \"packing list\" idea as Tabbed Panels' tab-types.js BLOCK_TYPES,\n   but here the schema describes fields on the TABLE itself (theme,\n   colour overrides, freeze flags), not a per-row content block — Tables\n   has no block concept, a table is the top-level authored unit.\n\n   `rows` (the merged-cell grid) deliberately has NO entry in TABLE_FIELDS\n   — a generic field-schema entry (text/select/color/boolean/array/...)\n   doesn't fit a 2D grid with span data, so its shape is documented here\n   directly instead, and table-manager.js's grid-mutation methods are the\n   only code that touches it:\n\n     table.rows is a 2D array — rows[r][c] is either:\n       - a real cell object: { text, tooltip, colSpan, rowSpan, cellBg,\n         cellBold } (colSpan/rowSpan default to 1; tooltip is '' when\n         unset). `text` is now a SANITIZED RICH HTML STRING (bold/italic/\n         link — see richtext-editor.js's ALLOWED_TAGS), not the plain\n         string this field originally shipped as — the plain-text-only\n         scope this file used to document here was reopened in a later\n         interview once an author asked for inline bold/italic/hyperlinks\n         inside cells. table-renderer.js sanitizes `text` again at render\n         time regardless of source, so an old-shape saved project (`text`\n         as a bare plain string, from before this change) still renders\n         correctly with no separate migration step: a plain string with\n         no tags round-trips through sanitizeRichHtml() unchanged.\n         `tooltip` stays plain text (rendered via textContent, not\n         innerHTML) — it's a dense hover/click aside, not prose worth\n         formatting. `cellBg`/`cellBold` are per-cell overrides added\n         this pass, same \"null = not set, fall back to something else\"\n         convention TABLE_FIELDS already uses for headerBg/borderColor/\n         accentColor: `cellBg` (hex string or null) wins over the table's\n         theme/accent colour for that one cell when set; `cellBold`\n         (true/false/null) sets that one cell's default font-weight,\n         falling back to the table-wide `bodyBold` when null — a cell's\n         OWN inline rich-text bold mark (from its richtext toolbar) still\n         overrides either of these at the word level, same \"variant sets\n         default, inline mark overrides\" split `bodyBold` already\n         documents below. Both are undefined (not present as a key) on\n         any cell object created before this pass — table-renderer.js and\n         index.html's cell panel treat a missing key exactly like an\n         explicit null, so no migration step is needed for older saved\n         projects either. Unlike the colour overrides, there's currently\n         no dedicated \"reset to inherit\" control for `cellBold` in the\n         panel (only a plain on/off switch, see index.html) — a known,\n         minor scope gap, see this pass's notes.\n       - null, meaning this grid position is covered by an earlier cell's\n         colSpan/rowSpan and renders no <td>/<th> at all — the covering\n         cell's own colspan/rowspan attribute already accounts for the\n         space, exactly how a real HTML <table> naturally skips cells\n         under a span. table-renderer.js's renderTable() relies on this:\n         it just skips `null` positions rather than doing any span math\n         itself.\n     Every row array has the same length (the table's column count) —\n     table-manager.js's grid helpers are what keep that invariant true\n     across every add/remove/merge/unmerge.\n\n   Colour resolution (see resolveTableStyle() below) is table-manager's\n   / table-renderer's shared concern, not something table-manager stores\n   pre-computed — a table only ever stores its *choices* (theme preset\n   name, optional override colours, optional accent colour), the same\n   \"instance picks a variant, something else defines what that variant\n   looks like\" split Tabbed Panels uses for its badge/button/table style\n   variants.\n   ========================================================================== */\n\n// A small, fixed set of built-in theme presets (not user-extensible in\n// this pass) — each table picks one as its baseline look, then can layer\n// per-table colour overrides (or a single accent colour, see\n// resolveTableStyle) on top.\nconst THEME_PRESETS = {\n  bordered: {\n    label: 'Bordered',\n    headerBg: '#0C5E82', headerText: '#ffffff',\n    borderColor: '#CBC8BE', cellBg: '#ffffff', cellText: '#1C2321',\n  },\n  plain: {\n    label: 'Plain',\n    headerBg: '#FAFAF8', headerText: '#1C2321',\n    borderColor: '#FAFAF8', cellBg: '#ffffff', cellText: '#1C2321',\n  },\n  bold: {\n    label: 'Bold',\n    headerBg: '#14181A', headerText: '#ffffff',\n    borderColor: '#14181A', cellBg: '#FAFAF8', cellText: '#1C2321',\n  },\n  soft: {\n    label: 'Soft',\n    headerBg: '#DCEBF2', headerText: '#073048',\n    borderColor: '#CBC8BE', cellBg: '#ffffff', cellText: '#1C2321',\n  },\n};\n\n// Fields on a table that aren't the grid itself — drives the \"Table\n// styles\" side panel the same way BLOCK_TYPES[type].fields drives\n// Tabbed Panels' property panel, minus `rows` (see file header).\nconst TABLE_FIELDS = {\n  name:          { type: 'text',    label: 'Name',    default: 'Table' },\n  themePreset:   { type: 'select',  label: 'Theme',   default: 'bordered', options: Object.entries(THEME_PRESETS).map(([k, v]) => [k, v.label]) },\n  // Explicit per-table overrides. null = \"not set, fall back to the\n  // theme preset's colour\" — kept null rather than defaulting to a copy\n  // of the preset's colour so a table can be told apart from \"author\n  // picked this exact colour\" vs. \"author never touched it\".\n  headerBg:      { type: 'color',   label: 'Header background', default: null },\n  headerText:    { type: 'color',   label: 'Header text',       default: null },\n  borderColor:   { type: 'color',   label: 'Border colour',     default: null },\n  // When set, this single colour DERIVES headerBg/headerText/borderColor\n  // (see resolveTableStyle) — takes priority over the three explicit\n  // overrides above while set, so the property panel disables those\n  // three inputs whenever accentColor is non-null rather than letting\n  // both mechanisms fight over the result.\n  accentColor:   { type: 'color',   label: 'Accent colour',     default: null },\n  hasHeaderRow:  { type: 'boolean', label: 'First row is a header', default: true },\n  // Freeze is a secondary/occasional-table feature (see CLAUDE.md) and\n  // is deliberately allowed to render best-effort rather than perfectly\n  // when merged cells are present in the frozen row/column — see\n  // table-renderer.js's header comment for the specific limitation.\n  freezeHeader:    { type: 'boolean', label: 'Freeze header row',    default: false },\n  freezeFirstCol:  { type: 'boolean', label: 'Freeze first column',  default: false },\n\n  // Table-wide (NOT per-column/row/cell — a settled scope decision, see\n  // root CLAUDE.md's interview notes) body formatting. A cell's own\n  // inline rich-text marks (bold/italic from its toolbar) override these\n  // at the word level, the same \"variant sets default, instance-level\n  // mark overrides\" split Tabbed Panels uses for its heading styles —\n  // an inline <b>/<strong> keeps its own bold weight regardless of what\n  // bodyBold is set to, since the tag's own font-weight beats the\n  // ancestor table's inherited one in the cascade with no extra CSS\n  // needed to make that true.\n  cornerRadius:  { type: 'number',  label: 'Corner radius',    default: 8,  min: 0, max: 40 },\n  cellPadding:   { type: 'number',  label: 'Cell padding',     default: 9,  min: 0, max: 32 },\n  bodyTextSize:  { type: 'number',  label: 'Body text size',   default: 13, min: 8, max: 32 },\n  bodyAlign:     { type: 'select',  label: 'Body text align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']] },\n  bodyBold:      { type: 'boolean', label: 'Body bold',        default: false },\n\n  // Header gets its OWN independent full set of the same controls —\n  // settled as a fully separate group, NOT inherit-with-override, so a\n  // header can look nothing like its body (or vice versa) without any\n  // \"reset to default\" step.\n  headerTextSize: { type: 'number',  label: 'Header text size',  default: 13, min: 8, max: 32 },\n  headerAlign:    { type: 'select',  label: 'Header text align', default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']] },\n  headerBold:     { type: 'boolean', label: 'Header bold',       default: true },\n  headerPadding:  { type: 'number',  label: 'Header padding',    default: 9,  min: 0, max: 32 },\n\n  // When on: vertical/outer borders disappear, only horizontal lines\n  // between rows remain — including the line under the header row (the\n  // header keeps its separator too, settled as not a fuller box).\n  rowSeparatorsOnly: { type: 'boolean', label: 'Row separators only', default: false },\n\n  // Authoring-only visibility toggle: the table's name/heading always\n  // shows on the authoring canvas and bottom-bar thumbnails regardless\n  // of this flag (the author needs it to tell tables apart while\n  // editing) — it only controls whether Export's rendering omits it.\n  // See table-renderer.js's renderTable() `forExport` opt for how the\n  // two call sites (authoring vs. Export) stay on the exact same render\n  // function without either one hard-coding the decision.\n  showTitleInExport: { type: 'boolean', label: 'Show title in export', default: true },\n};\n\n/** Simple relative-luminance check so an accent colour's derived header\n *  text stays legible against it — no need for anything more precise\n *  than \"light background gets dark text, dark background gets white\n *  text\" at this scale. */\nfunction contrastTextColor(hex) {\n  const clean = (hex || '').replace('#', '');\n  if (clean.length !== 6) return '#ffffff';\n  const r = parseInt(clean.substring(0, 2), 16);\n  const g = parseInt(clean.substring(2, 4), 16);\n  const b = parseInt(clean.substring(4, 6), 16);\n  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;\n  return luminance > 0.6 ? '#111827' : '#ffffff';\n}\n\n/** Resolves a table's actual effective colours from theme + overrides +\n *  accent, in that priority order (accent wins whenever set). Pure\n *  function of the table's own fields — used by both table-renderer.js\n *  (to paint the real table) and index.html (to preview the Styles\n *  panel's disabled/enabled override inputs). */\nfunction resolveTableStyle(table) {\n  const preset = THEME_PRESETS[table.themePreset] || THEME_PRESETS.bordered;\n  let headerBg = table.headerBg || preset.headerBg;\n  let headerText = table.headerText || preset.headerText;\n  let borderColor = table.borderColor || preset.borderColor;\n  if (table.accentColor) {\n    headerBg = table.accentColor;\n    headerText = contrastTextColor(table.accentColor);\n    borderColor = table.accentColor;\n  }\n  return { headerBg, headerText, borderColor, cellBg: preset.cellBg, cellText: preset.cellText };\n}\n\n/** A fresh 2x2 grid of real (unmerged) cells — the starting point for a\n *  brand-new table, same \"Header 1/Header 2/Cell 1/Cell 2\" shape\n *  Tabbed Panels' table block defaults to. */\nfunction makeDefaultRows() {\n  const cell = (text) => ({ text, tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null });\n  return [\n    [cell('Header 1'), cell('Header 2')],\n    [cell('Cell 1'), cell('Cell 2')],\n  ];\n}\n\n/** Builds a fresh table's data object from TABLE_FIELDS defaults, same\n *  role as tab-types.js's makeDefaultBlock() — keeps default-value logic\n *  in one place instead of scattered object literals. */\nfunction makeDefaultTable(id, name) {\n  const data = { id, rows: makeDefaultRows() };\n  Object.entries(TABLE_FIELDS).forEach(([key, field]) => {\n    data[key] = field.default;\n  });\n  if (name) data.name = name;\n  return data;\n}\n",
+    tableTypes: "/* ==========================================================================\n   Tables — Table-level Schema\n   Same \"packing list\" idea as Tabbed Panels' tab-types.js BLOCK_TYPES,\n   but here the schema describes fields on the TABLE itself (theme,\n   colour overrides, freeze flags), not a per-row content block — Tables\n   has no block concept, a table is the top-level authored unit.\n\n   `rows` (the merged-cell grid) deliberately has NO entry in TABLE_FIELDS\n   — a generic field-schema entry (text/select/color/boolean/array/...)\n   doesn't fit a 2D grid with span data, so its shape is documented here\n   directly instead, and table-manager.js's grid-mutation methods are the\n   only code that touches it:\n\n     table.rows is a 2D array — rows[r][c] is either:\n       - a real cell object: { text, tooltip, colSpan, rowSpan, cellBg,\n         cellBold, cellAlign } (colSpan/rowSpan default to 1; tooltip is\n         '' when unset). `text` is now a SANITIZED RICH HTML STRING (bold/italic/\n         link — see richtext-editor.js's ALLOWED_TAGS), not the plain\n         string this field originally shipped as — the plain-text-only\n         scope this file used to document here was reopened in a later\n         interview once an author asked for inline bold/italic/hyperlinks\n         inside cells. table-renderer.js sanitizes `text` again at render\n         time regardless of source, so an old-shape saved project (`text`\n         as a bare plain string, from before this change) still renders\n         correctly with no separate migration step: a plain string with\n         no tags round-trips through sanitizeRichHtml() unchanged.\n         `tooltip` stays plain text (rendered via textContent, not\n         innerHTML) — it's a dense hover/click aside, not prose worth\n         formatting. `cellBg`/`cellBold` are per-cell overrides added\n         this pass, same \"null = not set, fall back to something else\"\n         convention TABLE_FIELDS already uses for headerBg/borderColor/\n         accentColor: `cellBg` (hex string or null) wins over the table's\n         theme/accent colour for that one cell when set; `cellBold`\n         (true/false/null) sets that one cell's default font-weight,\n         falling back to the table-wide `bodyBold` when null — a cell's\n         OWN inline rich-text bold mark (from its richtext toolbar) still\n         overrides either of these at the word level, same \"variant sets\n         default, inline mark overrides\" split `bodyBold` already\n         documents below. Both are undefined (not present as a key) on\n         any cell object created before this pass — table-renderer.js and\n         index.html's cell panel treat a missing key exactly like an\n         explicit null, so no migration step is needed for older saved\n         projects either. Unlike the colour overrides, there's currently\n         no dedicated \"reset to inherit\" control for `cellBold` in the\n         panel (only a plain on/off switch, see index.html) — a known,\n         minor scope gap, see this pass's notes.\n         `cellAlign` (added this pass, item 6b) follows the EXACT same\n         \"null = not set, fall back to the table-wide value\" convention\n         as `cellBg`/`cellBold` — a per-cell override of the table-wide\n         `bodyAlign`/`headerAlign` (see TABLE_FIELDS below), one of\n         `'left'|'center'|'right'|'justify'|null`. table-renderer.js\n         applies it as an inline `text-align` on that one cell, winning\n         over the table-wide CSS-custom-property value the same way\n         `cellBg`/inline `cellBold` already do. Same as `cellBold`, a\n         missing key on an older cell object reads identically to an\n         explicit null — no migration needed.\n       - null, meaning this grid position is covered by an earlier cell's\n         colSpan/rowSpan and renders no <td>/<th> at all — the covering\n         cell's own colspan/rowspan attribute already accounts for the\n         space, exactly how a real HTML <table> naturally skips cells\n         under a span. table-renderer.js's renderTable() relies on this:\n         it just skips `null` positions rather than doing any span math\n         itself.\n     Every row array has the same length (the table's column count) —\n     table-manager.js's grid helpers are what keep that invariant true\n     across every add/remove/merge/unmerge.\n\n   `table.colWidths` (added for manual column-width resize) is likewise\n   NOT a TABLE_FIELDS entry — a generic field-schema entry doesn't fit an\n   array parallel to column count either, same reasoning as `rows`\n   itself. Shape: an array with the same length as `table.rows[0]`\n   (one entry per column) — each entry is either a pixel width (number,\n   explicitly set by dragging that column's resize handle in\n   table-renderer.js) or `null`/absent, meaning \"auto/unset\" (the column\n   sizes itself the normal content-driven way). table-manager.js's\n   addColumn()/removeColumn() keep this array in sync with column count\n   the exact same way they already keep every `rows[r]` array in sync —\n   inserting a column inserts a matching `null` into `colWidths` at the\n   same index; removing a column removes that index. Dragging a handle\n   that belongs to a column currently covered by a merged cell's span\n   (colSpan > 1) resizes the WHOLE merged block by writing the new width\n   onto the LAST column index the span covers, leaving the other\n   spanned columns' own `colWidths` entries untouched — a deliberate\n   \"no sub-column width tracking under a span\" simplification (settled\n   scope), not a bug. table-renderer.js turns this array into a\n   `<colgroup>` of `<col>` elements (one real `<col style=\"width:...\">`\n   per explicitly-set entry, a bare `<col>` for `null` ones) rather than\n   setting `width` on individual `<td>`/`<th>` elements — a colgroup\n   naturally applies per-column regardless of which row's cells actually\n   render at that column index, which individual-cell widths can't do\n   cleanly once merges are involved. An older saved project with no\n   `colWidths` key at all is backfilled to an all-`null` array of the\n   right length by table-manager.js's setState() — no separate migration\n   step needed.\n\n   Project-wide font weight + the existing bold toggles (item 8, this\n   pass): table content (header + body, every table) now always renders\n   in Poppins — loaded at runtime via the same script-built `<link>`\n   pattern root CLAUDE.md documents for the truncated-`<link>` incident,\n   in both the authoring canvas and Export (see index.html). There's no\n   per-table or per-content-area font CHOICE, only a single project-wide\n   WEIGHT selector (`layout.contentFontWeight` — see table-manager.js's\n   defaultLayout(); this lives on `layout`, not TABLE_FIELDS, since it's\n   project-wide, not a per-table choice, same reasoning as\n   `layout.containerBackground` below). The interaction with the\n   existing `bodyBold`/`headerBold`/`cellBold` toggles was settled as the\n   simplest correct option: those toggles keep meaning exactly what they\n   already meant — \"force the boldest weight (700), regardless of the\n   base\" — rather than becoming relative to whatever `contentFontWeight`\n   is set to. `contentFontWeight` only ever sets the weight of NON-bold\n   text (the base). table-renderer.js's --tbl-body-weight/--tbl-header-weight\n   custom properties read `contentFontWeight` (falling back to 400) for\n   their \"off\" value instead of a hardcoded 400/700, and cellAlign's\n   sibling `cellBold` (and bodyBold/headerBold) still resolve to a flat\n   700 when on — no new field needed for this, it's a read-time-only\n   change in table-renderer.js.\n\n   Colour resolution (see resolveTableStyle() below) is table-manager's\n   / table-renderer's shared concern, not something table-manager stores\n   pre-computed — a table only ever stores its *choices* (theme preset\n   name, optional override colours, optional accent colour), the same\n   \"instance picks a variant, something else defines what that variant\n   looks like\" split Tabbed Panels uses for its badge/button/table style\n   variants.\n   ========================================================================== */\n\n// A small, fixed set of built-in theme presets (not user-extensible in\n// this pass) — each table picks one as its baseline look, then can layer\n// per-table colour overrides (or a single accent colour, see\n// resolveTableStyle) on top.\nconst THEME_PRESETS = {\n  bordered: {\n    label: 'Bordered',\n    headerBg: '#0C5E82', headerText: '#ffffff',\n    borderColor: '#CBC8BE', cellBg: '#ffffff', cellText: '#1C2321',\n  },\n  plain: {\n    label: 'Plain',\n    headerBg: '#FAFAF8', headerText: '#1C2321',\n    borderColor: '#FAFAF8', cellBg: '#ffffff', cellText: '#1C2321',\n  },\n  bold: {\n    label: 'Bold',\n    headerBg: '#14181A', headerText: '#ffffff',\n    borderColor: '#14181A', cellBg: '#FAFAF8', cellText: '#1C2321',\n  },\n  soft: {\n    label: 'Soft',\n    headerBg: '#DCEBF2', headerText: '#073048',\n    borderColor: '#CBC8BE', cellBg: '#ffffff', cellText: '#1C2321',\n  },\n};\n\n// Fields on a table that aren't the grid itself — drives the \"Table\n// styles\" side panel the same way BLOCK_TYPES[type].fields drives\n// Tabbed Panels' property panel, minus `rows` (see file header).\nconst TABLE_FIELDS = {\n  name:          { type: 'text',    label: 'Name',    default: 'Table' },\n  themePreset:   { type: 'select',  label: 'Theme',   default: 'bordered', options: Object.entries(THEME_PRESETS).map(([k, v]) => [k, v.label]) },\n  // Explicit per-table overrides. null = \"not set, fall back to the\n  // theme preset's colour\" — kept null rather than defaulting to a copy\n  // of the preset's colour so a table can be told apart from \"author\n  // picked this exact colour\" vs. \"author never touched it\".\n  headerBg:      { type: 'color',   label: 'Header background', default: null },\n  headerText:    { type: 'color',   label: 'Header text',       default: null },\n  borderColor:   { type: 'color',   label: 'Border colour',     default: null },\n  // When set, this single colour DERIVES headerBg/headerText/borderColor\n  // (see resolveTableStyle) — takes priority over the three explicit\n  // overrides above while set, so the property panel disables those\n  // three inputs whenever accentColor is non-null rather than letting\n  // both mechanisms fight over the result.\n  accentColor:   { type: 'color',   label: 'Accent colour',     default: null },\n  // Explicit fixed pixel width for THIS table's own wrapper (item 1,\n  // this pass) — per-table, not project-wide: every table in a project\n  // picks its own independently. null = auto (the existing \"stretch to\n  // fill / sum of columns\" behaviour, unchanged). When set, applied as\n  // `width` + `max-width: 100%` on the table's wrapper (see\n  // table-renderer.js) rather than a bare `width` — the `max-width: 100%`\n  // is what stops an explicit width WIDER than the table's slot in a\n  // side-by-side grid/carousel item from forcing that slot (and\n  // therefore the whole stage) wider than intended; it can still shrink\n  // to fit a narrower slot. When narrower than the table's actual\n  // rendered column widths, the table's own `.tbl-scroller`\n  // (`overflow: auto`) already picks up a contained horizontal\n  // scrollbar for free — deliberate, not a bug, and NOT the same\n  // concern as item 7's stray-scrollbar bug (see that item's fix below\n  // for the distinction: a deliberately-narrow single table scrolling\n  // its own content is fine; the whole stage having an unwanted sliver\n  // of scroll by default was the bug).\n  tableWidth:    { type: 'number',  label: 'Table width (px)',  default: null, min: 100, max: 3000 },\n  hasHeaderRow:  { type: 'boolean', label: 'First row is a header', default: true },\n  // Freeze is a secondary/occasional-table feature (see CLAUDE.md) and\n  // is deliberately allowed to render best-effort rather than perfectly\n  // when merged cells are present in the frozen row/column — see\n  // table-renderer.js's header comment for the specific limitation.\n  freezeHeader:    { type: 'boolean', label: 'Freeze header row',    default: false },\n  freezeFirstCol:  { type: 'boolean', label: 'Freeze first column',  default: false },\n\n  // Table-wide (NOT per-column/row/cell — a settled scope decision, see\n  // root CLAUDE.md's interview notes) body formatting. A cell's own\n  // inline rich-text marks (bold/italic from its toolbar) override these\n  // at the word level, the same \"variant sets default, instance-level\n  // mark overrides\" split Tabbed Panels uses for its heading styles —\n  // an inline <b>/<strong> keeps its own bold weight regardless of what\n  // bodyBold is set to, since the tag's own font-weight beats the\n  // ancestor table's inherited one in the cascade with no extra CSS\n  // needed to make that true.\n  cornerRadius:  { type: 'number',  label: 'Corner radius',    default: 8,  min: 0, max: 40 },\n  cellPadding:   { type: 'number',  label: 'Cell padding',     default: 9,  min: 0, max: 32 },\n  bodyTextSize:  { type: 'number',  label: 'Body text size',   default: 13, min: 8, max: 32 },\n  bodyAlign:     { type: 'select',  label: 'Body text align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },\n  bodyBold:      { type: 'boolean', label: 'Body bold',        default: false },\n\n  // Header gets its OWN independent full set of the same controls —\n  // settled as a fully separate group, NOT inherit-with-override, so a\n  // header can look nothing like its body (or vice versa) without any\n  // \"reset to default\" step.\n  headerTextSize: { type: 'number',  label: 'Header text size',  default: 13, min: 8, max: 32 },\n  headerAlign:    { type: 'select',  label: 'Header text align', default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },\n  headerBold:     { type: 'boolean', label: 'Header bold',       default: true },\n  headerPadding:  { type: 'number',  label: 'Header padding',    default: 9,  min: 0, max: 32 },\n\n  // When on: vertical/outer borders disappear, only horizontal lines\n  // between rows remain — including the line under the header row (the\n  // header keeps its separator too, settled as not a fuller box).\n  rowSeparatorsOnly: { type: 'boolean', label: 'Row separators only', default: false },\n\n  // Renamed from `showTitleInExport` this pass (item 5) — its scope\n  // changed from \"Export only\" to \"both authoring and Export\", so the\n  // old name (which specifically promised the authoring canvas was\n  // exempt) stopped being accurate. Now controls whether the table's\n  // name/heading renders AT ALL, unconditionally, in every render call\n  // (authoring canvas, bottom-bar thumbnails, and Export alike) — the\n  // old \"always show in authoring so the author can tell tables apart\"\n  // carve-out was a deliberate design call at the time, overridden by a\n  // later interview that settled this should be one toggle controlling\n  // both. See table-renderer.js's renderTable() for the (now simpler,\n  // forExport-independent) single check. No migration/backfill for the\n  // rename: this tool has no live saved projects yet (see root\n  // CLAUDE.md's Tables status) to carry the old key forward from, so a\n  // fresh key with a fresh default is the simplest correct choice —\n  // don't reintroduce a compat read for data that doesn't exist yet.\n  showTitle: { type: 'boolean', label: 'Show title', default: true },\n};\n\n/** Simple relative-luminance check so an accent colour's derived header\n *  text stays legible against it — no need for anything more precise\n *  than \"light background gets dark text, dark background gets white\n *  text\" at this scale. */\nfunction contrastTextColor(hex) {\n  const clean = (hex || '').replace('#', '');\n  if (clean.length !== 6) return '#ffffff';\n  const r = parseInt(clean.substring(0, 2), 16);\n  const g = parseInt(clean.substring(2, 4), 16);\n  const b = parseInt(clean.substring(4, 6), 16);\n  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;\n  return luminance > 0.6 ? '#111827' : '#ffffff';\n}\n\n/** Resolves a table's actual effective colours from theme + overrides +\n *  accent, in that priority order (accent wins whenever set). Pure\n *  function of the table's own fields — used by both table-renderer.js\n *  (to paint the real table) and index.html (to preview the Styles\n *  panel's disabled/enabled override inputs). */\nfunction resolveTableStyle(table) {\n  const preset = THEME_PRESETS[table.themePreset] || THEME_PRESETS.bordered;\n  let headerBg = table.headerBg || preset.headerBg;\n  let headerText = table.headerText || preset.headerText;\n  let borderColor = table.borderColor || preset.borderColor;\n  if (table.accentColor) {\n    headerBg = table.accentColor;\n    headerText = contrastTextColor(table.accentColor);\n    borderColor = table.accentColor;\n  }\n  return { headerBg, headerText, borderColor, cellBg: preset.cellBg, cellText: preset.cellText };\n}\n\n/** A fresh 2x2 grid of real (unmerged) cells — the starting point for a\n *  brand-new table, same \"Header 1/Header 2/Cell 1/Cell 2\" shape\n *  Tabbed Panels' table block defaults to. */\nfunction makeDefaultRows() {\n  const cell = (text) => ({ text, tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null, cellAlign: null });\n  return [\n    [cell('Header 1'), cell('Header 2')],\n    [cell('Cell 1'), cell('Cell 2')],\n  ];\n}\n\n/** Builds a fresh table's data object from TABLE_FIELDS defaults, same\n *  role as tab-types.js's makeDefaultBlock() — keeps default-value logic\n *  in one place instead of scattered object literals. */\nfunction makeDefaultTable(id, name) {\n  const data = { id, rows: makeDefaultRows() };\n  Object.entries(TABLE_FIELDS).forEach(([key, field]) => {\n    data[key] = field.default;\n  });\n  // Parallel to `rows[0]`'s length, not a TABLE_FIELDS entry — see the\n  // file header comment. All-null (auto) for a brand-new table.\n  data.colWidths = data.rows[0].map(() => null);\n  if (name) data.name = name;\n  return data;\n}\n",
     richtextEditor: "/* ==========================================================================\n   Tables — Rich Text Editor (cell text)\n   Copy-adapted from tools/tabbed-panels/richtext-editor.js rather than a\n   shared/ promotion — see root CLAUDE.md's \"Starting a new tool\" section\n   on cross-tool pattern docs (a promotion is the cleaner long-term move,\n   but a straight copy-adapt was judged acceptable here given time\n   constraints; if a third tool ever needs the same hand-rolled richtext\n   field, that's the trigger to actually promote this to shared/ and\n   retire both per-tool copies, the same way shared/history.js happened).\n   Differs from the Tabbed Panels original only in its CSS class prefix\n   (`tbl-richtext-*` instead of `tp-richtext-*`, matching this tool's own\n   `tbl-` convention elsewhere) — the allowlist, sanitizer, and the\n   link-button focus-loss fix are identical on purpose, since it's the\n   exact same bug class root CLAUDE.md calls out for this pass.\n\n   Storage format: sanitized HTML, restricted to <b> <i> <u> <a href> (see\n   ALLOWED_TAGS below) — same allowlist as Tabbed Panels', per root\n   CLAUDE.md's instruction to keep parity rather than invent a new one.\n   Sanitizing on every input event (not just blur) means a value handed to\n   onChange is never anything execCommand could have snuck in (e.g. a\n   pasted <script> or a style attribute).\n\n   Old-shape data: a cell.text saved before this feature existed is a\n   plain string with no tags at all. sanitizeRichHtml() handles that\n   input fine — parsing plain text through innerHTML and walking it finds\n   no disallowed elements to strip, so it round-trips unchanged. See\n   table-renderer.js's renderTable() for where this is actually invoked\n   against stored cell text (both old- and new-shape) before display.\n   ========================================================================== */\n\nconst RICHTEXT_ALLOWED_TAGS = { B: [], STRONG: [], I: [], EM: [], U: [], A: ['href', 'target', 'rel'], BR: [] };\n\nfunction sanitizeRichHtml(html) {\n  const scratch = document.createElement('div');\n  scratch.innerHTML = html || '';\n\n  (function walk(node) {\n    [...node.childNodes].forEach((child) => {\n      if (child.nodeType === Node.TEXT_NODE) return;\n      if (child.nodeType !== Node.ELEMENT_NODE || !(child.tagName in RICHTEXT_ALLOWED_TAGS)) {\n        // Unwrap disallowed elements (e.g. a pasted <div>/<span>) rather\n        // than dropping their text content.\n        while (child.firstChild) node.insertBefore(child.firstChild, child);\n        node.removeChild(child);\n        return;\n      }\n      const allowedAttrs = RICHTEXT_ALLOWED_TAGS[child.tagName];\n      [...child.attributes].forEach((attr) => {\n        if (!allowedAttrs.includes(attr.name)) child.removeAttribute(attr.name);\n      });\n      walk(child);\n    });\n  })(scratch);\n\n  return scratch.innerHTML;\n}\n\n/**\n * Wires a toolbar + contenteditable pair for one richtext field.\n * @param root      container element; gets `.tbl-richtext-toolbar` and\n *                  `.tbl-richtext-editable` children appended to it.\n * @param value     initial sanitized HTML string (or a plain old-shape\n *                  string — see file header).\n * @param inline    which marks to expose, e.g. ['bold','italic','link'].\n * @param onChange  called with the new sanitized HTML on every edit.\n */\nfunction attachRichTextField(root, { value = '', inline = [], onChange = () => {} }) {\n  root.innerHTML = '';\n  root.classList.add('tbl-richtext-field');\n\n  const MARK_BUTTONS = {\n    bold: { icon: 'fa-bold', command: 'bold' },\n    italic: { icon: 'fa-italic', command: 'italic' },\n    underline: { icon: 'fa-underline', command: 'underline' },\n    link: { icon: 'fa-link', command: 'link' }, // handled specially — see below\n  };\n\n  const toolbar = document.createElement('div');\n  toolbar.className = 'tbl-richtext-toolbar';\n  inline.forEach((mark) => {\n    const spec = MARK_BUTTONS[mark];\n    if (!spec) return;\n    const btn = document.createElement('button');\n    btn.type = 'button';\n    btn.className = 'tbl-richtext-btn';\n    btn.innerHTML = `<i class=\"fa-solid ${spec.icon}\"></i>`;\n    btn.addEventListener('mousedown', (e) => e.preventDefault()); // keep selection alive\n    btn.addEventListener('click', async () => {\n      editable.focus();\n      if (mark === 'link') {\n        // Shell.prompt() opens a modal, which steals focus to its own input\n        // — the browser clears the contenteditable's selection the moment\n        // that happens, so by the time the awaited promise resolves,\n        // execCommand('createLink') would have nothing selected to act on\n        // and silently do nothing. Save the range before awaiting, then\n        // restore it before calling execCommand — same fix as Tabbed\n        // Panels' richtext-editor.js, same underlying bug class.\n        const selection = window.getSelection();\n        const savedRange = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;\n        const existing = document.queryCommandValue('createLink');\n        const url = await Shell.prompt('Enter a URL, or leave blank to remove the link.', existing || 'https://', { heading: 'Link' });\n        if (url === false) return;\n        editable.focus();\n        if (savedRange) {\n          selection.removeAllRanges();\n          selection.addRange(savedRange);\n        }\n        document.execCommand(url ? 'createLink' : 'unlink', false, url || undefined);\n      } else {\n        document.execCommand(spec.command, false, null);\n      }\n      commit();\n    });\n    toolbar.appendChild(btn);\n  });\n\n  const editable = document.createElement('div');\n  editable.className = 'tbl-richtext-editable';\n  editable.contentEditable = 'true';\n  editable.innerHTML = sanitizeRichHtml(value);\n\n  function commit() {\n    onChange(sanitizeRichHtml(editable.innerHTML));\n  }\n\n  editable.addEventListener('input', commit);\n  editable.addEventListener('paste', (e) => {\n    e.preventDefault();\n    const text = (e.clipboardData || window.clipboardData).getData('text/plain');\n    document.execCommand('insertText', false, text);\n  });\n\n  root.appendChild(toolbar);\n  root.appendChild(editable);\n  return editable;\n}\n",
-    tableRenderer: "/* ==========================================================================\n   Tables — Table Renderer\n   Same role as Tabbed Panels' block-renderer.js: the one rendering path,\n   used UNMODIFIED by both the authoring canvas and the exported player.\n   Never make this authoring-aware — it only reads a plain table `data`\n   object (see table-types.js for its shape) plus an optional `opts` for\n   interaction hooks, and returns real DOM.\n\n   Depends on richtext-editor.js's sanitizeRichHtml() being loaded first\n   (cell text is sanitized again here at render time, regardless of\n   source — see table-types.js's header comment) — index.html's\n   <script src> order and the Export module list (fetchModuleSources())\n   both load richtext-editor.js alongside this file for that reason.\n\n   ---- Freeze + merged cells: the documented limitation ----\n   freezeHeader/freezeFirstCol use plain CSS `position: sticky` on the\n   real <th>/<td> elements that happen to sit in row 0 / the first\n   rendered cell of each row. That's exact when the frozen row/column has\n   no merges crossing it. When a merge DOES span across the frozen\n   boundary (e.g. a header cell with rowSpan reaching past row 0, or a\n   first-column cell absorbed into a merge from a neighboring column so\n   nothing renders at column 0 in that row), sticky positioning is\n   applied on a best-effort basis — whichever real cell renders first in\n   the row still gets `tbl-sticky-col`, which may not visually be \"the\n   first column\" once merges have shifted things. This was a deliberate\n   scope decision (see root CLAUDE.md's instructions for this pass): not\n   worth the complexity of a real column-tracking model for what's meant\n   to be a secondary feature on already-small tables. It never crashes —\n   worst case, freeze looks slightly off on a heavily-merged table.\n   ========================================================================== */\n\n/** Attaches a hover/click tooltip icon to a cell. The popover itself is\n *  appended to document.body and positioned with `position: fixed` from\n *  the icon's own viewport rect — NOT appended inside the table's own\n *  scroll container, so it can't get clipped by that container's\n *  `overflow: auto` (needed for freeze/scrolling on a big table). */\n// Inline links (richtext's `link` mark, created via execCommand in\n// richtext-editor.js) are stored as plain `<a href>` with no target —\n// applied at render time instead of storage time, same reasoning and\n// same function shape as Tabbed Panels' block-renderer.js's\n// forceLinksToNewTab() (no shared module for it — see richtext-editor.js's\n// header comment on why this file is a copy-adapt rather than a\n// promotion).\nfunction forceLinksToNewTab(container) {\n  container.querySelectorAll('a').forEach((a) => {\n    a.target = '_blank';\n    a.rel = 'noopener noreferrer';\n  });\n}\n\nfunction attachCellTooltip(cellEl, text) {\n  const icon = document.createElement('span');\n  icon.className = 'tbl-tooltip-icon';\n  icon.innerHTML = '<i class=\"fa-solid fa-circle-info\"></i>';\n  icon.tabIndex = 0;\n  icon.setAttribute('role', 'button');\n  icon.setAttribute('aria-label', 'More info');\n\n  let popover = null;\n  function show() {\n    hide();\n    popover = document.createElement('div');\n    popover.className = 'tbl-tooltip-popover';\n    popover.textContent = text;\n    document.body.appendChild(popover);\n    const rect = icon.getBoundingClientRect();\n    popover.style.left = Math.round(rect.left) + 'px';\n    popover.style.top = Math.round(rect.bottom + 6) + 'px';\n  }\n  function hide() {\n    if (popover) { popover.remove(); popover = null; }\n  }\n  icon.addEventListener('mouseenter', show);\n  icon.addEventListener('mouseleave', hide);\n  icon.addEventListener('focus', show);\n  icon.addEventListener('blur', hide);\n  icon.addEventListener('click', (e) => { e.stopPropagation(); popover ? hide() : show(); });\n\n  cellEl.appendChild(icon);\n}\n\n/**\n * @param table  a table data object (see table-types.js).\n * @param opts   optional:\n *   - onCellClick(r, c, event) — called when a cell (not its tooltip\n *     icon) is clicked. Authoring-only concern (cell selection lives\n *     entirely in index.html); Export never passes this.\n *   - isSelected(r, c) — returns true if (r, c) should render with the\n *     `.tbl-cell-selected` class. Authoring-only, same as onCellClick.\n *   - showName — false to omit the table's own name heading (Export's\n *     multi-table layout renders names itself via carousel-nav.js\n *     controls in some contexts); defaults to true.\n *   - forExport — true when this render is for the exported/embedded\n *     player rather than the authoring canvas. The ONLY thing this\n *     currently affects is table.showTitleInExport (see table-types.js):\n *     the authoring canvas always shows the table's name (so the author\n *     can identify tables while editing) regardless of that flag, and\n *     only a `forExport: true` render call skips it when the author has\n *     turned it off. Never branch more authoring-vs-export behavior into\n *     this file on this flag without a real reason — see file header on\n *     staying authoring-unaware.\n */\nfunction renderTable(table, opts = {}) {\n  const style = resolveTableStyle(table);\n\n  const wrapper = document.createElement('div');\n  wrapper.className = 'tbl-wrapper';\n  wrapper.dataset.tableId = table.id;\n\n  const showName = opts.showName !== false && table.name && !(opts.forExport && table.showTitleInExport === false);\n  if (showName) {\n    const heading = document.createElement('div');\n    heading.className = 'tbl-name';\n    heading.textContent = table.name;\n    wrapper.appendChild(heading);\n  }\n\n  const scroller = document.createElement('div');\n  scroller.className = 'tbl-scroller';\n  if (table.freezeHeader) scroller.classList.add('tbl-freeze-header');\n  if (table.freezeFirstCol) scroller.classList.add('tbl-freeze-col');\n  if (table.rowSeparatorsOnly) scroller.classList.add('tbl-row-sep-only');\n  // Corner radius lives on this wrapper (overflow: auto already clips,\n  // same as overflow: hidden would), not the <table> — border-radius on\n  // a <table> with border-collapse: collapse doesn't clip reliably. Same\n  // technique Tabbed Panels documents for its own .tp-table-wrapper.\n  scroller.style.borderRadius = (table.cornerRadius != null ? table.cornerRadius : 8) + 'px';\n\n  const tableEl = document.createElement('table');\n  tableEl.className = 'tbl-table' + (table.rowSeparatorsOnly ? ' tbl-row-sep-only' : '');\n  tableEl.style.setProperty('--tbl-border', style.borderColor);\n  tableEl.style.setProperty('--tbl-header-bg', style.headerBg);\n  tableEl.style.setProperty('--tbl-header-text', style.headerText);\n  tableEl.style.setProperty('--tbl-cell-bg', style.cellBg);\n  tableEl.style.setProperty('--tbl-cell-text', style.cellText);\n  tableEl.style.setProperty('--tbl-body-padding', (table.cellPadding != null ? table.cellPadding : 9) + 'px');\n  tableEl.style.setProperty('--tbl-header-padding', (table.headerPadding != null ? table.headerPadding : 9) + 'px');\n  tableEl.style.setProperty('--tbl-body-size', (table.bodyTextSize != null ? table.bodyTextSize : 13) + 'px');\n  tableEl.style.setProperty('--tbl-header-size', (table.headerTextSize != null ? table.headerTextSize : 13) + 'px');\n  tableEl.style.setProperty('--tbl-body-align', table.bodyAlign || 'left');\n  tableEl.style.setProperty('--tbl-header-align', table.headerAlign || 'left');\n  tableEl.style.setProperty('--tbl-body-weight', table.bodyBold ? '700' : '400');\n  tableEl.style.setProperty('--tbl-header-weight', table.headerBold === false ? '400' : '700');\n\n  (table.rows || []).forEach((row, r) => {\n    const tr = document.createElement('tr');\n    let firstRealInRow = true;\n    row.forEach((cell, c) => {\n      if (cell === null) return; // covered by a previous cell's span — see table-types.js\n      const isHeader = table.hasHeaderRow !== false && r === 0;\n      const cellEl = document.createElement(isHeader ? 'th' : 'td');\n      cellEl.className = 'tbl-cell';\n      cellEl.dataset.row = r;\n      cellEl.dataset.col = c;\n      if ((cell.colSpan || 1) > 1) cellEl.colSpan = cell.colSpan;\n      if ((cell.rowSpan || 1) > 1) cellEl.rowSpan = cell.rowSpan;\n      if (r === 0 && table.freezeHeader) cellEl.classList.add('tbl-sticky-row');\n      if (firstRealInRow && table.freezeFirstCol) cellEl.classList.add('tbl-sticky-col');\n      firstRealInRow = false;\n      if (opts.isSelected && opts.isSelected(r, c)) cellEl.classList.add('tbl-cell-selected');\n\n      // Per-cell overrides (see table-types.js) — applied as inline\n      // style so they win over the table-wide/theme CSS-custom-property\n      // values regardless of whether this is a <td> or a themed <th>,\n      // with no extra specificity gymnastics needed. Left unset (null/\n      // undefined) means \"inherit the table-wide value\" — nothing to do.\n      if (cell.cellBg) cellEl.style.background = cell.cellBg;\n      if (cell.cellBold != null) cellEl.style.fontWeight = cell.cellBold ? '700' : '400';\n\n      const textEl = document.createElement('span');\n      textEl.className = 'tbl-cell-text';\n      // sanitizeRichHtml() also safely handles old-shape plain-string\n      // cell.text (pre-richtext saved projects) — see table-types.js's\n      // header comment.\n      textEl.innerHTML = sanitizeRichHtml(cell.text || '');\n      cellEl.appendChild(textEl);\n\n      if (cell.tooltip) attachCellTooltip(cellEl, cell.tooltip);\n\n      if (opts.onCellClick) {\n        cellEl.addEventListener('click', (e) => opts.onCellClick(r, c, e));\n      }\n\n      tr.appendChild(cellEl);\n    });\n    tableEl.appendChild(tr);\n  });\n\n  forceLinksToNewTab(tableEl);\n\n  scroller.appendChild(tableEl);\n  wrapper.appendChild(scroller);\n  return wrapper;\n}\n",
-    carouselNav: "/* ==========================================================================\n   Tables — Carousel / Side-by-side Layout Switcher\n   Same role as Tabbed Panels' tab-nav.js: the learner-facing layout\n   mechanism, used UNMODIFIED by both the authoring canvas and the\n   exported player, so what an author sees while editing is what a\n   learner actually gets.\n\n   Two author-chosen base modes (project.layout.mode):\n   - 'side-by-side' — every table renders at once in a CSS grid,\n     `layout.perRow` columns wide.\n   - 'carousel' — one table visible at a time, with prev/next controls.\n\n   Below CAROUSEL_BREAKPOINT, 'side-by-side' automatically collapses to\n   the same single-table-plus-arrows presentation carousel mode always\n   uses — a responsive CSS/JS fallback, NOT a third authored mode (see\n   root CLAUDE.md's brief for this tool). A ResizeObserver on the\n   container re-evaluates this on every resize, so an Articulate embed\n   that's narrow at publish time (or gets resized later) collapses\n   automatically without the author doing anything.\n\n   ---- Collapsed-mode peek + slide (added this pass) ----\n   Collapsed mode ('carousel' or narrow side-by-side) no longer hides\n   every non-active table with `display: none`. Instead all items stay\n   in one `.cn-grid` flex row inside an `overflow: hidden` `.cn-viewport`,\n   each sized to `container width - PEEK*2` px, and the whole row is\n   `translateX`'d so the active item's left edge sits PEEK px in from the\n   viewport's left edge — which puts a PEEK-ish sliver of the previous\n   item's right edge in view to the left, and (since items are laid out\n   left-to-right with GAP px between them) a sliver of the next item's\n   left edge in view to the right. Recomputed on every applyState() call\n   (selection change, nav click, or the existing ResizeObserver firing),\n   so it stays correct across resizes without a separate code path.\n   Prev/next just changes `activeIndex` and re-renders — the CSS\n   `transition: transform` on `.cn-grid` (see index.html / Export's\n   embedded style, guarded under prefers-reduced-motion same as every\n   other micro-animation in this suite) is what makes that read as a\n   slide instead of a jump cut. Peeking neighbours get a lower opacity\n   (`.cn-item-peek`, same transition) so the strip reads as one\n   continuous physical object sliding past a window, not disconnected\n   tables. At the first/last table there's simply nothing to peek on\n   that side — the viewport just shows blank space, which reads the same\n   as normal edge padding.\n   ========================================================================== */\n\nconst CAROUSEL_BREAKPOINT = 620; // px — below this, side-by-side collapses to single-table display\nconst CAROUSEL_PEEK = 36;  // px — how much of a neighbouring table peeks in at each edge\nconst CAROUSEL_GAP = 12;   // px — gap between items in the collapsed flex strip\n\n/**\n * @param container   element to render into (children replaced each call).\n * @param tables      [{ id, ... }, ...] — the full table list, in order.\n * @param layout      { mode: 'side-by-side'|'carousel', perRow }.\n * @param renderItem  (table, index) => DOM node — how to render one\n *                     table's content (index.html/Export both pass a\n *                     small wrapper around table-renderer.js's\n *                     renderTable()).\n * @param activeIndex which table is \"current\" while collapsed to a\n *                     single visible table (ignored, but still tracked,\n *                     in the uncollapsed side-by-side grid).\n * @param onNavigate   (newIndex) => void — called when prev/next is\n *                     clicked; the caller re-invokes this render function\n *                     with the updated activeIndex (same stateless-\n *                     render-function pattern as tab-nav.js's onSelect).\n */\nfunction renderTablesLayout(container, { tables, layout, renderItem, activeIndex, onNavigate }) {\n  // A stray leftover ResizeObserver from a previous render would keep\n  // firing against a container whose children just got wiped — always\n  // disconnect before rebuilding.\n  if (container._cnResizeObserver) { container._cnResizeObserver.disconnect(); container._cnResizeObserver = null; }\n  if (container._cnResizeListener) { window.removeEventListener('resize', container._cnResizeListener); container._cnResizeListener = null; }\n\n  // ---- Real bug fix (Previous not sliding smoothly) ----\n  // Every call to this function throws away and rebuilds the ENTIRE\n  // `.cn-grid` — a brand-new element every time a table is selected\n  // (index.html's onChange re-renders the whole stage on essentially\n  // every state change, including plain prev/next navigation). A CSS\n  // `transition: transform` has nothing to animate FROM on a freshly\n  // inserted node — there's no committed \"before\" style yet. Verified\n  // by sampling getComputedStyle(grid).transform every 25ms across a\n  // real click in a real browser: in BOTH directions the strip actually\n  // animates from translateX(0) (the browser's default identity\n  // transform for a node that's never had one set), never from the\n  // table's real prior on-screen offset. Going from table 0 (true\n  // offset ~+36px, already close to 0) to table 1, animating from 0\n  // instead of 36 is imperceptible — reads as \"Next works\". Going back\n  // from table 1 (true offset e.g. -976px) to table 0 (+36px), animating\n  // from 0 instead of -976 is a completely different, far shorter\n  // motion — the strip barely nudges from ~0 to +36 instead of sliding\n  // the full distance back, which is exactly the reported \"Previous\n  // doesn't slide smoothly\" (it's not asymmetric transform math — the\n  // offset formula below has always been direction-agnostic; it's a\n  // rebuild-loses-continuity bug that only *looks* direction-specific\n  // because of where index 0's offset happens to sit relative to 0).\n  //\n  // Fix: since the grid element can't be preserved across this\n  // rebuild (structural re-render, not just a reposition), manually\n  // replay what the browser would have done for free had the node\n  // persisted — paint the LAST known real offset first, force a style\n  // flush so it's committed as the transition's start value, then set\n  // the real target. `_cnLastOffset`/`_cnWasCollapsed` live on the\n  // container itself so they survive `container.innerHTML = ''` below.\n  const prevOffset = container._cnLastOffset;\n  const prevWasCollapsed = !!container._cnWasCollapsed;\n  let isFirstApply = true;\n\n  container.innerHTML = '';\n  container.className = 'cn-layout';\n\n  // .cn-viewport clips the collapsed-mode flex strip so peeking\n  // neighbours (which deliberately extend past the visible width) don't\n  // widen the page — side-by-side mode doesn't need clipping (nothing\n  // overflows), but leaving it on is harmless there too.\n  const viewport = document.createElement('div');\n  viewport.className = 'cn-viewport';\n  const grid = document.createElement('div');\n  grid.className = 'cn-grid';\n  const items = tables.map((table, i) => {\n    const item = document.createElement('div');\n    item.className = 'cn-item';\n    item.appendChild(renderItem(table, i));\n    grid.appendChild(item);\n    return item;\n  });\n  viewport.appendChild(grid);\n  container.appendChild(viewport);\n\n  const nav = document.createElement('div');\n  nav.className = 'cn-nav';\n  const prevBtn = document.createElement('button');\n  prevBtn.type = 'button';\n  prevBtn.className = 'cn-nav-btn';\n  prevBtn.setAttribute('aria-label', 'Previous table');\n  prevBtn.innerHTML = '<i class=\"fa-solid fa-chevron-left\"></i>';\n  const counter = document.createElement('span');\n  counter.className = 'cn-nav-counter';\n  const nextBtn = document.createElement('button');\n  nextBtn.type = 'button';\n  nextBtn.className = 'cn-nav-btn';\n  nextBtn.setAttribute('aria-label', 'Next table');\n  nextBtn.innerHTML = '<i class=\"fa-solid fa-chevron-right\"></i>';\n  prevBtn.addEventListener('click', () => onNavigate(Math.max(0, activeIndex - 1)));\n  nextBtn.addEventListener('click', () => onNavigate(Math.min(tables.length - 1, activeIndex + 1)));\n  nav.appendChild(prevBtn);\n  nav.appendChild(counter);\n  nav.appendChild(nextBtn);\n  container.appendChild(nav);\n\n  function applyState() {\n    const isCarouselMode = layout.mode === 'carousel';\n    const containerWidth = container.clientWidth;\n    const narrow = containerWidth > 0 && containerWidth < CAROUSEL_BREAKPOINT;\n    const collapsed = isCarouselMode || narrow;\n\n    container.classList.toggle('cn-collapsed', collapsed);\n\n    if (!collapsed) {\n      grid.style.gridTemplateColumns = `repeat(${Math.max(1, layout.perRow || 2)}, 1fr)`;\n      grid.style.transform = '';\n      items.forEach((item) => {\n        item.style.flexBasis = '';\n        item.classList.remove('cn-item-active', 'cn-item-peek');\n      });\n      container._cnWasCollapsed = false;\n    } else {\n      grid.style.gridTemplateColumns = '';\n      // Each item is sized to leave PEEK px of viewport on both sides\n      // for the active item; see the file-header comment for the slide\n      // math this feeds.\n      const itemWidth = Math.max(0, containerWidth - CAROUSEL_PEEK * 2);\n      items.forEach((item, i) => {\n        item.style.flexBasis = itemWidth + 'px';\n        item.classList.toggle('cn-item-active', i === activeIndex);\n        item.classList.toggle('cn-item-peek', i !== activeIndex);\n      });\n      const offset = CAROUSEL_PEEK - activeIndex * (itemWidth + CAROUSEL_GAP);\n\n      // Establish the transition's real start point — see the file-header\n      // comment above for why this is needed at all. Only on the very\n      // first applyState() call after this fresh grid was created (a\n      // later call, e.g. from the ResizeObserver, is operating on a node\n      // that already has a real committed transform from this same\n      // render pass, so a normal CSS transition already works on it).\n      if (isFirstApply && prevWasCollapsed && prevOffset != null && prevOffset !== offset) {\n        grid.style.transition = 'none';\n        grid.style.transform = `translateX(${prevOffset}px)`;\n        grid.getBoundingClientRect(); // force a style/layout flush so the line above is committed, not coalesced away\n        grid.style.transition = '';\n      }\n      grid.style.transform = `translateX(${offset}px)`;\n      container._cnLastOffset = offset;\n      container._cnWasCollapsed = true;\n    }\n    isFirstApply = false;\n\n    const showNav = collapsed && tables.length > 1;\n    nav.style.display = showNav ? 'flex' : 'none';\n    if (showNav) {\n      prevBtn.disabled = activeIndex <= 0;\n      nextBtn.disabled = activeIndex >= tables.length - 1;\n      counter.textContent = `${activeIndex + 1} / ${tables.length}`;\n    }\n  }\n\n  applyState();\n\n  if (window.ResizeObserver) {\n    const ro = new ResizeObserver(applyState);\n    ro.observe(container);\n    container._cnResizeObserver = ro;\n  } else {\n    // Fallback for an environment without ResizeObserver — still\n    // responds to viewport resizes, just not to the container itself\n    // being resized by something other than the window (e.g. a\n    // dynamically-resized embed iframe), which is a smaller gap.\n    window.addEventListener('resize', applyState);\n    container._cnResizeListener = applyState;\n  }\n}\n",
+    tableRenderer: "/* ==========================================================================\n   Tables — Table Renderer\n   Same role as Tabbed Panels' block-renderer.js: the one rendering path,\n   used UNMODIFIED by both the authoring canvas and the exported player.\n   Never make this authoring-aware — it only reads a plain table `data`\n   object (see table-types.js for its shape) plus an optional `opts` for\n   interaction hooks, and returns real DOM.\n\n   Depends on richtext-editor.js's sanitizeRichHtml() being loaded first\n   (cell text is sanitized again here at render time, regardless of\n   source — see table-types.js's header comment) — index.html's\n   <script src> order and the Export module list (fetchModuleSources())\n   both load richtext-editor.js alongside this file for that reason.\n\n   ---- Freeze + merged cells: the documented limitation ----\n   freezeHeader/freezeFirstCol use plain CSS `position: sticky` on the\n   real <th>/<td> elements that happen to sit in row 0 / the first\n   rendered cell of each row. That's exact when the frozen row/column has\n   no merges crossing it. When a merge DOES span across the frozen\n   boundary (e.g. a header cell with rowSpan reaching past row 0, or a\n   first-column cell absorbed into a merge from a neighboring column so\n   nothing renders at column 0 in that row), sticky positioning is\n   applied on a best-effort basis — whichever real cell renders first in\n   the row still gets `tbl-sticky-col`, which may not visually be \"the\n   first column\" once merges have shifted things. This was a deliberate\n   scope decision (see root CLAUDE.md's instructions for this pass): not\n   worth the complexity of a real column-tracking model for what's meant\n   to be a secondary feature on already-small tables. It never crashes —\n   worst case, freeze looks slightly off on a heavily-merged table.\n\n   ---- Corner radius vs. cell borders (item 3, this pass) ----\n   The outer rounding (`cornerRadius`) lives on `.tbl-scroller` — a\n   wrapper with its own `border` + `border-radius` + `overflow: auto`\n   (see index.html's/Export's stylesheet). Before this pass, EVERY cell\n   also painted its own `border` on all four sides (needed for the\n   internal grid lines), including the outward-facing side of the\n   outermost ring of cells — so the outer boundary had TWO independent\n   borders drawn by two different boxes at nearly the same position: the\n   scroller's own (rounded, clipped as part of its own border-box) and\n   the table's own collapsed outer cell border (square-cornered, a plain\n   sibling/descendant box with no radius of its own). At the rounded\n   corners specifically, that square inner cell-border corner and the\n   smooth outer scroller-border arc don't align pixel-for-pixel, which\n   read as the rounded border \"cutting into\" the table's own border line\n   right at each corner.\n   Fix (matches root CLAUDE.md's stated common fix): the outer boundary\n   is now owned by exactly ONE box, the scroller. The outward-facing\n   border on the outermost ring of cells is suppressed via CSS\n   (`tr:first-child`/`tr:last-child`/first-and-last-`.tbl-cell`-in-row\n   selectors — reliable here because a covered/`null` grid position\n   never renders a `<td>`/`<th>` at all, see table-types.js, so the\n   first/last REAL cell in a row is always the visual first/last column)\n   whenever `rowSeparatorsOnly` is off; internal grid lines (the borders\n   between adjacent cells) are completely untouched, only the four\n   outward-facing edges lose their own border. `rowSeparatorsOnly` mode\n   is deliberately excluded from this rule (see index.html's/Export's\n   stylesheet) since it already has no scroller border to begin with and\n   its own last-row bottom border is the intended separator line, not a\n   redundant outer edge.\n   NOTE, since this was the first hypothesis tried for item 7 too, worth\n   recording so a future session doesn't re-try it: this same\n   double-border removal does NOT fix item 7's stray-scrollbar bug.\n   Verified directly — with resize handles removed, `.tbl-scroller`'s\n   `scrollWidth` exactly equals its `clientWidth` whether or not the\n   outer cell borders are present at all (tested both ways). The\n   `border-collapse: collapse` cross-browser \"painted border can exceed\n   the layout box\" quirk that seemed like a plausible cause for the\n   scrollbar never actually manifested in this codebase — item 7's real,\n   separately-verified cause is documented at the resize-handle creation\n   site below, near `.tbl-col-resize-handle-last`.\n   ========================================================================== */\n\n/** Attaches a hover/click tooltip icon to a cell. The popover itself is\n *  appended to document.body and positioned with `position: fixed` from\n *  the icon's own viewport rect — NOT appended inside the table's own\n *  scroll container, so it can't get clipped by that container's\n *  `overflow: auto` (needed for freeze/scrolling on a big table). */\n// Inline links (richtext's `link` mark, created via execCommand in\n// richtext-editor.js) are stored as plain `<a href>` with no target —\n// applied at render time instead of storage time, same reasoning and\n// same function shape as Tabbed Panels' block-renderer.js's\n// forceLinksToNewTab() (no shared module for it — see richtext-editor.js's\n// header comment on why this file is a copy-adapt rather than a\n// promotion).\nfunction forceLinksToNewTab(container) {\n  container.querySelectorAll('a').forEach((a) => {\n    a.target = '_blank';\n    a.rel = 'noopener noreferrer';\n  });\n}\n\nfunction attachCellTooltip(cellEl, text) {\n  const icon = document.createElement('span');\n  icon.className = 'tbl-tooltip-icon';\n  icon.innerHTML = '<i class=\"fa-solid fa-circle-info\"></i>';\n  icon.tabIndex = 0;\n  icon.setAttribute('role', 'button');\n  icon.setAttribute('aria-label', 'More info');\n\n  let popover = null;\n  function show() {\n    hide();\n    popover = document.createElement('div');\n    popover.className = 'tbl-tooltip-popover';\n    popover.textContent = text;\n    document.body.appendChild(popover);\n    const rect = icon.getBoundingClientRect();\n    popover.style.left = Math.round(rect.left) + 'px';\n    popover.style.top = Math.round(rect.bottom + 6) + 'px';\n  }\n  function hide() {\n    if (popover) { popover.remove(); popover = null; }\n  }\n  icon.addEventListener('mouseenter', show);\n  icon.addEventListener('mouseleave', hide);\n  icon.addEventListener('focus', show);\n  icon.addEventListener('blur', hide);\n  icon.addEventListener('click', (e) => { e.stopPropagation(); popover ? hide() : show(); });\n\n  cellEl.appendChild(icon);\n}\n\n/**\n * @param table  a table data object (see table-types.js).\n * @param opts   optional:\n *   - onCellClick(r, c, event) — called when a cell (not its tooltip\n *     icon) is clicked. Authoring-only concern (cell selection lives\n *     entirely in index.html); Export never passes this.\n *   - isSelected(r, c) — returns true if (r, c) should render with the\n *     `.tbl-cell-selected` class. Authoring-only, same as onCellClick.\n *   - showName — false to omit the table's own name heading (Export's\n *     multi-table layout renders names itself via carousel-nav.js\n *     controls in some contexts); defaults to true.\n *   - forExport — true when this render is for the exported/embedded\n *     player rather than the authoring canvas. Currently unused by this\n *     function itself (kept for callers/future flags) — table.showTitle\n *     (see table-types.js) now applies unconditionally to every render\n *     call, authoring and Export alike, per this pass's item 5 (it used\n *     to be forExport-gated; see table-types.js's header comment on the\n *     rename from showTitleInExport). Never branch authoring-vs-export\n *     behavior into this file without a real reason — see file header on\n *     staying authoring-unaware.\n *   - onColResizeStart(event, colIndex, colSpan, cellEl) — called on\n *     `pointerdown` on a header-row (r === 0) cell's resize handle.\n *     Authoring-only, same as onCellClick: index.html is the only\n *     caller that passes this, so a plain presence check is what keeps\n *     the drag-resize LISTENERS out of Export/thumbnail renders (which\n *     never pass it) without this file needing its own forExport\n *     branch — same pattern onCellClick/isSelected already establish.\n *   - contentFontWeight — project-wide base font-weight for table\n *     content (item 8, this pass — see table-types.js's header comment\n *     for the full story). Defaults to 400 when omitted (thumbnail\n *     renders/older callers). Only sets the BASE/non-bold weight; the\n *     existing bodyBold/headerBold/per-cell cellBold overrides still\n *     always force 700 regardless of this value.\n */\nfunction renderTable(table, opts = {}) {\n  const style = resolveTableStyle(table);\n  const baseWeight = String(opts.contentFontWeight != null ? opts.contentFontWeight : 400);\n\n  const wrapper = document.createElement('div');\n  wrapper.className = 'tbl-wrapper';\n  wrapper.dataset.tableId = table.id;\n\n  // Explicit per-table fixed width (item 1, this pass) — see\n  // table-types.js's header comment for why `max-width: 100%` always\n  // accompanies it (stops a width wider than the table's slot from\n  // forcing the whole side-by-side/carousel stage wider).\n  if (table.tableWidth != null) {\n    wrapper.style.width = table.tableWidth + 'px';\n    wrapper.style.maxWidth = '100%';\n  }\n\n  const showName = opts.showName !== false && table.name && table.showTitle !== false;\n  if (showName) {\n    const heading = document.createElement('div');\n    heading.className = 'tbl-name';\n    heading.textContent = table.name;\n    wrapper.appendChild(heading);\n  }\n\n  const scroller = document.createElement('div');\n  scroller.className = 'tbl-scroller';\n  if (table.freezeHeader) scroller.classList.add('tbl-freeze-header');\n  if (table.freezeFirstCol) scroller.classList.add('tbl-freeze-col');\n  if (table.rowSeparatorsOnly) scroller.classList.add('tbl-row-sep-only');\n  // Corner radius lives on this wrapper (overflow: auto already clips,\n  // same as overflow: hidden would), not the <table> — border-radius on\n  // a <table> with border-collapse: collapse doesn't clip reliably. Same\n  // technique Tabbed Panels documents for its own .tp-table-wrapper.\n  scroller.style.borderRadius = (table.cornerRadius != null ? table.cornerRadius : 8) + 'px';\n\n  const tableEl = document.createElement('table');\n  tableEl.className = 'tbl-table' + (table.rowSeparatorsOnly ? ' tbl-row-sep-only' : '');\n  tableEl.style.setProperty('--tbl-border', style.borderColor);\n  tableEl.style.setProperty('--tbl-header-bg', style.headerBg);\n  tableEl.style.setProperty('--tbl-header-text', style.headerText);\n  tableEl.style.setProperty('--tbl-cell-bg', style.cellBg);\n  tableEl.style.setProperty('--tbl-cell-text', style.cellText);\n  tableEl.style.setProperty('--tbl-body-padding', (table.cellPadding != null ? table.cellPadding : 9) + 'px');\n  tableEl.style.setProperty('--tbl-header-padding', (table.headerPadding != null ? table.headerPadding : 9) + 'px');\n  tableEl.style.setProperty('--tbl-body-size', (table.bodyTextSize != null ? table.bodyTextSize : 13) + 'px');\n  tableEl.style.setProperty('--tbl-header-size', (table.headerTextSize != null ? table.headerTextSize : 13) + 'px');\n  tableEl.style.setProperty('--tbl-body-align', table.bodyAlign || 'left');\n  tableEl.style.setProperty('--tbl-header-align', table.headerAlign || 'left');\n  tableEl.style.setProperty('--tbl-body-weight', table.bodyBold ? '700' : baseWeight);\n  tableEl.style.setProperty('--tbl-header-weight', table.headerBold === false ? baseWeight : '700');\n\n  // Column widths (see table-types.js's header comment for the shape) —\n  // a <colgroup> applies per-column regardless of which row's cells\n  // actually render at that index, which setting `width` on individual\n  // <td>/<th> elements can't do cleanly once merges are involved. Only\n  // built when at least one column has an explicit width; when none do,\n  // the table keeps its normal width:100% / content-driven sizing (the\n  // .tbl-table stylesheet rule), unchanged from before this feature.\n  const colCount = (table.rows[0] || []).length;\n  const colWidths = Array.isArray(table.colWidths) ? table.colWidths : [];\n  const hasExplicitColWidths = colWidths.some((w) => w != null);\n  if (hasExplicitColWidths) {\n    // Real bug caught in this pass's own Playwright verification: the\n    // first instinct was `tableEl.style.width = 'auto'` (shrink-to-fit,\n    // like removing width:100% entirely) so a resize could grow the\n    // table past its wrapper. That backfires the moment a table is\n    // ALREADY stretched to fill a wide wrapper (the common case — most\n    // tables have few enough columns that 100% width is wider than\n    // their natural content) — switching to shrink-to-fit then SHRINKS\n    // the whole table back down to content size, so a drag meant to\n    // widen one column visually shrinks the table instead unless the\n    // drag happens to exceed the wrapper's width. `min-width` avoids\n    // this entirely: the table keeps its normal width:100% behaviour\n    // (so it never gets SMALLER than before), but can never be squeezed\n    // narrower than the sum of the columns an author has explicitly\n    // pinned — so a resize either widens a column within the existing\n    // 100% (reallocating space from other columns, same as leaving\n    // width:100% alone always does) or, once the pinned sum exceeds the\n    // wrapper's width, grows the whole table past 100% (the scroller's\n    // existing `overflow: auto` already handles that case, same as any\n    // naturally-too-wide table). Either way the table's rendered width\n    // only ever grows-or-stays, never unexpectedly shrinks. table-layout\n    // stays the default 'auto' — 'fixed' would force unset columns to\n    // share leftover space evenly instead of sizing to their own\n    // content, which isn't what \"auto\" should mean here.\n    const explicitSum = colWidths.reduce((sum, w) => sum + (w != null ? w : 0), 0);\n    tableEl.style.minWidth = explicitSum + 'px';\n    const colgroup = document.createElement('colgroup');\n    for (let c = 0; c < colCount; c++) {\n      const col = document.createElement('col');\n      if (colWidths[c] != null) col.style.width = colWidths[c] + 'px';\n      colgroup.appendChild(col);\n    }\n    tableEl.appendChild(colgroup);\n  }\n\n  (table.rows || []).forEach((row, r) => {\n    const tr = document.createElement('tr');\n    let firstRealInRow = true;\n    row.forEach((cell, c) => {\n      if (cell === null) return; // covered by a previous cell's span — see table-types.js\n      const isHeader = table.hasHeaderRow !== false && r === 0;\n      const cellEl = document.createElement(isHeader ? 'th' : 'td');\n      cellEl.className = 'tbl-cell';\n      cellEl.dataset.row = r;\n      cellEl.dataset.col = c;\n      if ((cell.colSpan || 1) > 1) cellEl.colSpan = cell.colSpan;\n      if ((cell.rowSpan || 1) > 1) cellEl.rowSpan = cell.rowSpan;\n      if (r === 0 && table.freezeHeader) cellEl.classList.add('tbl-sticky-row');\n      if (firstRealInRow && table.freezeFirstCol) cellEl.classList.add('tbl-sticky-col');\n      firstRealInRow = false;\n      if (opts.isSelected && opts.isSelected(r, c)) cellEl.classList.add('tbl-cell-selected');\n\n      // Per-cell overrides (see table-types.js) — applied as inline\n      // style so they win over the table-wide/theme CSS-custom-property\n      // values regardless of whether this is a <td> or a themed <th>,\n      // with no extra specificity gymnastics needed. Left unset (null/\n      // undefined) means \"inherit the table-wide value\" — nothing to do.\n      if (cell.cellBg) cellEl.style.background = cell.cellBg;\n      if (cell.cellBold != null) cellEl.style.fontWeight = cell.cellBold ? '700' : baseWeight;\n      if (cell.cellAlign) cellEl.style.textAlign = cell.cellAlign;\n\n      const textEl = document.createElement('span');\n      textEl.className = 'tbl-cell-text';\n      // sanitizeRichHtml() also safely handles old-shape plain-string\n      // cell.text (pre-richtext saved projects) — see table-types.js's\n      // header comment.\n      textEl.innerHTML = sanitizeRichHtml(cell.text || '');\n      cellEl.appendChild(textEl);\n\n      if (cell.tooltip) attachCellTooltip(cellEl, cell.tooltip);\n\n      if (opts.onCellClick) {\n        cellEl.addEventListener('click', (e) => opts.onCellClick(r, c, e));\n      }\n\n      // Column-width drag handle — header row only (one handle per real\n      // rendered cell in row 0 is enough to cover every column boundary,\n      // and a spanned header cell's handle resizing \"the whole merged\n      // block\" is exactly the settled behaviour — see table-types.js).\n      // Only attached when the caller wants authoring interactivity\n      // (see this function's JSDoc on onColResizeStart).\n      if (r === 0 && opts.onColResizeStart) {\n        const handle = document.createElement('div');\n        handle.className = 'tbl-col-resize-handle';\n        // Item 7's actual root cause, fixed here — see this file's header\n        // comment. The handle's CSS deliberately straddles its cell's\n        // right edge (half in, half out) so its grab zone sits ON the\n        // shared boundary between two columns. The LAST column has no\n        // neighbour to its right to share a boundary with, so that same\n        // straddle instead overshoots the table's own outer edge —\n        // `.tbl-scroller`'s `overflow: auto` then reports that overshoot\n        // as a permanent few-px horizontal scrollbar, even with zero\n        // columns ever explicitly resized. `.tbl-col-resize-handle-last`\n        // flushes just this one handle fully inside its cell instead\n        // (no straddle needed — there's no neighbour to share with).\n        if (c + (cell.colSpan || 1) - 1 >= colCount - 1) handle.classList.add('tbl-col-resize-handle-last');\n        handle.addEventListener('pointerdown', (e) => {\n          e.stopPropagation();\n          opts.onColResizeStart(e, c, cell.colSpan || 1, cellEl);\n        });\n        // Stop the handle's own click from also bubbling into\n        // onCellClick above (a drag ends with a real 'click' event on\n        // whatever's under the pointer, which is this handle).\n        handle.addEventListener('click', (e) => e.stopPropagation());\n        cellEl.appendChild(handle);\n      }\n\n      tr.appendChild(cellEl);\n    });\n    tableEl.appendChild(tr);\n  });\n\n  forceLinksToNewTab(tableEl);\n\n  scroller.appendChild(tableEl);\n  wrapper.appendChild(scroller);\n  return wrapper;\n}\n",
+    carouselNav: "/* ==========================================================================\n   Tables — Carousel / Side-by-side Layout Switcher\n   Same role as Tabbed Panels' tab-nav.js: the learner-facing layout\n   mechanism, used UNMODIFIED by both the authoring canvas and the\n   exported player, so what an author sees while editing is what a\n   learner actually gets.\n\n   Two author-chosen base modes (project.layout.mode):\n   - 'side-by-side' — every table renders at once in a CSS grid,\n     `layout.perRow` columns wide.\n   - 'carousel' — one table visible at a time, with prev/next controls.\n\n   Below CAROUSEL_BREAKPOINT, 'side-by-side' automatically collapses to\n   the same single-table-plus-arrows presentation carousel mode always\n   uses — a responsive CSS/JS fallback, NOT a third authored mode (see\n   root CLAUDE.md's brief for this tool). A ResizeObserver on the\n   container re-evaluates this on every resize, so an Articulate embed\n   that's narrow at publish time (or gets resized later) collapses\n   automatically without the author doing anything.\n\n   ---- Collapsed-mode peek + slide (added this pass) ----\n   Collapsed mode ('carousel' or narrow side-by-side) no longer hides\n   every non-active table with `display: none`. Instead all items stay\n   in one `.cn-grid` flex row inside an `overflow: hidden` `.cn-viewport`,\n   each sized to `container width - PEEK*2` px, and the whole row is\n   `translateX`'d so the active item's left edge sits PEEK px in from the\n   viewport's left edge — which puts a PEEK-ish sliver of the previous\n   item's right edge in view to the left, and (since items are laid out\n   left-to-right with GAP px between them) a sliver of the next item's\n   left edge in view to the right. Recomputed on every applyState() call\n   (selection change, nav click, or the existing ResizeObserver firing),\n   so it stays correct across resizes without a separate code path.\n   Prev/next just changes `activeIndex` and re-renders — the CSS\n   `transition: transform` on `.cn-grid` (see index.html / Export's\n   embedded style, guarded under prefers-reduced-motion same as every\n   other micro-animation in this suite) is what makes that read as a\n   slide instead of a jump cut. Peeking neighbours get a lower opacity\n   (`.cn-item-peek`, same transition) so the strip reads as one\n   continuous physical object sliding past a window, not disconnected\n   tables. At the first/last table there's simply nothing to peek on\n   that side — the viewport just shows blank space, which reads the same\n   as normal edge padding.\n   ========================================================================== */\n\nconst CAROUSEL_BREAKPOINT = 620; // px — below this, side-by-side collapses to single-table display\nconst CAROUSEL_PEEK = 36;  // px — how much of a neighbouring table peeks in at each edge\nconst CAROUSEL_GAP = 12;   // px — gap between items in the collapsed flex strip\n\n/**\n * @param container   element to render into (children replaced each call).\n * @param tables      [{ id, ... }, ...] — the full table list, in order.\n * @param layout      { mode: 'side-by-side'|'carousel', perRow }.\n * @param renderItem  (table, index) => DOM node — how to render one\n *                     table's content (index.html/Export both pass a\n *                     small wrapper around table-renderer.js's\n *                     renderTable()).\n * @param activeIndex which table is \"current\" while collapsed to a\n *                     single visible table (ignored, but still tracked,\n *                     in the uncollapsed side-by-side grid).\n * @param onNavigate   (newIndex) => void — called when prev/next is\n *                     clicked; the caller re-invokes this render function\n *                     with the updated activeIndex (same stateless-\n *                     render-function pattern as tab-nav.js's onSelect).\n */\nfunction renderTablesLayout(container, { tables, layout, renderItem, activeIndex, onNavigate }) {\n  // A stray leftover ResizeObserver from a previous render would keep\n  // firing against a container whose children just got wiped — always\n  // disconnect before rebuilding.\n  if (container._cnResizeObserver) { container._cnResizeObserver.disconnect(); container._cnResizeObserver = null; }\n  if (container._cnResizeListener) { window.removeEventListener('resize', container._cnResizeListener); container._cnResizeListener = null; }\n\n  // ---- Real bug fix (Previous not sliding smoothly) ----\n  // Every call to this function throws away and rebuilds the ENTIRE\n  // `.cn-grid` — a brand-new element every time a table is selected\n  // (index.html's onChange re-renders the whole stage on essentially\n  // every state change, including plain prev/next navigation). A CSS\n  // `transition: transform` has nothing to animate FROM on a freshly\n  // inserted node — there's no committed \"before\" style yet. Verified\n  // by sampling getComputedStyle(grid).transform every 25ms across a\n  // real click in a real browser: in BOTH directions the strip actually\n  // animates from translateX(0) (the browser's default identity\n  // transform for a node that's never had one set), never from the\n  // table's real prior on-screen offset. Going from table 0 (true\n  // offset ~+36px, already close to 0) to table 1, animating from 0\n  // instead of 36 is imperceptible — reads as \"Next works\". Going back\n  // from table 1 (true offset e.g. -976px) to table 0 (+36px), animating\n  // from 0 instead of -976 is a completely different, far shorter\n  // motion — the strip barely nudges from ~0 to +36 instead of sliding\n  // the full distance back, which is exactly the reported \"Previous\n  // doesn't slide smoothly\" (it's not asymmetric transform math — the\n  // offset formula below has always been direction-agnostic; it's a\n  // rebuild-loses-continuity bug that only *looks* direction-specific\n  // because of where index 0's offset happens to sit relative to 0).\n  //\n  // Fix: since the grid element can't be preserved across this\n  // rebuild (structural re-render, not just a reposition), manually\n  // replay what the browser would have done for free had the node\n  // persisted — paint the LAST known real offset first, force a style\n  // flush so it's committed as the transition's start value, then set\n  // the real target. `_cnLastOffset`/`_cnWasCollapsed` live on the\n  // container itself so they survive `container.innerHTML = ''` below.\n  const prevOffset = container._cnLastOffset;\n  const prevWasCollapsed = !!container._cnWasCollapsed;\n  let isFirstApply = true;\n  // Tracks what THIS render's applyState() has itself already painted\n  // (see the \"real bug fix, round 3\" comment below) — separate from\n  // `prevOffset`, which is fixed at the value from BEFORE this render\n  // even started.\n  let lastAppliedOffset = null;\n\n  container.innerHTML = '';\n  container.className = 'cn-layout';\n\n  // .cn-viewport clips the collapsed-mode flex strip so peeking\n  // neighbours (which deliberately extend past the visible width) don't\n  // widen the page — side-by-side mode doesn't need clipping (nothing\n  // overflows), but leaving it on is harmless there too.\n  const viewport = document.createElement('div');\n  viewport.className = 'cn-viewport';\n  const grid = document.createElement('div');\n  grid.className = 'cn-grid';\n  const items = tables.map((table, i) => {\n    const item = document.createElement('div');\n    item.className = 'cn-item';\n    item.appendChild(renderItem(table, i));\n    grid.appendChild(item);\n    return item;\n  });\n  viewport.appendChild(grid);\n  container.appendChild(viewport);\n\n  const nav = document.createElement('div');\n  nav.className = 'cn-nav';\n  const prevBtn = document.createElement('button');\n  prevBtn.type = 'button';\n  prevBtn.className = 'cn-nav-btn';\n  prevBtn.setAttribute('aria-label', 'Previous table');\n  prevBtn.innerHTML = '<i class=\"fa-solid fa-chevron-left\"></i>';\n  const counter = document.createElement('span');\n  counter.className = 'cn-nav-counter';\n  const nextBtn = document.createElement('button');\n  nextBtn.type = 'button';\n  nextBtn.className = 'cn-nav-btn';\n  nextBtn.setAttribute('aria-label', 'Next table');\n  nextBtn.innerHTML = '<i class=\"fa-solid fa-chevron-right\"></i>';\n  prevBtn.addEventListener('click', () => onNavigate(Math.max(0, activeIndex - 1)));\n  nextBtn.addEventListener('click', () => onNavigate(Math.min(tables.length - 1, activeIndex + 1)));\n  nav.appendChild(prevBtn);\n  nav.appendChild(counter);\n  nav.appendChild(nextBtn);\n  container.appendChild(nav);\n\n  function applyState() {\n    const isCarouselMode = layout.mode === 'carousel';\n    const containerWidth = container.clientWidth;\n    const narrow = containerWidth > 0 && containerWidth < CAROUSEL_BREAKPOINT;\n    const collapsed = isCarouselMode || narrow;\n\n    container.classList.toggle('cn-collapsed', collapsed);\n\n    if (!collapsed) {\n      grid.style.gridTemplateColumns = `repeat(${Math.max(1, layout.perRow || 2)}, 1fr)`;\n      grid.style.transform = '';\n      items.forEach((item) => {\n        item.style.flexBasis = '';\n        item.classList.remove('cn-item-active', 'cn-item-peek');\n      });\n      container._cnWasCollapsed = false;\n    } else {\n      grid.style.gridTemplateColumns = '';\n      // Each item is sized to leave PEEK px of viewport on both sides\n      // for the active item; see the file-header comment for the slide\n      // math this feeds.\n      const itemWidth = Math.max(0, containerWidth - CAROUSEL_PEEK * 2);\n      items.forEach((item, i) => {\n        item.style.flexBasis = itemWidth + 'px';\n        item.classList.toggle('cn-item-active', i === activeIndex);\n        item.classList.toggle('cn-item-peek', i !== activeIndex);\n      });\n      const offset = CAROUSEL_PEEK - activeIndex * (itemWidth + CAROUSEL_GAP);\n\n      // ---- Real bug fix, round 2 (carousel-only jitter while typing) ----\n      // renderTablesLayout() rebuilds this ENTIRE `.cn-grid` from scratch\n      // on EVERY call — and it gets called on every tableManager.onChange(),\n      // which fires on every single keystroke in a cell/tooltip field (see\n      // index.html's renderAll()/renderStage()), not just on an actual\n      // Next/Previous click. The replay logic just below (paint the last\n      // offset, force a flush, then transition to the new one) exists so a\n      // REAL navigation still animates smoothly across a rebuild that loses\n      // DOM continuity (see the file-header comment). But it used to key\n      // off nothing more than \"did the computed offset change from last\n      // time\" — and offset depends on `container.clientWidth`, which can\n      // shift by a few px from something as unrelated as a scrollbar\n      // appearing/disappearing on #stage while a cell's content grows\n      // taller during typing. That was enough to make `prevOffset !== offset`\n      // true on a plain keystroke re-render with the SAME active table,\n      // triggering the full \"jump to old position, flush, animate to new\"\n      // replay — a visible flash/jitter with nothing actually navigated.\n      // Verified: side-by-side mode never hits this code path at all\n      // (grid.style.transform is simply cleared there), which is exactly\n      // why the reported jitter was carousel-only.\n      //\n      // Fix: only ever replay/animate when this call represents a genuine\n      // navigation — the active table index (or the collapsed/expanded\n      // state itself) actually changed since the last time this container\n      // was rendered. `_cnLastActiveIndex` tracks that, separately from\n      // `_cnLastOffset`/`_cnWasCollapsed` (which still track raw geometry,\n      // purely for what position to replay FROM when a real navigation\n      // does happen). Anything else — a content-only re-render — snaps\n      // straight to the correct final transform with transitions\n      // explicitly suppressed, so it can never animate no matter how the\n      // computed offset happened to drift.\n      const isRealNavigation = isFirstApply && (\n        !prevWasCollapsed ||\n        container._cnLastActiveIndex == null ||\n        container._cnLastActiveIndex !== activeIndex\n      );\n\n      // ---- Real bug fix, round 3 (Next/Previous stopped animating at\n      // all, regression from round 2's fix directly above) ----\n      // `ro.observe(container)` a little further down ALWAYS fires its\n      // callback once, asynchronously, right after observation starts —\n      // that's a guaranteed part of the ResizeObserver spec, not\n      // conditional on the container's size having actually changed. On\n      // a genuine Next/Previous click, that guaranteed extra call lands\n      // a few ms after the real (synchronous, isFirstApply === true)\n      // call above already kicked off the CSS transition — but by then\n      // `isFirstApply` is already false, so `isRealNavigation` evaluates\n      // false for THIS call too, same as a content-only re-render. It\n      // recomputes the SAME `offset` (the container's width hasn't\n      // actually changed), but round 2's fix still unconditionally reset\n      // `transition: none` + re-painted that same offset — which resets\n      // the CSS transition timeline currently mid-flight from the real\n      // click a moment earlier, instantly snapping the strip to its\n      // already-correct-anyway final position. Verified by sampling\n      // getComputedStyle(grid).transform every animation frame across a\n      // real click: the strip jumped straight from the old offset to the\n      // new one within a single frame (~30ms), never interpolating —\n      // i.e. no visible slide at all, exactly the reported regression.\n      // Root cause distilled: the guard added for round 2 only ever\n      // asked \"does this call represent a real navigation,\" but never\n      // asked the simpler, more directly relevant question \"does this\n      // call need to change anything at all.\" A call that recomputes the\n      // exact same offset this render already painted has nothing to do\n      // — including no business touching `transition`, which is exactly\n      // what was stomping the in-flight animation. `lastAppliedOffset`\n      // (scoped to THIS renderTablesLayout() call, unlike `_cnLastOffset`\n      // which persists across whole re-renders) is that direct check:\n      // skip touching the DOM entirely whenever a later applyState()\n      // call in the same render recomputes a value already painted.\n      if (lastAppliedOffset != null && lastAppliedOffset === offset) {\n        // No-op — nothing changed since this render's own last paint\n        // (the ResizeObserver's guaranteed-but-redundant initial fire,\n        // or a genuine resize event that happened not to move the\n        // offset). Deliberately does NOT touch grid.style at all, so an\n        // in-flight CSS transition from a real navigation moments ago is\n        // left completely undisturbed.\n      } else if (isRealNavigation && prevOffset != null && prevOffset !== offset) {\n        // Establish the transition's real start point — see the\n        // file-header comment above for why this is needed at all.\n        grid.style.transition = 'none';\n        grid.style.transform = `translateX(${prevOffset}px)`;\n        grid.getBoundingClientRect(); // force a style/layout flush so the line above is committed, not coalesced away\n        grid.style.transition = '';\n        grid.style.transform = `translateX(${offset}px)`;\n      } else if (!isRealNavigation) {\n        // Content-only re-render (e.g. typing), or a genuine resize that\n        // actually moved the offset — land on the correct position with\n        // no transition at all, regardless of whether `offset` drifted\n        // from incidental width jitter.\n        grid.style.transition = 'none';\n        grid.style.transform = `translateX(${offset}px)`;\n        grid.getBoundingClientRect();\n        grid.style.transition = '';\n      } else {\n        // First-ever collapsed render for this container — nothing to\n        // replay from, just land at the right spot.\n        grid.style.transform = `translateX(${offset}px)`;\n      }\n      lastAppliedOffset = offset;\n      container._cnLastOffset = offset;\n      container._cnWasCollapsed = true;\n      container._cnLastActiveIndex = activeIndex;\n    }\n    isFirstApply = false;\n\n    const showNav = collapsed && tables.length > 1;\n    nav.style.display = showNav ? 'flex' : 'none';\n    if (showNav) {\n      prevBtn.disabled = activeIndex <= 0;\n      nextBtn.disabled = activeIndex >= tables.length - 1;\n      counter.textContent = `${activeIndex + 1} / ${tables.length}`;\n    }\n  }\n\n  applyState();\n\n  if (window.ResizeObserver) {\n    const ro = new ResizeObserver(applyState);\n    ro.observe(container);\n    container._cnResizeObserver = ro;\n  } else {\n    // Fallback for an environment without ResizeObserver — still\n    // responds to viewport resizes, just not to the container itself\n    // being resized by something other than the window (e.g. a\n    // dynamically-resized embed iframe), which is a smaller gap.\n    window.addEventListener('resize', applyState);\n    container._cnResizeListener = applyState;\n  }\n}\n",
   };
 
   function openExportModal() {
@@ -1446,6 +1806,14 @@
     const state = tableManager.getState();
     const tablesJSON = JSON.stringify(state.tables);
     const layoutJSON = JSON.stringify(state.layout);
+    // Computed once here rather than inside the template string, same
+    // "pageBg" pattern Tabbed Panels' openExportModal() uses for its own
+    // styles.pageBackground (item 4) — only the EXPORT actually emits
+    // real `background: transparent`; the authoring #stage's own
+    // equivalent (applyContainerBackground()) always falls back to a
+    // visible colour instead, since true transparency has nothing
+    // meaningful to preview inside the app's own chrome.
+    const containerBg = state.layout.containerBackground.transparent ? 'transparent' : state.layout.containerBackground.color;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1466,6 +1834,9 @@
 [
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap',
+  // Table CONTENT font (item 8) — same Poppins URL, loaded the exact
+  // same script-created-<link> way as index.html's own loadContentFont().
+  'https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap',
 ].forEach((href) => {
   const link = document.createElement('link');
   link.rel = 'stylesheet';
@@ -1476,7 +1847,7 @@
 const playerStyle = document.createElement('style');
 playerStyle.textContent = \`
   * { box-sizing: border-box; }
-  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: transparent; }
+  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: ${containerBg}; }
   #tables-layout-host { max-width: 1100px; margin: 0 auto; }
   .cn-layout { display: flex; flex-direction: column; gap: 16px; }
   .cn-viewport { overflow: hidden; }
@@ -1494,11 +1865,15 @@ playerStyle.textContent = \`
   .tbl-name { font-weight: 600; font-size: 0.9375rem; margin-bottom: 12px; color: #1C2321; }
   .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, #CBC8BE); }
   .tbl-scroller.tbl-row-sep-only { border: none; }
-  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, #1C2321); }
+  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, #1C2321); font-family: 'Poppins', 'IBM Plex Sans', sans-serif; }
   .tbl-cell { border: 1px solid var(--tbl-border, #CBC8BE); padding: var(--tbl-body-padding, 9px); text-align: var(--tbl-body-align, left); font-size: var(--tbl-body-size, 0.8125rem); font-weight: var(--tbl-body-weight, 400); position: relative; }
   th.tbl-cell { background: var(--tbl-header-bg, #FAFAF8); color: var(--tbl-header-text, #1C2321); padding: var(--tbl-header-padding, 9px); text-align: var(--tbl-header-align, left); font-size: var(--tbl-header-size, 0.8125rem); font-weight: var(--tbl-header-weight, 600); }
   .tbl-table.tbl-row-sep-only { border: none; }
   .tbl-table.tbl-row-sep-only .tbl-cell { border: none; border-bottom: 1px solid var(--tbl-border, #CBC8BE); }
+  .tbl-table:not(.tbl-row-sep-only) tr:first-child .tbl-cell { border-top: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr:last-child .tbl-cell { border-bottom: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr .tbl-cell:first-child { border-left: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr .tbl-cell:last-child { border-right: none; }
   .tbl-sticky-row { position: sticky; top: 0; z-index: 2; }
   .tbl-sticky-col { position: sticky; left: 0; z-index: 1; }
   .tbl-sticky-row.tbl-sticky-col { z-index: 3; }
@@ -1520,7 +1895,7 @@ let activeIndex = 0;
 function render() {
   renderTablesLayout(document.getElementById('tables-layout-host'), {
     tables, layout,
-    renderItem: (table) => renderTable(table, { forExport: true }),
+    renderItem: (table) => renderTable(table, { forExport: true, contentFontWeight: layout.contentFontWeight }),
     activeIndex,
     onNavigate: (i) => { activeIndex = i; render(); },
   });
@@ -1543,6 +1918,102 @@ render();
       document.execCommand('copy');
       Shell.toast('Code copied to clipboard', 'success');
     });
+  }
+
+  /* ---- Import from code (item 2) ----
+     The inverse of openExportModal() above: that function embeds the
+     project as `const tables = <JSON>;` / `const layout = <JSON>;`
+     inside the exported <script>. Rather than a single greedy regex
+     (which breaks the moment the JSON itself contains nested `[`/`]` —
+     every real project's tables array does, via rows/colSpan/etc.),
+     extractBalancedJson() walks the text from the first `[`/`{` after
+     the marker, tracking bracket depth AND string state (so brackets
+     that happen to appear inside a quoted string, e.g. literal `[`/`]`
+     characters someone typed into a cell, never miscount), stopping the
+     moment depth returns to 0 and handing that exact substring to
+     JSON.parse(). This works against ANY text containing those two
+     markers in that order, not just Tables' own literal export
+     template — including, deliberately, a hand-edited or
+     future-reformatted export. */
+
+  function extractBalancedJson(text, fromIndex) {
+    let i = fromIndex;
+    while (i < text.length && text[i] !== '[' && text[i] !== '{') i++;
+    if (i >= text.length) return null;
+    const openChar = text[i];
+    const closeChar = openChar === '[' ? ']' : '}';
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+    let escaped = false;
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === stringChar) inString = false;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { inString = true; stringChar = ch; continue; }
+      if (ch === openChar) depth++;
+      else if (ch === closeChar) {
+        depth--;
+        if (depth === 0) {
+          try { return JSON.parse(text.slice(i, j + 1)); } catch (err) { return null; }
+        }
+      }
+    }
+    return null; // unbalanced — ran off the end without closing
+  }
+
+  /** Extracts { tables, layout } from arbitrary pasted text, or null if
+   *  no recognizable/parseable project data is found. A minimal shape
+   *  check (each table has an id and a rows array) guards against a
+   *  syntactically-valid-JSON-but-wrong-shape paste (e.g. some other
+   *  tool's export) silently "succeeding" into a broken project. */
+  function parseImportedProject(text) {
+    if (!text || typeof text !== 'string') return null;
+    const tablesMarkerIndex = text.indexOf('const tables = ');
+    const layoutMarkerIndex = text.indexOf('const layout = ');
+    if (tablesMarkerIndex === -1 || layoutMarkerIndex === -1) return null;
+    const tables = extractBalancedJson(text, tablesMarkerIndex + 'const tables = '.length);
+    const layout = extractBalancedJson(text, layoutMarkerIndex + 'const layout = '.length);
+    if (!Array.isArray(tables) || tables.length === 0) return null;
+    if (!layout || typeof layout !== 'object') return null;
+    if (!tables.every((t) => t && typeof t === 'object' && typeof t.id === 'string' && Array.isArray(t.rows))) return null;
+    return { tables, layout };
+  }
+
+  function openImportModal() {
+    document.getElementById('import-textarea').value = '';
+    Shell.openModal('import-modal');
+  }
+
+  async function confirmImportFromCode() {
+    const text = document.getElementById('import-textarea').value;
+    const parsed = parseImportedProject(text);
+    if (!parsed) {
+      Shell.toast('Could not find a valid Tables project in the pasted code.', 'danger');
+      return;
+    }
+    // Same unsaved-changes guard as New Project / Open Project — see
+    // newProject() above.
+    if (hasUnsavedChanges) {
+      const proceed = await Shell.confirm('Importing will discard them.', { heading: 'Unsaved changes', okLabel: 'Discard and continue', danger: true });
+      if (!proceed) return;
+    }
+    Shell.closeModal('import-modal');
+    // setState()'s onChange already calls markUnsaved() (see
+    // tableManager.onChange above) — deliberately NOT followed by
+    // markSaved() the way loadProject()/newProject() do, since imported
+    // content is a "new, unsaved" project per this pass's settled scope:
+    // it hasn't been saved anywhere under this name (there is no name).
+    tableManager.setState({ activeTableId: null, tables: parsed.tables, layout: parsed.layout });
+    currentProjectName = null;
+    currentProjectFolder = '';
+    document.getElementById('display-project-name').textContent = 'Untitled project';
+    closePanel();
+    Shell.toast('Project imported from code', 'success');
   }
 
   /* ---- Boot ---- */

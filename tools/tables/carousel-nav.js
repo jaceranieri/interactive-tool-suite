@@ -102,6 +102,11 @@ function renderTablesLayout(container, { tables, layout, renderItem, activeIndex
   const prevOffset = container._cnLastOffset;
   const prevWasCollapsed = !!container._cnWasCollapsed;
   let isFirstApply = true;
+  // Tracks what THIS render's applyState() has itself already painted
+  // (see the "real bug fix, round 3" comment below) — separate from
+  // `prevOffset`, which is fixed at the value from BEFORE this render
+  // even started.
+  let lastAppliedOffset = null;
 
   container.innerHTML = '';
   container.className = 'cn-layout';
@@ -174,21 +179,108 @@ function renderTablesLayout(container, { tables, layout, renderItem, activeIndex
       });
       const offset = CAROUSEL_PEEK - activeIndex * (itemWidth + CAROUSEL_GAP);
 
-      // Establish the transition's real start point — see the file-header
-      // comment above for why this is needed at all. Only on the very
-      // first applyState() call after this fresh grid was created (a
-      // later call, e.g. from the ResizeObserver, is operating on a node
-      // that already has a real committed transform from this same
-      // render pass, so a normal CSS transition already works on it).
-      if (isFirstApply && prevWasCollapsed && prevOffset != null && prevOffset !== offset) {
+      // ---- Real bug fix, round 2 (carousel-only jitter while typing) ----
+      // renderTablesLayout() rebuilds this ENTIRE `.cn-grid` from scratch
+      // on EVERY call — and it gets called on every tableManager.onChange(),
+      // which fires on every single keystroke in a cell/tooltip field (see
+      // index.html's renderAll()/renderStage()), not just on an actual
+      // Next/Previous click. The replay logic just below (paint the last
+      // offset, force a flush, then transition to the new one) exists so a
+      // REAL navigation still animates smoothly across a rebuild that loses
+      // DOM continuity (see the file-header comment). But it used to key
+      // off nothing more than "did the computed offset change from last
+      // time" — and offset depends on `container.clientWidth`, which can
+      // shift by a few px from something as unrelated as a scrollbar
+      // appearing/disappearing on #stage while a cell's content grows
+      // taller during typing. That was enough to make `prevOffset !== offset`
+      // true on a plain keystroke re-render with the SAME active table,
+      // triggering the full "jump to old position, flush, animate to new"
+      // replay — a visible flash/jitter with nothing actually navigated.
+      // Verified: side-by-side mode never hits this code path at all
+      // (grid.style.transform is simply cleared there), which is exactly
+      // why the reported jitter was carousel-only.
+      //
+      // Fix: only ever replay/animate when this call represents a genuine
+      // navigation — the active table index (or the collapsed/expanded
+      // state itself) actually changed since the last time this container
+      // was rendered. `_cnLastActiveIndex` tracks that, separately from
+      // `_cnLastOffset`/`_cnWasCollapsed` (which still track raw geometry,
+      // purely for what position to replay FROM when a real navigation
+      // does happen). Anything else — a content-only re-render — snaps
+      // straight to the correct final transform with transitions
+      // explicitly suppressed, so it can never animate no matter how the
+      // computed offset happened to drift.
+      const isRealNavigation = isFirstApply && (
+        !prevWasCollapsed ||
+        container._cnLastActiveIndex == null ||
+        container._cnLastActiveIndex !== activeIndex
+      );
+
+      // ---- Real bug fix, round 3 (Next/Previous stopped animating at
+      // all, regression from round 2's fix directly above) ----
+      // `ro.observe(container)` a little further down ALWAYS fires its
+      // callback once, asynchronously, right after observation starts —
+      // that's a guaranteed part of the ResizeObserver spec, not
+      // conditional on the container's size having actually changed. On
+      // a genuine Next/Previous click, that guaranteed extra call lands
+      // a few ms after the real (synchronous, isFirstApply === true)
+      // call above already kicked off the CSS transition — but by then
+      // `isFirstApply` is already false, so `isRealNavigation` evaluates
+      // false for THIS call too, same as a content-only re-render. It
+      // recomputes the SAME `offset` (the container's width hasn't
+      // actually changed), but round 2's fix still unconditionally reset
+      // `transition: none` + re-painted that same offset — which resets
+      // the CSS transition timeline currently mid-flight from the real
+      // click a moment earlier, instantly snapping the strip to its
+      // already-correct-anyway final position. Verified by sampling
+      // getComputedStyle(grid).transform every animation frame across a
+      // real click: the strip jumped straight from the old offset to the
+      // new one within a single frame (~30ms), never interpolating —
+      // i.e. no visible slide at all, exactly the reported regression.
+      // Root cause distilled: the guard added for round 2 only ever
+      // asked "does this call represent a real navigation," but never
+      // asked the simpler, more directly relevant question "does this
+      // call need to change anything at all." A call that recomputes the
+      // exact same offset this render already painted has nothing to do
+      // — including no business touching `transition`, which is exactly
+      // what was stomping the in-flight animation. `lastAppliedOffset`
+      // (scoped to THIS renderTablesLayout() call, unlike `_cnLastOffset`
+      // which persists across whole re-renders) is that direct check:
+      // skip touching the DOM entirely whenever a later applyState()
+      // call in the same render recomputes a value already painted.
+      if (lastAppliedOffset != null && lastAppliedOffset === offset) {
+        // No-op — nothing changed since this render's own last paint
+        // (the ResizeObserver's guaranteed-but-redundant initial fire,
+        // or a genuine resize event that happened not to move the
+        // offset). Deliberately does NOT touch grid.style at all, so an
+        // in-flight CSS transition from a real navigation moments ago is
+        // left completely undisturbed.
+      } else if (isRealNavigation && prevOffset != null && prevOffset !== offset) {
+        // Establish the transition's real start point — see the
+        // file-header comment above for why this is needed at all.
         grid.style.transition = 'none';
         grid.style.transform = `translateX(${prevOffset}px)`;
         grid.getBoundingClientRect(); // force a style/layout flush so the line above is committed, not coalesced away
         grid.style.transition = '';
+        grid.style.transform = `translateX(${offset}px)`;
+      } else if (!isRealNavigation) {
+        // Content-only re-render (e.g. typing), or a genuine resize that
+        // actually moved the offset — land on the correct position with
+        // no transition at all, regardless of whether `offset` drifted
+        // from incidental width jitter.
+        grid.style.transition = 'none';
+        grid.style.transform = `translateX(${offset}px)`;
+        grid.getBoundingClientRect();
+        grid.style.transition = '';
+      } else {
+        // First-ever collapsed render for this container — nothing to
+        // replay from, just land at the right spot.
+        grid.style.transform = `translateX(${offset}px)`;
       }
-      grid.style.transform = `translateX(${offset}px)`;
+      lastAppliedOffset = offset;
       container._cnLastOffset = offset;
       container._cnWasCollapsed = true;
+      container._cnLastActiveIndex = activeIndex;
     }
     isFirstApply = false;
 

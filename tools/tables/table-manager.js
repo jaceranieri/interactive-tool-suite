@@ -37,7 +37,27 @@
    ========================================================================== */
 
 function defaultLayout() {
-  return { mode: 'side-by-side', perRow: 2 };
+  return {
+    mode: 'side-by-side',
+    perRow: 2,
+    // Project-wide stage background (item 4, this pass) — the SAME
+    // { color, transparent } shape as Tabbed Panels' styles.pageBackground
+    // (see tools/tabbed-panels/CLAUDE.md for the reference this mirrors
+    // exactly, per root CLAUDE.md's instruction). Governs the background
+    // of the STAGE/container that holds every table (the side-by-side
+    // grid or carousel strip) — independent of any one table's own
+    // theme/colour choices. #F1F0EB matches design-tokens.css's
+    // --surface-sunken, i.e. the authoring stage's existing default
+    // look, so a project that predates this field backfills to visually
+    // the same stage it always had (see setState() below).
+    containerBackground: { color: '#F1F0EB', transparent: false },
+    // Project-wide table CONTENT font weight (item 8, this pass) — see
+    // table-types.js's header comment for the full story (Poppins is
+    // always the content font now, this only controls the base/non-bold
+    // weight; the existing bodyBold/headerBold/cellBold toggles still
+    // just force 700 regardless of this value).
+    contentFontWeight: 400,
+  };
 }
 
 function newId(prefix) {
@@ -81,7 +101,7 @@ function unmergeCellAt(rows, ownerMap, r, c) {
   for (let dr = 0; dr < rs; dr++) {
     for (let dc = 0; dc < cs; dc++) {
       if (dr === 0 && dc === 0) continue;
-      rows[r0 + dr][c0 + dc] = { text: '', tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null };
+      rows[r0 + dr][c0 + dc] = { text: '', tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null, cellAlign: null };
     }
   }
   origin.rowSpan = 1;
@@ -138,7 +158,7 @@ function clearCol(rows, index) {
   }
 }
 
-function freshCell(text) { return { text: text || '', tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null }; }
+function freshCell(text) { return { text: text || '', tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null, cellAlign: null }; }
 
 class TableManager {
   /**
@@ -266,6 +286,10 @@ class TableManager {
     const at = afterIndex + 1;
     clearColBoundary(table.rows, at);
     table.rows.forEach((row) => row.splice(at, 0, freshCell('')));
+    // Keep colWidths in sync with column count, same pattern as rows[r]
+    // above — see table-types.js's header comment for the field's shape.
+    if (!Array.isArray(table.colWidths)) table.colWidths = table.rows[0].map(() => null);
+    table.colWidths.splice(at, 0, null);
     this.onChange();
   }
 
@@ -274,6 +298,20 @@ class TableManager {
     if (!table || table.rows[0].length <= 1) return; // keep at least one column
     clearCol(table.rows, index);
     table.rows.forEach((row) => row.splice(index, 1));
+    if (Array.isArray(table.colWidths)) table.colWidths.splice(index, 1);
+    this.onChange();
+  }
+
+  /** Sets (or clears, with `width === null`) the explicit pixel width for
+   *  one column index. Called from index.html's drag-handle interaction
+   *  in table-renderer.js — see table-types.js's header comment for how
+   *  a merged header cell's drag maps onto a single column index rather
+   *  than tracking sub-column widths. */
+  setColWidth(tableId, colIndex, width) {
+    const table = this.tables.find((t) => t.id === tableId);
+    if (!table) return;
+    if (!Array.isArray(table.colWidths)) table.colWidths = table.rows[0].map(() => null);
+    table.colWidths[colIndex] = width == null ? null : Math.round(width);
     this.onChange();
   }
 
@@ -309,6 +347,17 @@ class TableManager {
     const table = this.tables.find((t) => t.id === tableId);
     if (!table || !table.rows[r] || !table.rows[r][c]) return;
     table.rows[r][c].cellBold = cellBold;
+    this.onChange();
+  }
+
+  /** Per-cell text-align override (item 6b) — null clears back to the
+   *  table-wide bodyAlign/headerAlign for that one cell. Same "null =
+   *  not set" convention as setCellBg/setCellBold above — see
+   *  table-types.js's header comment. */
+  setCellAlign(tableId, r, c, cellAlign) {
+    const table = this.tables.find((t) => t.id === tableId);
+    if (!table || !table.rows[r] || !table.rows[r][c]) return;
+    table.rows[r][c].cellAlign = cellAlign || null;
     this.onChange();
   }
 
@@ -368,7 +417,17 @@ class TableManager {
 
   setState(snap) {
     this.tables.length = 0;
-    snap.tables.forEach((t) => this.tables.push(cloneTable(t)));
+    snap.tables.forEach((t) => {
+      const clone = cloneTable(t);
+      // Backfill for a project saved before colWidths existed, or one
+      // whose column count has drifted from an old colWidths array
+      // length for any reason — see table-types.js's header comment.
+      const colCount = clone.rows[0] ? clone.rows[0].length : 0;
+      if (!Array.isArray(clone.colWidths) || clone.colWidths.length !== colCount) {
+        clone.colWidths = Array.from({ length: colCount }, () => null);
+      }
+      this.tables.push(clone);
+    });
     this.activeTableId = this.tables.some((t) => t.id === snap.activeTableId) ? snap.activeTableId : this.tables[0].id;
     this.lastAddedTableId = null; // a fresh load/undo/redo is never itself an "add"
 

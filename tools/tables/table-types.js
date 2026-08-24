@@ -13,8 +13,8 @@
 
      table.rows is a 2D array — rows[r][c] is either:
        - a real cell object: { text, tooltip, colSpan, rowSpan, cellBg,
-         cellBold } (colSpan/rowSpan default to 1; tooltip is '' when
-         unset). `text` is now a SANITIZED RICH HTML STRING (bold/italic/
+         cellBold, cellAlign } (colSpan/rowSpan default to 1; tooltip is
+         '' when unset). `text` is now a SANITIZED RICH HTML STRING (bold/italic/
          link — see richtext-editor.js's ALLOWED_TAGS), not the plain
          string this field originally shipped as — the plain-text-only
          scope this file used to document here was reopened in a later
@@ -44,6 +44,16 @@
          no dedicated "reset to inherit" control for `cellBold` in the
          panel (only a plain on/off switch, see index.html) — a known,
          minor scope gap, see this pass's notes.
+         `cellAlign` (added this pass, item 6b) follows the EXACT same
+         "null = not set, fall back to the table-wide value" convention
+         as `cellBg`/`cellBold` — a per-cell override of the table-wide
+         `bodyAlign`/`headerAlign` (see TABLE_FIELDS below), one of
+         `'left'|'center'|'right'|'justify'|null`. table-renderer.js
+         applies it as an inline `text-align` on that one cell, winning
+         over the table-wide CSS-custom-property value the same way
+         `cellBg`/inline `cellBold` already do. Same as `cellBold`, a
+         missing key on an older cell object reads identically to an
+         explicit null — no migration needed.
        - null, meaning this grid position is covered by an earlier cell's
          colSpan/rowSpan and renders no <td>/<th> at all — the covering
          cell's own colspan/rowspan attribute already accounts for the
@@ -54,6 +64,56 @@
      Every row array has the same length (the table's column count) —
      table-manager.js's grid helpers are what keep that invariant true
      across every add/remove/merge/unmerge.
+
+   `table.colWidths` (added for manual column-width resize) is likewise
+   NOT a TABLE_FIELDS entry — a generic field-schema entry doesn't fit an
+   array parallel to column count either, same reasoning as `rows`
+   itself. Shape: an array with the same length as `table.rows[0]`
+   (one entry per column) — each entry is either a pixel width (number,
+   explicitly set by dragging that column's resize handle in
+   table-renderer.js) or `null`/absent, meaning "auto/unset" (the column
+   sizes itself the normal content-driven way). table-manager.js's
+   addColumn()/removeColumn() keep this array in sync with column count
+   the exact same way they already keep every `rows[r]` array in sync —
+   inserting a column inserts a matching `null` into `colWidths` at the
+   same index; removing a column removes that index. Dragging a handle
+   that belongs to a column currently covered by a merged cell's span
+   (colSpan > 1) resizes the WHOLE merged block by writing the new width
+   onto the LAST column index the span covers, leaving the other
+   spanned columns' own `colWidths` entries untouched — a deliberate
+   "no sub-column width tracking under a span" simplification (settled
+   scope), not a bug. table-renderer.js turns this array into a
+   `<colgroup>` of `<col>` elements (one real `<col style="width:...">`
+   per explicitly-set entry, a bare `<col>` for `null` ones) rather than
+   setting `width` on individual `<td>`/`<th>` elements — a colgroup
+   naturally applies per-column regardless of which row's cells actually
+   render at that column index, which individual-cell widths can't do
+   cleanly once merges are involved. An older saved project with no
+   `colWidths` key at all is backfilled to an all-`null` array of the
+   right length by table-manager.js's setState() — no separate migration
+   step needed.
+
+   Project-wide font weight + the existing bold toggles (item 8, this
+   pass): table content (header + body, every table) now always renders
+   in Poppins — loaded at runtime via the same script-built `<link>`
+   pattern root CLAUDE.md documents for the truncated-`<link>` incident,
+   in both the authoring canvas and Export (see index.html). There's no
+   per-table or per-content-area font CHOICE, only a single project-wide
+   WEIGHT selector (`layout.contentFontWeight` — see table-manager.js's
+   defaultLayout(); this lives on `layout`, not TABLE_FIELDS, since it's
+   project-wide, not a per-table choice, same reasoning as
+   `layout.containerBackground` below). The interaction with the
+   existing `bodyBold`/`headerBold`/`cellBold` toggles was settled as the
+   simplest correct option: those toggles keep meaning exactly what they
+   already meant — "force the boldest weight (700), regardless of the
+   base" — rather than becoming relative to whatever `contentFontWeight`
+   is set to. `contentFontWeight` only ever sets the weight of NON-bold
+   text (the base). table-renderer.js's --tbl-body-weight/--tbl-header-weight
+   custom properties read `contentFontWeight` (falling back to 400) for
+   their "off" value instead of a hardcoded 400/700, and cellAlign's
+   sibling `cellBold` (and bodyBold/headerBold) still resolve to a flat
+   700 when on — no new field needed for this, it's a read-time-only
+   change in table-renderer.js.
 
    Colour resolution (see resolveTableStyle() below) is table-manager's
    / table-renderer's shared concern, not something table-manager stores
@@ -110,6 +170,24 @@ const TABLE_FIELDS = {
   // three inputs whenever accentColor is non-null rather than letting
   // both mechanisms fight over the result.
   accentColor:   { type: 'color',   label: 'Accent colour',     default: null },
+  // Explicit fixed pixel width for THIS table's own wrapper (item 1,
+  // this pass) — per-table, not project-wide: every table in a project
+  // picks its own independently. null = auto (the existing "stretch to
+  // fill / sum of columns" behaviour, unchanged). When set, applied as
+  // `width` + `max-width: 100%` on the table's wrapper (see
+  // table-renderer.js) rather than a bare `width` — the `max-width: 100%`
+  // is what stops an explicit width WIDER than the table's slot in a
+  // side-by-side grid/carousel item from forcing that slot (and
+  // therefore the whole stage) wider than intended; it can still shrink
+  // to fit a narrower slot. When narrower than the table's actual
+  // rendered column widths, the table's own `.tbl-scroller`
+  // (`overflow: auto`) already picks up a contained horizontal
+  // scrollbar for free — deliberate, not a bug, and NOT the same
+  // concern as item 7's stray-scrollbar bug (see that item's fix below
+  // for the distinction: a deliberately-narrow single table scrolling
+  // its own content is fine; the whole stage having an unwanted sliver
+  // of scroll by default was the bug).
+  tableWidth:    { type: 'number',  label: 'Table width (px)',  default: null, min: 100, max: 3000 },
   hasHeaderRow:  { type: 'boolean', label: 'First row is a header', default: true },
   // Freeze is a secondary/occasional-table feature (see CLAUDE.md) and
   // is deliberately allowed to render best-effort rather than perfectly
@@ -130,7 +208,7 @@ const TABLE_FIELDS = {
   cornerRadius:  { type: 'number',  label: 'Corner radius',    default: 8,  min: 0, max: 40 },
   cellPadding:   { type: 'number',  label: 'Cell padding',     default: 9,  min: 0, max: 32 },
   bodyTextSize:  { type: 'number',  label: 'Body text size',   default: 13, min: 8, max: 32 },
-  bodyAlign:     { type: 'select',  label: 'Body text align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']] },
+  bodyAlign:     { type: 'select',  label: 'Body text align',  default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },
   bodyBold:      { type: 'boolean', label: 'Body bold',        default: false },
 
   // Header gets its OWN independent full set of the same controls —
@@ -138,7 +216,7 @@ const TABLE_FIELDS = {
   // header can look nothing like its body (or vice versa) without any
   // "reset to default" step.
   headerTextSize: { type: 'number',  label: 'Header text size',  default: 13, min: 8, max: 32 },
-  headerAlign:    { type: 'select',  label: 'Header text align', default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']] },
+  headerAlign:    { type: 'select',  label: 'Header text align', default: 'left', options: [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']] },
   headerBold:     { type: 'boolean', label: 'Header bold',       default: true },
   headerPadding:  { type: 'number',  label: 'Header padding',    default: 9,  min: 0, max: 32 },
 
@@ -147,14 +225,22 @@ const TABLE_FIELDS = {
   // header keeps its separator too, settled as not a fuller box).
   rowSeparatorsOnly: { type: 'boolean', label: 'Row separators only', default: false },
 
-  // Authoring-only visibility toggle: the table's name/heading always
-  // shows on the authoring canvas and bottom-bar thumbnails regardless
-  // of this flag (the author needs it to tell tables apart while
-  // editing) — it only controls whether Export's rendering omits it.
-  // See table-renderer.js's renderTable() `forExport` opt for how the
-  // two call sites (authoring vs. Export) stay on the exact same render
-  // function without either one hard-coding the decision.
-  showTitleInExport: { type: 'boolean', label: 'Show title in export', default: true },
+  // Renamed from `showTitleInExport` this pass (item 5) — its scope
+  // changed from "Export only" to "both authoring and Export", so the
+  // old name (which specifically promised the authoring canvas was
+  // exempt) stopped being accurate. Now controls whether the table's
+  // name/heading renders AT ALL, unconditionally, in every render call
+  // (authoring canvas, bottom-bar thumbnails, and Export alike) — the
+  // old "always show in authoring so the author can tell tables apart"
+  // carve-out was a deliberate design call at the time, overridden by a
+  // later interview that settled this should be one toggle controlling
+  // both. See table-renderer.js's renderTable() for the (now simpler,
+  // forExport-independent) single check. No migration/backfill for the
+  // rename: this tool has no live saved projects yet (see root
+  // CLAUDE.md's Tables status) to carry the old key forward from, so a
+  // fresh key with a fresh default is the simplest correct choice —
+  // don't reintroduce a compat read for data that doesn't exist yet.
+  showTitle: { type: 'boolean', label: 'Show title', default: true },
 };
 
 /** Simple relative-luminance check so an accent colour's derived header
@@ -193,7 +279,7 @@ function resolveTableStyle(table) {
  *  brand-new table, same "Header 1/Header 2/Cell 1/Cell 2" shape
  *  Tabbed Panels' table block defaults to. */
 function makeDefaultRows() {
-  const cell = (text) => ({ text, tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null });
+  const cell = (text) => ({ text, tooltip: '', colSpan: 1, rowSpan: 1, cellBg: null, cellBold: null, cellAlign: null });
   return [
     [cell('Header 1'), cell('Header 2')],
     [cell('Cell 1'), cell('Cell 2')],
@@ -208,6 +294,9 @@ function makeDefaultTable(id, name) {
   Object.entries(TABLE_FIELDS).forEach(([key, field]) => {
     data[key] = field.default;
   });
+  // Parallel to `rows[0]`'s length, not a TABLE_FIELDS entry — see the
+  // file header comment. All-null (auto) for a brand-new table.
+  data.colWidths = data.rows[0].map(() => null);
   if (name) data.name = name;
   return data;
 }

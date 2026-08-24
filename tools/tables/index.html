@@ -21,6 +21,7 @@
   }
   .rail-divider { width: 28px; height: 1px; background: var(--border); margin: var(--space-1) 0; flex-shrink: 0; }
   .rail-btn {
+    position: relative;
     display: flex; align-items: center; justify-content: center;
     width: 40px; height: 40px; flex-shrink: 0;
     border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -31,6 +32,10 @@
   .rail-btn.btn-active { border-color: var(--accent); background: var(--accent-soft); }
   .rail-btn:disabled { opacity: 0.35; cursor: default; }
   .rail-btn i { font-size: 16px; color: var(--accent); }
+  /* The "+" badge overlay a previous pass added here was reverted this
+     pass (item 2) — the row/column semantics now rely solely on the
+     buttons' existing title/aria-label ("Add row"/"Add column")
+     tooltips, same as every other icon-only button in this left rail. */
 
   #content-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
@@ -66,8 +71,28 @@
   .tbl-name { font-weight: 600; font-size: var(--text-base); margin-bottom: var(--space-3); color: var(--ink); }
   .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, var(--border-strong)); /* border-radius set inline per-table, see table-renderer.js */ }
   .tbl-scroller.tbl-row-sep-only { border: none; }
-  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, var(--ink)); }
+  /* Table CONTENT font (item 8) — Poppins, project-wide, scoped to just
+     these table selectors so the authoring tool's own UI chrome
+     (buttons/panels/rail/top bar, all still var(--font-ui)) never
+     changes font. Weight is set per-render via the --tbl-body-weight/
+     --tbl-header-weight custom properties (table-renderer.js), not
+     here — this rule only owns the family. */
+  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, var(--ink)); font-family: 'Poppins', var(--font-ui); }
   .tbl-cell { border: 1px solid var(--tbl-border, var(--border-strong)); padding: var(--tbl-body-padding, 9px); text-align: var(--tbl-body-align, left); font-size: var(--tbl-body-size, var(--text-sm)); font-weight: var(--tbl-body-weight, 400); position: relative; cursor: pointer; transition: box-shadow var(--duration-fast) var(--ease-standard); }
+  /* Outer boundary owned SOLELY by .tbl-scroller's own border (item 3 /
+     item 7 root-cause fix — see table-renderer.js's header comment for
+     the full story). Only the OUTWARD-facing side of the outermost ring
+     of cells is suppressed; every internal grid line is untouched. Safe
+     to key off :first-child/:last-child because a covered/merged-away
+     grid position never renders a <td>/<th> at all (see table-types.js),
+     so the first/last REAL cell in a row is always the visual edge.
+     Excluded under .tbl-row-sep-only, which never had a scroller border
+     to be redundant with and whose own last-row bottom border is the
+     intended separator line, not a stray outer edge. */
+  .tbl-table:not(.tbl-row-sep-only) tr:first-child .tbl-cell { border-top: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr:last-child .tbl-cell { border-bottom: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr .tbl-cell:first-child { border-left: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr .tbl-cell:last-child { border-right: none; }
   /* Authoring-only hover affordance (item 6) — an inset box-shadow tint
      rather than `background`, so it stays visible over a cell's own
      background (theme colour, or a per-cell `cellBg` override, both set
@@ -91,6 +116,43 @@
   .tbl-tooltip-icon { margin-left: 6px; color: inherit; opacity: 0.6; font-size: 11px; cursor: pointer; }
   .tbl-tooltip-icon:hover { opacity: 1; }
   .tbl-tooltip-popover { position: fixed; max-width: 240px; background: var(--ink); color: #fff; padding: 7px 10px; border-radius: var(--radius-sm); font-size: var(--text-xs); line-height: 1.4; z-index: 9999; box-shadow: var(--shadow-lg); }
+
+  /* Column-width drag handle (item 4) — authoring-only, see
+     table-renderer.js's onColResizeStart. Sits just inside the header
+     cell's right edge so it doesn't visually widen the cell. */
+  .tbl-col-resize-handle {
+    position: absolute; top: 0; right: -4px; width: 8px; height: 100%;
+    cursor: col-resize; z-index: 4; touch-action: none;
+  }
+  .tbl-col-resize-handle:hover { background: var(--accent-soft); opacity: 0.6; }
+  /* Item 7's actual root-cause fix — see table-renderer.js's comment at
+     this class's creation site. The default straddle (-4px/+4px) is
+     needed so a handle's grab zone sits ON the boundary shared with the
+     NEXT column; the very last column has no next column, so that same
+     straddle overshot the table's own right edge and caused
+     .tbl-scroller's overflow:auto to report a permanent few-px
+     scrollbar even with nothing ever explicitly resized. */
+  .tbl-col-resize-handle-last { right: 0; }
+  /* Live drag-line ghost, appended to <body> (not the cell) so it isn't
+     clipped by .tbl-scroller's overflow:auto — same reasoning as the
+     tooltip popover above. */
+  .tbl-col-resize-ghost { position: fixed; width: 2px; background: var(--accent); z-index: 9999; pointer-events: none; }
+
+  /* Theme swatch grid (item 3) — replaces the old plain <select>. */
+  .theme-swatch-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-2); }
+  .theme-swatch-card {
+    display: flex; flex-direction: column; gap: 5px;
+    padding: var(--space-2); border: 2px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); cursor: pointer; font-family: var(--font-ui);
+    transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+  }
+  .theme-swatch-card:hover { border-color: var(--accent); }
+  .theme-swatch-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .theme-swatch-mock { border: 1px solid; border-radius: 4px; overflow: hidden; }
+  .theme-swatch-mock-header { height: 14px; }
+  .theme-swatch-mock-body { height: 20px; }
+  .theme-swatch-label { font-size: var(--text-xs); color: var(--ink-soft); text-align: center; }
+  .theme-swatch-card.selected .theme-swatch-label { color: var(--ink); font-weight: 600; }
 
   /* Property / Styles / Layout drawers — same .side-panel pattern as
      Tabbed Panels' drawers. Only one open at a time (openPanel()). */
@@ -209,6 +271,7 @@
       <button class="btn btn-secondary" onclick="Shell.openModal('open-modal'); browseFolder=''; refreshProjectList();">Open</button>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" onclick="openExportModal()">Export</button>
+      <button class="btn btn-secondary" onclick="openImportModal()">Import from code</button>
       <div class="top-bar-divider"></div>
       <button class="btn btn-secondary" id="undo-btn" onclick="history.undo()">Undo</button>
       <button class="btn btn-secondary" id="redo-btn" onclick="history.redo()">Redo</button>
@@ -309,6 +372,24 @@
   </div>
 </div>
 
+<!-- Import from code modal -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal-dialog wide">
+    <div class="modal-header">
+      <div><div class="title-block">Import</div><h2>Import from code</h2></div>
+      <button class="modal-close" onclick="Shell.closeModal('import-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--ink-soft); margin-top:0;">Paste a previously exported self-contained HTML export below to load its tables back into the editor.</p>
+      <textarea id="import-textarea" style="width:100%; height:320px; font-family:var(--font-mono); font-size:11px; box-sizing:border-box; border:1px solid var(--border); border-radius:var(--radius-sm); padding:var(--space-3);" placeholder="Paste exported code here…"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="Shell.closeModal('import-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmImportFromCode()">Import</button>
+    </div>
+  </div>
+</div>
+
 <script src="../../shared/app-shell.js"></script>
 <script src="../../shared/storage-connector.js"></script>
 <script src="table-types.js"></script>
@@ -323,6 +404,21 @@
   // get substituted in the Apps Script deployed copy, never here. See
   // root CLAUDE.md's deployment pipeline section.
   Storage.configure('STORAGE_ENDPOINT_PLACEHOLDER', 'STORAGE_API_KEY_PLACEHOLDER');
+
+  // Table CONTENT font (item 8) — Poppins, loaded via a script-created
+  // <link> rather than a static tag in <head>, same safe pattern root
+  // CLAUDE.md documents for the truncated-<link> incident: build it from
+  // short pieces at runtime so there's never one long static line that
+  // could get silently truncated by a host/paste step. Scoped to just
+  // `.tbl-table`/`.tbl-cell` via the stylesheet above — this never
+  // touches the authoring tool's own UI chrome font. Export loads the
+  // exact same URL the exact same way — see openExportModal() below.
+  (function loadContentFont() {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap';
+    document.head.appendChild(link);
+  })();
 
   let currentProjectName = null;
   let currentProjectFolder = ''; // '/'-separated folder the current project lives in ('' = root)
@@ -405,7 +501,14 @@
     addRowBtn.className = 'rail-btn';
     addRowBtn.title = 'Add row';
     addRowBtn.setAttribute('aria-label', 'Add row');
-    addRowBtn.innerHTML = '<i class="fa-solid fa-table-cells-row-lock"></i>';
+    // fa-table-cells-row-lock (used here previously) doesn't exist at
+    // all in Font Awesome 6.4.0's free set — verified this pass against
+    // the actual @fortawesome/fontawesome-free@6.4.0 package (not in its
+    // icons.yml metadata OR its shipped all.css at all, free or Pro), so
+    // it was always rendering as a blank/fallback glyph. fa-grip-lines
+    // (a horizontal stack of lines) reads clearly as "row" and is
+    // confirmed present in that same package's free all.css.
+    addRowBtn.innerHTML = '<i class="fa-solid fa-grip-lines"></i>';
     addRowBtn.addEventListener('click', () => {
       const table = tableManager.getActiveTable();
       const after = selAnchor && selAnchor.tableId === table.id ? selAnchor.r : table.rows.length - 1;
@@ -420,6 +523,9 @@
     addColBtn.className = 'rail-btn';
     addColBtn.title = 'Add column';
     addColBtn.setAttribute('aria-label', 'Add column');
+    // fa-table-columns is confirmed present in Font Awesome 6.4.0's free
+    // all.css (verified alongside fa-grip-lines above) and already reads
+    // clearly as "column" — kept as-is.
     addColBtn.innerHTML = '<i class="fa-solid fa-table-columns"></i>';
     addColBtn.addEventListener('click', () => {
       const table = tableManager.getActiveTable();
@@ -431,23 +537,11 @@
     });
     rail.appendChild(addColBtn);
 
-    const mergeBtn = document.createElement('button');
-    mergeBtn.className = 'rail-btn';
-    mergeBtn.id = 'merge-rail-btn';
-    mergeBtn.title = 'Merge selected cells';
-    mergeBtn.setAttribute('aria-label', 'Merge selected cells');
-    mergeBtn.innerHTML = '<i class="fa-solid fa-table-cells-large"></i>';
-    mergeBtn.addEventListener('click', () => mergeSelection());
-    rail.appendChild(mergeBtn);
-
-    const unmergeBtn = document.createElement('button');
-    unmergeBtn.className = 'rail-btn';
-    unmergeBtn.id = 'unmerge-rail-btn';
-    unmergeBtn.title = 'Unmerge selected cell';
-    unmergeBtn.setAttribute('aria-label', 'Unmerge selected cell');
-    unmergeBtn.innerHTML = '<i class="fa-solid fa-table-cells"></i>';
-    unmergeBtn.addEventListener('click', () => unmergeSelection());
-    rail.appendChild(unmergeBtn);
+    // Merge/Unmerge deliberately live ONLY in the cell property panel
+    // now (renderCellPanel()'s "Merge cells"/"Unmerge cell" buttons) —
+    // the left rail used to duplicate them, with no functional
+    // difference, just an extra place an author had to look. Removed
+    // this pass (item 1); see renderCellPanel() for the real controls.
 
     const divider = document.createElement('div');
     divider.className = 'rail-divider';
@@ -471,16 +565,6 @@
     layoutBtn.addEventListener('click', () => activePanel === 'layout' ? closePanel() : openPanel('layout'));
     rail.appendChild(layoutBtn);
 
-    updateRailButtonState();
-  }
-
-  function updateRailButtonState() {
-    const range = currentSelectionRange();
-    const mergeBtn = document.getElementById('merge-rail-btn');
-    const unmergeBtn = document.getElementById('unmerge-rail-btn');
-    if (!mergeBtn || !unmergeBtn) return;
-    mergeBtn.disabled = !range || (range.rTop === range.rBot && range.cLeft === range.cRight);
-    unmergeBtn.disabled = !(range && range.rTop === range.rBot && range.cLeft === range.cRight && isMergedCell(range));
   }
 
   /* ---- Selection helpers ---- */
@@ -492,12 +576,6 @@
       rTop: Math.min(selAnchor.r, selEnd.r), rBot: Math.max(selAnchor.r, selEnd.r),
       cLeft: Math.min(selAnchor.c, selEnd.c), cRight: Math.max(selAnchor.c, selEnd.c),
     };
-  }
-
-  function isMergedCell(range) {
-    const table = tableManager.tables.find((t) => t.id === range.tableId);
-    const cell = table && table.rows[range.rTop] && table.rows[range.rTop][range.cLeft];
-    return !!cell && ((cell.rowSpan || 1) > 1 || (cell.colSpan || 1) > 1);
   }
 
   function selectCell(tableId, r, c, event) {
@@ -553,7 +631,6 @@
         r >= range.rTop && r <= range.rBot && c >= range.cLeft && c <= range.cRight;
       cellEl.classList.toggle('tbl-cell-selected', selected);
     });
-    updateRailButtonState();
   }
 
   function mergeSelection() {
@@ -585,7 +662,61 @@
         const range = currentSelectionRange();
         return !!range && range.tableId === table.id && r >= range.rTop && r <= range.rBot && c >= range.cLeft && c <= range.cRight;
       },
+      onColResizeStart: (event, c, colSpan, cellEl) => startColResize(event, table, c, colSpan, cellEl),
+      contentFontWeight: tableManager.layout.contentFontWeight,
     });
+  }
+
+  /* ---- Column-width drag resize (item 4) — pointer events, live ghost
+     line, Math.round()'d committed width, history begin/commit
+     bracketing the whole drag (not per-pixel). A merged header cell's
+     handle resizes the WHOLE block by writing the new width onto the
+     LAST column its span covers — see table-types.js's header comment. */
+
+  let colResizeState = null;
+
+  function startColResize(event, table, colIndex, colSpan, cellEl) {
+    event.preventDefault();
+    const targetColIndex = colIndex + colSpan - 1;
+    const cellRect = cellEl.getBoundingClientRect();
+    const scroller = cellEl.closest('.tbl-scroller');
+    const scrollerRect = (scroller || cellEl).getBoundingClientRect();
+
+    history.beginAction();
+    colResizeState = {
+      tableId: table.id,
+      targetColIndex,
+      startX: event.clientX,
+      startWidth: cellRect.width,
+    };
+
+    const ghost = document.createElement('div');
+    ghost.className = 'tbl-col-resize-ghost';
+    ghost.style.left = Math.round(event.clientX) + 'px';
+    ghost.style.top = scrollerRect.top + 'px';
+    ghost.style.height = scrollerRect.height + 'px';
+    document.body.appendChild(ghost);
+    colResizeState.ghostEl = ghost;
+
+    document.addEventListener('pointermove', onColResizeMove);
+    document.addEventListener('pointerup', onColResizeEnd, { once: true });
+  }
+
+  function onColResizeMove(event) {
+    if (!colResizeState) return;
+    colResizeState.ghostEl.style.left = Math.round(event.clientX) + 'px';
+  }
+
+  function onColResizeEnd(event) {
+    if (!colResizeState) return;
+    document.removeEventListener('pointermove', onColResizeMove);
+    const state = colResizeState;
+    colResizeState = null;
+    state.ghostEl.remove();
+    const delta = event.clientX - state.startX;
+    const newWidth = Math.max(30, Math.round(state.startWidth + delta));
+    tableManager.setColWidth(state.tableId, state.targetColIndex, newWidth);
+    history.commitAction();
   }
 
   function renderStage() {
@@ -597,7 +728,6 @@
       activeIndex,
       onNavigate: (i) => { tableManager.setActiveTable(tableManager.tables[i].id); },
     });
-    updateRailButtonState();
   }
 
   /* ---- Bottom bar: table thumbnails + add/duplicate/rename/delete/reorder ---- */
@@ -615,7 +745,7 @@
 
     const inner = document.createElement('div');
     inner.style.cssText = `width:${CONTENT_W}px; transform:scale(${scale}); transform-origin:top left; pointer-events:none;`;
-    try { inner.appendChild(renderTable(table, { showName: false })); } catch (err) { /* a malformed table shouldn't break the whole thumbnail row */ }
+    try { inner.appendChild(renderTable(table, { showName: false, contentFontWeight: tableManager.layout.contentFontWeight })); } catch (err) { /* a malformed table shouldn't break the whole thumbnail row */ }
     wrapper.appendChild(inner);
     return wrapper;
   }
@@ -879,6 +1009,34 @@
     cellBoldWrap.appendChild(cellBoldSwitchLabel);
     cellStyleSection.appendChild(cellBoldWrap);
 
+    // Per-cell text-align override (item 6b) — same "null = not set,
+    // fall back to the table-wide value" convention as cellBg/cellBold
+    // above (see table-types.js), but rendered as a <select> with an
+    // explicit "Inherit" option rather than a two-state switch, since
+    // there are 4 real values plus the inherit state, not 2.
+    const cellAlignWrap = document.createElement('div');
+    cellAlignWrap.className = 'popup-field';
+    cellAlignWrap.innerHTML = '<label>Text align</label>';
+    const cellAlignSelect = document.createElement('select');
+    const tableWideAlign = (isHeaderCell ? table.headerAlign : table.bodyAlign) || 'left';
+    const inheritOpt = document.createElement('option');
+    inheritOpt.value = '';
+    inheritOpt.textContent = `Inherit (${tableWideAlign})`;
+    cellAlignSelect.appendChild(inheritOpt);
+    [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']].forEach(([val, text]) => {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = text;
+      cellAlignSelect.appendChild(opt);
+    });
+    cellAlignSelect.value = cell.cellAlign || '';
+    cellAlignSelect.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setCellAlign(table.id, range.rTop, range.cLeft, cellAlignSelect.value || null);
+      history.commitAction();
+    });
+    cellAlignWrap.appendChild(cellAlignSelect);
+    cellStyleSection.appendChild(cellAlignWrap);
+
     body.appendChild(cellStyleSection);
 
     if ((cell.rowSpan || 1) > 1 || (cell.colSpan || 1) > 1) {
@@ -930,6 +1088,48 @@
     body.appendChild(colSection);
   }
 
+  /** Small static swatch grid for THEME_PRESETS (item 3) — replaces the
+   *  old plain <select>. Only needs to handle the fixed, non-extensible
+   *  preset list (4 presets), so a dedicated generator function is
+   *  enough; not built as a reusable field-type renderer. Each card
+   *  paints a tiny 2-bar mock (header bar + body bar) from the preset's
+   *  real headerBg/headerText/borderColor/cellBg so the author sees the
+   *  actual look before picking, instead of just a name in a dropdown. */
+  function renderThemeSwatchGrid(container, selectedKey, onSelect) {
+    container.className = 'theme-swatch-grid';
+    container.innerHTML = '';
+    Object.entries(THEME_PRESETS).forEach(([key, preset]) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'theme-swatch-card' + (key === selectedKey ? ' selected' : '');
+      card.title = preset.label;
+      card.setAttribute('aria-label', preset.label);
+      card.setAttribute('aria-pressed', key === selectedKey ? 'true' : 'false');
+
+      const mock = document.createElement('div');
+      mock.className = 'theme-swatch-mock';
+      mock.style.borderColor = preset.borderColor;
+      const header = document.createElement('div');
+      header.className = 'theme-swatch-mock-header';
+      header.style.background = preset.headerBg;
+      header.style.color = preset.headerText;
+      const bodyBar = document.createElement('div');
+      bodyBar.className = 'theme-swatch-mock-body';
+      bodyBar.style.background = preset.cellBg;
+      mock.appendChild(header);
+      mock.appendChild(bodyBar);
+
+      const label = document.createElement('div');
+      label.className = 'theme-swatch-label';
+      label.textContent = preset.label;
+
+      card.appendChild(mock);
+      card.appendChild(label);
+      card.addEventListener('click', () => onSelect(key));
+      container.appendChild(card);
+    });
+  }
+
   /* ---- Table Styles panel (per-table theme/colours/freeze) ---- */
 
   function renderTableStylesPanel() {
@@ -955,15 +1155,9 @@
     const themeWrap = document.createElement('div');
     themeWrap.className = 'popup-field';
     themeWrap.innerHTML = '<label>Theme</label>';
-    const themeSelect = document.createElement('select');
-    TABLE_FIELDS.themePreset.options.forEach(([val, text]) => {
-      const opt = document.createElement('option');
-      opt.value = val; opt.textContent = text;
-      if (val === table.themePreset) opt.selected = true;
-      themeSelect.appendChild(opt);
-    });
-    themeSelect.addEventListener('change', () => patch({ themePreset: themeSelect.value }));
-    themeWrap.appendChild(themeSelect);
+    const themeGrid = document.createElement('div');
+    renderThemeSwatchGrid(themeGrid, table.themePreset, (key) => patch({ themePreset: key }));
+    themeWrap.appendChild(themeGrid);
     body.appendChild(themeWrap);
 
     const colourSection = document.createElement('div');
@@ -1023,6 +1217,51 @@
     });
     colourSection.appendChild(overridesGrid);
     body.appendChild(colourSection);
+
+    // Explicit fixed pixel width for THIS table (item 1) — same
+    // "number input + Auto/Clear button" pattern the colour overrides
+    // above use for their own null-means-unset convention, rather than
+    // the plain always-clamped numberField() helper below (that helper
+    // assumes a real numeric default to fall back to, not "auto"). See
+    // table-types.js's header comment for how this interacts with
+    // colWidths/the outer stage.
+    const sizingSection = document.createElement('div');
+    sizingSection.className = 'settings-section';
+    sizingSection.innerHTML = '<h3>Sizing</h3>';
+    const widthWrap = document.createElement('div');
+    widthWrap.className = 'popup-field';
+    widthWrap.innerHTML = '<label>Table width (px)</label>';
+    const widthRow = document.createElement('div');
+    widthRow.className = 'colour-field-row';
+    const widthInput = document.createElement('input');
+    widthInput.type = 'number';
+    widthInput.min = TABLE_FIELDS.tableWidth.min;
+    widthInput.max = TABLE_FIELDS.tableWidth.max;
+    widthInput.placeholder = 'Auto';
+    widthInput.value = table.tableWidth != null ? table.tableWidth : '';
+    widthInput.addEventListener('focus', () => history.beginAction());
+    widthInput.addEventListener('input', () => {
+      const raw = widthInput.value.trim();
+      const clamped = raw === '' ? null : Math.max(TABLE_FIELDS.tableWidth.min, Math.min(TABLE_FIELDS.tableWidth.max, Number(raw) || TABLE_FIELDS.tableWidth.min));
+      tableManager.updateTable(table.id, { tableWidth: clamped });
+    });
+    widthInput.addEventListener('blur', () => { history.commitAction(); renderTableStylesPanel(); });
+    widthRow.appendChild(widthInput);
+    if (table.tableWidth != null) {
+      const clearWidthBtn = document.createElement('button');
+      clearWidthBtn.className = 'colour-clear-btn';
+      clearWidthBtn.textContent = 'Auto';
+      clearWidthBtn.addEventListener('click', () => {
+        history.beginAction();
+        tableManager.updateTable(table.id, { tableWidth: null });
+        history.commitAction();
+        renderTableStylesPanel();
+      });
+      widthRow.appendChild(clearWidthBtn);
+    }
+    widthWrap.appendChild(widthRow);
+    sizingSection.appendChild(widthWrap);
+    body.appendChild(sizingSection);
 
     // Small local helpers so the Body/Header sections below (which are
     // near-identical field sets over different TABLE_FIELDS keys) don't
@@ -1114,7 +1353,10 @@
       ['freezeHeader', 'Freeze header row'],
       ['freezeFirstCol', 'Freeze first column'],
       ['rowSeparatorsOnly', 'Row separators only'],
-      ['showTitleInExport', 'Show title in export'],
+      // Renamed from showTitleInExport (item 5) — now hides the title
+      // in BOTH authoring and Export, not Export only. See
+      // table-types.js's header comment.
+      ['showTitle', 'Show title'],
     ].forEach(([key, label]) => {
       const wrap = document.createElement('div');
       wrap.className = 'popup-field toggle-field';
@@ -1178,6 +1420,112 @@
     note.className = 'cell-selection-note';
     note.textContent = 'Below a width threshold, side-by-side automatically falls back to single-table carousel display — this happens on the exported page too, so a narrow Articulate embed still reads cleanly.';
     body.appendChild(note);
+
+    body.appendChild(renderContainerBackgroundSection());
+    body.appendChild(renderContentFontSection());
+  }
+
+  /** Project-wide stage background (item 4) — the exact { color,
+   *  transparent } pattern Tabbed Panels' styles.pageBackground uses
+   *  (see its CLAUDE.md for the reference this mirrors), applied here to
+   *  the STAGE that holds every table (the side-by-side grid/carousel
+   *  strip), not any individual table's own colours. #stage keeps
+   *  showing the chosen colour while authoring even when Transparent is
+   *  on — true transparency has nothing meaningful to preview inside the
+   *  app's own chrome — and only Export's actual output emits real
+   *  `background: transparent` (see openExportModal()/applyContainerBackground()). */
+  function renderContainerBackgroundSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    section.innerHTML = '<h3>Container background</h3>';
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
+
+    const colorWrap = document.createElement('div');
+    colorWrap.className = 'popup-field';
+    colorWrap.innerHTML = '<label>Colour</label>';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.title = 'Container background colour';
+    colorInput.value = tableManager.layout.containerBackground.color;
+    colorInput.disabled = tableManager.layout.containerBackground.transparent;
+    colorInput.addEventListener('input', () => {
+      history.beginAction();
+      tableManager.layout.containerBackground.color = colorInput.value;
+      history.commitAction();
+      markUnsaved(); applyContainerBackground();
+    });
+    colorWrap.appendChild(colorInput);
+    grid.appendChild(colorWrap);
+
+    const toggleWrap = document.createElement('div');
+    toggleWrap.className = 'popup-field toggle-field';
+    toggleWrap.innerHTML = '<label>Transparent</label>';
+    const switchLabel = document.createElement('label');
+    switchLabel.className = 'switch';
+    const toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.checked = tableManager.layout.containerBackground.transparent;
+    toggleInput.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.layout.containerBackground.transparent = toggleInput.checked;
+      history.commitAction();
+      colorInput.disabled = toggleInput.checked;
+      markUnsaved(); applyContainerBackground();
+    });
+    const slider = document.createElement('span');
+    slider.className = 'switch-slider';
+    switchLabel.appendChild(toggleInput);
+    switchLabel.appendChild(slider);
+    toggleWrap.appendChild(switchLabel);
+    grid.appendChild(toggleWrap);
+
+    section.appendChild(grid);
+    return section;
+  }
+
+  /** Mirrors layout.containerBackground onto the authoring #stage for
+   *  live preview. Never emits `background: transparent` here — see
+   *  renderContainerBackgroundSection()'s comment; Export's own template
+   *  string is the only place that does. */
+  function applyContainerBackground() {
+    const bg = tableManager.layout.containerBackground;
+    document.getElementById('stage').style.background = bg.transparent ? '' : bg.color;
+  }
+
+  /** Project-wide table content font WEIGHT (item 8) — the font FAMILY
+   *  itself (Poppins) is fixed, not a choice, so this is the only control
+   *  needed. See table-types.js's header comment for how this interacts
+   *  with the existing bodyBold/headerBold/cellBold toggles. */
+  function renderContentFontSection() {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    section.innerHTML = '<h3>Table content font</h3>';
+
+    const weightWrap = document.createElement('div');
+    weightWrap.className = 'popup-field';
+    weightWrap.innerHTML = '<label>Weight (Poppins)</label>';
+    const weightSelect = document.createElement('select');
+    [[400, 'Regular'], [500, 'Medium'], [600, 'Semibold'], [700, 'Bold']].forEach(([val, text]) => {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = text;
+      if (val === tableManager.layout.contentFontWeight) opt.selected = true;
+      weightSelect.appendChild(opt);
+    });
+    weightSelect.addEventListener('change', () => {
+      history.beginAction();
+      tableManager.setLayout({ contentFontWeight: Number(weightSelect.value) });
+      history.commitAction();
+    });
+    weightWrap.appendChild(weightSelect);
+    section.appendChild(weightWrap);
+
+    const note = document.createElement('p');
+    note.className = 'cell-selection-note';
+    note.textContent = 'This sets the base weight for non-bold table text. A table\'s own Body/Header "Bold" toggles (and a cell\'s Bold override) still always render at full bold regardless of this setting.';
+    section.appendChild(note);
+
+    return section;
   }
 
   function renderAll() {
@@ -1200,6 +1548,7 @@
     if (activePanel === 'tableStyles') renderTableStylesPanel();
     if (activePanel === 'layout') renderLayoutPanel();
     if (selAnchor && !tableManager.tables.some((t) => t.id === selAnchor.tableId)) closePanel();
+    applyContainerBackground();
   }
 
   /* ---- Project lifecycle (New / Save / Open) — same pattern as the other tools ---- */
@@ -1428,6 +1777,14 @@
     const state = tableManager.getState();
     const tablesJSON = JSON.stringify(state.tables);
     const layoutJSON = JSON.stringify(state.layout);
+    // Computed once here rather than inside the template string, same
+    // "pageBg" pattern Tabbed Panels' openExportModal() uses for its own
+    // styles.pageBackground (item 4) — only the EXPORT actually emits
+    // real `background: transparent`; the authoring #stage's own
+    // equivalent (applyContainerBackground()) always falls back to a
+    // visible colour instead, since true transparency has nothing
+    // meaningful to preview inside the app's own chrome.
+    const containerBg = state.layout.containerBackground.transparent ? 'transparent' : state.layout.containerBackground.color;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1448,6 +1805,9 @@
 [
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap',
+  // Table CONTENT font (item 8) — same Poppins URL, loaded the exact
+  // same script-created-<link> way as index.html's own loadContentFont().
+  'https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap',
 ].forEach((href) => {
   const link = document.createElement('link');
   link.rel = 'stylesheet';
@@ -1458,7 +1818,7 @@
 const playerStyle = document.createElement('style');
 playerStyle.textContent = \`
   * { box-sizing: border-box; }
-  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: transparent; }
+  html, body { margin: 0; font-family: 'IBM Plex Sans', sans-serif; background: ${containerBg}; }
   #tables-layout-host { max-width: 1100px; margin: 0 auto; }
   .cn-layout { display: flex; flex-direction: column; gap: 16px; }
   .cn-viewport { overflow: hidden; }
@@ -1476,11 +1836,15 @@ playerStyle.textContent = \`
   .tbl-name { font-weight: 600; font-size: 0.9375rem; margin-bottom: 12px; color: #1C2321; }
   .tbl-scroller { overflow: auto; max-height: 460px; border: 1px solid var(--tbl-border, #CBC8BE); }
   .tbl-scroller.tbl-row-sep-only { border: none; }
-  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, #1C2321); }
+  .tbl-table { border-collapse: collapse; width: 100%; background: var(--tbl-cell-bg, #fff); color: var(--tbl-cell-text, #1C2321); font-family: 'Poppins', 'IBM Plex Sans', sans-serif; }
   .tbl-cell { border: 1px solid var(--tbl-border, #CBC8BE); padding: var(--tbl-body-padding, 9px); text-align: var(--tbl-body-align, left); font-size: var(--tbl-body-size, 0.8125rem); font-weight: var(--tbl-body-weight, 400); position: relative; }
   th.tbl-cell { background: var(--tbl-header-bg, #FAFAF8); color: var(--tbl-header-text, #1C2321); padding: var(--tbl-header-padding, 9px); text-align: var(--tbl-header-align, left); font-size: var(--tbl-header-size, 0.8125rem); font-weight: var(--tbl-header-weight, 600); }
   .tbl-table.tbl-row-sep-only { border: none; }
   .tbl-table.tbl-row-sep-only .tbl-cell { border: none; border-bottom: 1px solid var(--tbl-border, #CBC8BE); }
+  .tbl-table:not(.tbl-row-sep-only) tr:first-child .tbl-cell { border-top: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr:last-child .tbl-cell { border-bottom: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr .tbl-cell:first-child { border-left: none; }
+  .tbl-table:not(.tbl-row-sep-only) tr .tbl-cell:last-child { border-right: none; }
   .tbl-sticky-row { position: sticky; top: 0; z-index: 2; }
   .tbl-sticky-col { position: sticky; left: 0; z-index: 1; }
   .tbl-sticky-row.tbl-sticky-col { z-index: 3; }
@@ -1502,7 +1866,7 @@ let activeIndex = 0;
 function render() {
   renderTablesLayout(document.getElementById('tables-layout-host'), {
     tables, layout,
-    renderItem: (table) => renderTable(table, { forExport: true }),
+    renderItem: (table) => renderTable(table, { forExport: true, contentFontWeight: layout.contentFontWeight }),
     activeIndex,
     onNavigate: (i) => { activeIndex = i; render(); },
   });
@@ -1525,6 +1889,102 @@ render();
       document.execCommand('copy');
       Shell.toast('Code copied to clipboard', 'success');
     });
+  }
+
+  /* ---- Import from code (item 2) ----
+     The inverse of openExportModal() above: that function embeds the
+     project as `const tables = <JSON>;` / `const layout = <JSON>;`
+     inside the exported <script>. Rather than a single greedy regex
+     (which breaks the moment the JSON itself contains nested `[`/`]` —
+     every real project's tables array does, via rows/colSpan/etc.),
+     extractBalancedJson() walks the text from the first `[`/`{` after
+     the marker, tracking bracket depth AND string state (so brackets
+     that happen to appear inside a quoted string, e.g. literal `[`/`]`
+     characters someone typed into a cell, never miscount), stopping the
+     moment depth returns to 0 and handing that exact substring to
+     JSON.parse(). This works against ANY text containing those two
+     markers in that order, not just Tables' own literal export
+     template — including, deliberately, a hand-edited or
+     future-reformatted export. */
+
+  function extractBalancedJson(text, fromIndex) {
+    let i = fromIndex;
+    while (i < text.length && text[i] !== '[' && text[i] !== '{') i++;
+    if (i >= text.length) return null;
+    const openChar = text[i];
+    const closeChar = openChar === '[' ? ']' : '}';
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+    let escaped = false;
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === stringChar) inString = false;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { inString = true; stringChar = ch; continue; }
+      if (ch === openChar) depth++;
+      else if (ch === closeChar) {
+        depth--;
+        if (depth === 0) {
+          try { return JSON.parse(text.slice(i, j + 1)); } catch (err) { return null; }
+        }
+      }
+    }
+    return null; // unbalanced — ran off the end without closing
+  }
+
+  /** Extracts { tables, layout } from arbitrary pasted text, or null if
+   *  no recognizable/parseable project data is found. A minimal shape
+   *  check (each table has an id and a rows array) guards against a
+   *  syntactically-valid-JSON-but-wrong-shape paste (e.g. some other
+   *  tool's export) silently "succeeding" into a broken project. */
+  function parseImportedProject(text) {
+    if (!text || typeof text !== 'string') return null;
+    const tablesMarkerIndex = text.indexOf('const tables = ');
+    const layoutMarkerIndex = text.indexOf('const layout = ');
+    if (tablesMarkerIndex === -1 || layoutMarkerIndex === -1) return null;
+    const tables = extractBalancedJson(text, tablesMarkerIndex + 'const tables = '.length);
+    const layout = extractBalancedJson(text, layoutMarkerIndex + 'const layout = '.length);
+    if (!Array.isArray(tables) || tables.length === 0) return null;
+    if (!layout || typeof layout !== 'object') return null;
+    if (!tables.every((t) => t && typeof t === 'object' && typeof t.id === 'string' && Array.isArray(t.rows))) return null;
+    return { tables, layout };
+  }
+
+  function openImportModal() {
+    document.getElementById('import-textarea').value = '';
+    Shell.openModal('import-modal');
+  }
+
+  async function confirmImportFromCode() {
+    const text = document.getElementById('import-textarea').value;
+    const parsed = parseImportedProject(text);
+    if (!parsed) {
+      Shell.toast('Could not find a valid Tables project in the pasted code.', 'danger');
+      return;
+    }
+    // Same unsaved-changes guard as New Project / Open Project — see
+    // newProject() above.
+    if (hasUnsavedChanges) {
+      const proceed = await Shell.confirm('Importing will discard them.', { heading: 'Unsaved changes', okLabel: 'Discard and continue', danger: true });
+      if (!proceed) return;
+    }
+    Shell.closeModal('import-modal');
+    // setState()'s onChange already calls markUnsaved() (see
+    // tableManager.onChange above) — deliberately NOT followed by
+    // markSaved() the way loadProject()/newProject() do, since imported
+    // content is a "new, unsaved" project per this pass's settled scope:
+    // it hasn't been saved anywhere under this name (there is no name).
+    tableManager.setState({ activeTableId: null, tables: parsed.tables, layout: parsed.layout });
+    currentProjectName = null;
+    currentProjectFolder = '';
+    document.getElementById('display-project-name').textContent = 'Untitled project';
+    closePanel();
+    Shell.toast('Project imported from code', 'success');
   }
 
   /* ---- Boot ---- */
